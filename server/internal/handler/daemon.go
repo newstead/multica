@@ -3405,17 +3405,6 @@ type TaskUsagePayload struct {
 	CostUSDTicks int64 `json:"cost_usd_ticks"`
 }
 
-// authoritativeCostTicks converts a reported cost into the nullable column.
-// Only a positive figure is authoritative: 0 is what a daemon that knows
-// nothing about cost sends, and storing it would claim a genuine $0 spend and
-// suppress the estimate. Negative is nonsense from a malformed report.
-func authoritativeCostTicks(ticks int64) pgtype.Int8 {
-	if ticks <= 0 {
-		return pgtype.Int8{}
-	}
-	return pgtype.Int8{Int64: ticks, Valid: true}
-}
-
 func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
 
@@ -3453,21 +3442,10 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 			}
 			provider = runtimeProvider
 		}
-		if err := h.Queries.UpsertTaskUsage(r.Context(), db.UpsertTaskUsageParams{
-			TaskID:           parseUUID(taskID),
-			Provider:         provider,
-			Model:            u.Model,
-			InputTokens:      u.InputTokens,
-			OutputTokens:     u.OutputTokens,
-			CacheReadTokens:  u.CacheReadTokens,
-			CacheWriteTokens: u.CacheWriteTokens,
-			ReasoningTokens:  u.ReasoningTokens,
-			CostUsdTicks:     authoritativeCostTicks(u.CostUSDTicks),
-		}); err != nil {
-			slog.Warn("upsert task usage failed", "task_id", taskID, "model", u.Model, "error", err)
+		if err := h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.ReasoningTokens, u.CostUSDTicks); err != nil {
+			slog.Warn("capture task usage failed", "task_id", taskID, "model", u.Model, "error", err)
 			continue
 		}
-		h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.ReasoningTokens, u.CostUSDTicks)
 
 		// Surface prompt-cache effectiveness per run so cache hit rates are
 		// observable in logs, not just queryable from runtime_usage. The ratio

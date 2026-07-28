@@ -669,13 +669,40 @@ func (s *TaskService) captureTaskCancelled(ctx context.Context, task db.AgentTas
 }
 
 // costUSDTicks is the provider's own price for this usage in 1e-10 USD, or 0
-// when it reported none — the metrics layer prefers it over its rate table.
-func (s *TaskService) CaptureTaskUsage(ctx context.Context, task db.AgentTaskQueue, provider, model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, costUSDTicks int64) {
-	if s.Metrics == nil {
-		return
+// when it reported none. Provider costs win over the static rate table; priced
+// models with no provider cost get a table estimate persisted for DB readers.
+func (s *TaskService) CaptureTaskUsage(ctx context.Context, task db.AgentTaskQueue, provider, model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, costUSDTicks int64) error {
+	persistedCost := taskUsageCostUSDTicks(model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUSDTicks)
+	if s.Queries != nil {
+		if err := s.Queries.UpsertTaskUsage(ctx, db.UpsertTaskUsageParams{
+			TaskID:           task.ID,
+			Provider:         provider,
+			Model:            model,
+			InputTokens:      inputTokens,
+			OutputTokens:     outputTokens,
+			CacheReadTokens:  cacheReadTokens,
+			CacheWriteTokens: cacheWriteTokens,
+			ReasoningTokens:  reasoningTokens,
+			CostUsdTicks:     persistedCost,
+		}); err != nil {
+			return err
+		}
 	}
-	source, runtimeMode, _ := s.taskMetricsContext(ctx, task)
-	s.Metrics.RecordLLMUsage(source, runtimeMode, provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, costUSDTicks)
+	if s.Metrics != nil {
+		source, runtimeMode, _ := s.taskMetricsContext(ctx, task)
+		s.Metrics.RecordLLMUsage(source, runtimeMode, provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, costUSDTicks)
+	}
+	return nil
+}
+
+func taskUsageCostUSDTicks(model string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUSDTicks int64) pgtype.Int8 {
+	if costUSDTicks > 0 {
+		return pgtype.Int8{Int64: costUSDTicks, Valid: true}
+	}
+	if estimated, ok := obsmetrics.EstimateLLMUsageCostTicks(model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens); ok {
+		return pgtype.Int8{Int64: estimated, Valid: true}
+	}
+	return pgtype.Int8{}
 }
 
 func (s *TaskService) CaptureQueuedExpiredTasks(ctx context.Context, tasks []db.AgentTaskQueue) {
