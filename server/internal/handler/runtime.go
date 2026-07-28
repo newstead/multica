@@ -90,6 +90,7 @@ type RuntimeUsageResponse struct {
 	OutputTokens     int64  `json:"output_tokens"`
 	CacheReadTokens  int64  `json:"cache_read_tokens"`
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	ReasoningTokens  int64  `json:"reasoning_tokens"`
 	// Cost split: `CostUSDTicks` is what the provider itself charged for the
 	// rows behind this aggregate (1e-10 USD), and the `Uncosted*` token
 	// counts are the tokens from rows the provider did NOT price. The client
@@ -159,6 +160,7 @@ func (h *Handler) listRuntimeUsage(ctx context.Context, runtimeID pgtype.UUID, t
 			OutputTokens:             row.OutputTokens,
 			CacheReadTokens:          row.CacheReadTokens,
 			CacheWriteTokens:         row.CacheWriteTokens,
+			ReasoningTokens:          row.ReasoningTokens,
 			CostUSDTicks:             row.CostUsdTicks,
 			UncostedInputTokens:      row.UncostedInputTokens,
 			UncostedOutputTokens:     row.UncostedOutputTokens,
@@ -223,6 +225,7 @@ type RuntimeUsageByAgentResponse struct {
 	OutputTokens     int64  `json:"output_tokens"`
 	CacheReadTokens  int64  `json:"cache_read_tokens"`
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	ReasoningTokens  int64  `json:"reasoning_tokens"`
 	// Cost split: `CostUSDTicks` is what the provider itself charged for the
 	// rows behind this aggregate (1e-10 USD), and the `Uncosted*` token
 	// counts are the tokens from rows the provider did NOT price. The client
@@ -279,6 +282,7 @@ func (h *Handler) GetRuntimeUsageByAgent(w http.ResponseWriter, r *http.Request)
 			OutputTokens:             row.OutputTokens,
 			CacheReadTokens:          row.CacheReadTokens,
 			CacheWriteTokens:         row.CacheWriteTokens,
+			ReasoningTokens:          row.ReasoningTokens,
 			CostUSDTicks:             row.CostUsdTicks,
 			UncostedInputTokens:      row.UncostedInputTokens,
 			UncostedOutputTokens:     row.UncostedOutputTokens,
@@ -301,6 +305,7 @@ type RuntimeUsageByHourResponse struct {
 	OutputTokens     int64  `json:"output_tokens"`
 	CacheReadTokens  int64  `json:"cache_read_tokens"`
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	ReasoningTokens  int64  `json:"reasoning_tokens"`
 	// Cost split: `CostUSDTicks` is what the provider itself charged for the
 	// rows behind this aggregate (1e-10 USD), and the `Uncosted*` token
 	// counts are the tokens from rows the provider did NOT price. The client
@@ -359,6 +364,7 @@ func (h *Handler) GetRuntimeUsageByHour(w http.ResponseWriter, r *http.Request) 
 			OutputTokens:             row.OutputTokens,
 			CacheReadTokens:          row.CacheReadTokens,
 			CacheWriteTokens:         row.CacheWriteTokens,
+			ReasoningTokens:          row.ReasoningTokens,
 			CostUSDTicks:             row.CostUsdTicks,
 			UncostedInputTokens:      row.UncostedInputTokens,
 			UncostedOutputTokens:     row.UncostedOutputTokens,

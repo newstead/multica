@@ -3397,6 +3397,7 @@ type TaskUsagePayload struct {
 	OutputTokens     int64  `json:"output_tokens"`
 	CacheReadTokens  int64  `json:"cache_read_tokens"`
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	ReasoningTokens  int64  `json:"reasoning_tokens"`
 	// CostUSDTicks is the provider's own price for this usage in 1e-10 USD.
 	// Absent or 0 from every daemon that doesn't have one (older builds, and
 	// every provider except Grok today) — stored as NULL so the reader knows
@@ -3460,12 +3461,13 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 			OutputTokens:     u.OutputTokens,
 			CacheReadTokens:  u.CacheReadTokens,
 			CacheWriteTokens: u.CacheWriteTokens,
+			ReasoningTokens:  u.ReasoningTokens,
 			CostUsdTicks:     authoritativeCostTicks(u.CostUSDTicks),
 		}); err != nil {
 			slog.Warn("upsert task usage failed", "task_id", taskID, "model", u.Model, "error", err)
 			continue
 		}
-		h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.CostUSDTicks)
+		h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.ReasoningTokens, u.CostUSDTicks)
 
 		// Surface prompt-cache effectiveness per run so cache hit rates are
 		// observable in logs, not just queryable from runtime_usage. The ratio
@@ -3481,6 +3483,7 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 				"output_tokens", u.OutputTokens,
 				"cache_read_tokens", u.CacheReadTokens,
 				"cache_write_tokens", u.CacheWriteTokens,
+				"reasoning_tokens", u.ReasoningTokens,
 				"cache_read_ratio", float64(u.CacheReadTokens)/float64(totalInput),
 			)
 		}
@@ -3866,6 +3869,7 @@ func (h *Handler) GetIssueUsage(w http.ResponseWriter, r *http.Request) {
 		"total_output_tokens":      row.TotalOutputTokens,
 		"total_cache_read_tokens":  row.TotalCacheReadTokens,
 		"total_cache_write_tokens": row.TotalCacheWriteTokens,
+		"total_reasoning_tokens":   row.TotalReasoningTokens,
 		// Cost split — see the note on DashboardUsageDailyResponse.
 		"cost_usd_ticks":              row.TotalCostUsdTicks,
 		"uncosted_input_tokens":       row.UncostedInputTokens,

@@ -69,7 +69,7 @@ func TestBusinessMetricsFailureReasonUsesCanonicalClassifier(t *testing.T) {
 func TestBusinessMetricsLLMPricingAndUnpricedTokens(t *testing.T) {
 	m := NewBusinessMetrics()
 
-	m.RecordLLMUsage("chat", "cloud", "codex", "gpt-5.4", 1_000_000, 2_000_000, 3_000_000, 4_000_000, 0)
+	m.RecordLLMUsage("chat", "cloud", "codex", "gpt-5.4", 1_000_000, 2_000_000, 3_000_000, 4_000_000, 5_000_000, 0)
 
 	if got := testutil.ToFloat64(m.llmTokens.WithLabelValues("openai", "gpt-5.4", "input", "cloud", "chat")); got != 1_000_000 {
 		t.Fatalf("priced input tokens = %v, want 1000000", got)
@@ -83,13 +83,22 @@ func TestBusinessMetricsLLMPricingAndUnpricedTokens(t *testing.T) {
 	if got := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("openai", "gpt-5.4", "output", "cloud", "chat")); got != 30 {
 		t.Fatalf("priced output cost = %v, want 30", got)
 	}
+	if got := testutil.ToFloat64(m.llmTokens.WithLabelValues("openai", "gpt-5.4", "reasoning", "cloud", "chat")); got != 5_000_000 {
+		t.Fatalf("priced reasoning tokens = %v, want 5000000", got)
+	}
+	if got := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("openai", "gpt-5.4", "reasoning", "cloud", "chat")); got != 0 {
+		t.Fatalf("priced reasoning cost = %v, want 0", got)
+	}
 	if got := testutil.ToFloat64(m.llmRequests.WithLabelValues("openai", "gpt-5.4", "cloud")); got != 1 {
 		t.Fatalf("priced request counter = %v, want 1", got)
 	}
 
-	m.RecordLLMUsage("issue", "local", "custom-provider", "Free Model!!", 7, 0, 0, 0, 0)
+	m.RecordLLMUsage("issue", "local", "custom-provider", "Free Model!!", 7, 0, 0, 0, 13, 0)
 	if got := testutil.ToFloat64(m.llmUnpricedTokens.WithLabelValues("other", "free_model_", "input")); got != 7 {
 		t.Fatalf("unpriced input tokens = %v, want 7", got)
+	}
+	if got := testutil.ToFloat64(m.llmUnpricedTokens.WithLabelValues("other", "free_model_", "reasoning")); got != 13 {
+		t.Fatalf("unpriced reasoning tokens = %v, want 13", got)
 	}
 	if got := testutil.ToFloat64(m.llmRequests.WithLabelValues("other", "unknown", "local")); got != 1 {
 		t.Fatalf("unpriced request counter = %v, want 1", got)
@@ -108,8 +117,8 @@ func TestBusinessMetricsRegistryExposesAllFamilies(t *testing.T) {
 	m.RecordTaskFailed("issue", "local", taskfailure.ReasonTimeout.String())
 	m.RecordTaskQueuedExpired("issue", "local")
 	m.RecordTaskLeaseExpired("issue")
-	m.RecordLLMUsage("issue", "local", "codex", "gpt-5.4", 1, 1, 1, 1, 0)
-	m.RecordLLMUsage("issue", "local", "custom-provider", "custom-model", 1, 0, 0, 0, 0)
+	m.RecordLLMUsage("issue", "local", "codex", "gpt-5.4", 1, 1, 1, 1, 0, 0)
+	m.RecordLLMUsage("issue", "local", "custom-provider", "custom-model", 1, 0, 0, 0, 0, 0)
 
 	// PR3 funnel / community / commercial events. Drive every counter
 	// with one synthetic value so the gather loop below sees the family.
@@ -183,7 +192,7 @@ func TestBusinessMetricsPrefersProviderReportedCost(t *testing.T) {
 	// table. The provider says the turn cost $16 — the long-context tier.
 	const actualUSD = 16.0
 	m.RecordLLMUsage("issue", "local", "grok", "grok-4.5",
-		1_000_000, 1_000_000, 0, 0, int64(actualUSD*CostUSDTicksPerUSD))
+		1_000_000, 1_000_000, 0, 0, 0, int64(actualUSD*CostUSDTicksPerUSD))
 
 	input := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("xai", "grok-4.5", "input", "local", "issue"))
 	output := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("xai", "grok-4.5", "output", "local", "issue"))
@@ -209,7 +218,7 @@ func TestBusinessMetricsPrefersProviderReportedCost(t *testing.T) {
 func TestBusinessMetricsFallsBackToRateTableWithoutProviderCost(t *testing.T) {
 	m := NewBusinessMetrics()
 
-	m.RecordLLMUsage("issue", "local", "grok", "grok-4.5", 1_000_000, 1_000_000, 0, 0, 0)
+	m.RecordLLMUsage("issue", "local", "grok", "grok-4.5", 1_000_000, 1_000_000, 0, 0, 0, 0)
 
 	input := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("xai", "grok-4.5", "input", "local", "issue"))
 	output := testutil.ToFloat64(m.llmCostUSD.WithLabelValues("xai", "grok-4.5", "output", "local", "issue"))
@@ -275,7 +284,7 @@ func TestBusinessMetricsRecordsProviderCostForUnpricedModel(t *testing.T) {
 
 	const actualUSD = 1.23456789
 	m.RecordLLMUsage("issue", "local", "grok", "grok-composer-2.5-fast",
-		500, 100, 0, 0, int64(actualUSD*CostUSDTicksPerUSD))
+		500, 100, 0, 0, 0, int64(actualUSD*CostUSDTicksPerUSD))
 
 	// No rates means no way to split by token type, so the whole charge lands
 	// in one bucket — but it must be the whole charge.
@@ -296,7 +305,7 @@ func TestBusinessMetricsRecordsProviderCostForUnpricedModel(t *testing.T) {
 func TestBusinessMetricsUnpricedModelWithoutCostStaysAtZero(t *testing.T) {
 	m := NewBusinessMetrics()
 
-	m.RecordLLMUsage("issue", "local", "grok", "grok-composer-2.5-fast", 500, 100, 0, 0, 0)
+	m.RecordLLMUsage("issue", "local", "grok", "grok-composer-2.5-fast", 500, 100, 0, 0, 0, 0)
 
 	if got := testutil.ToFloat64(m.llmCostUSD.WithLabelValues(
 		"grok", "grok-composer-2.5-fast", "input", "local", "issue")); got != 0 {

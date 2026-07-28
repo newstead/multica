@@ -966,7 +966,8 @@ type TaskUsage struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	// Provider-reported cost in 1e-10 USD. NULL when the provider reports none; those rows are priced client-side from the static rate table.
-	CostUsdTicks pgtype.Int8 `json:"cost_usd_ticks"`
+	CostUsdTicks    pgtype.Int8 `json:"cost_usd_ticks"`
+	ReasoningTokens int64       `json:"reasoning_tokens"`
 }
 
 type TaskUsageHourly struct {
@@ -991,6 +992,7 @@ type TaskUsageHourly struct {
 	UncostedOutputTokens     pgtype.Int8 `json:"uncosted_output_tokens"`
 	UncostedCacheReadTokens  pgtype.Int8 `json:"uncosted_cache_read_tokens"`
 	UncostedCacheWriteTokens pgtype.Int8 `json:"uncosted_cache_write_tokens"`
+	ReasoningTokens          int64       `json:"reasoning_tokens"`
 }
 
 type TaskUsageHourlyDirty struct {

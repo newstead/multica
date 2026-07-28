@@ -6,14 +6,15 @@
 -- cost_usd_ticks is the provider's own price for this usage (1e-10 USD), NULL
 -- when it reports none. It is overwritten like the token counters so a
 -- corrected report replaces the previous figure rather than accumulating.
-INSERT INTO task_usage (task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd_ticks, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, sqlc.narg('cost_usd_ticks'), now())
+INSERT INTO task_usage (task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_usd_ticks, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, sqlc.narg('cost_usd_ticks'), now())
 ON CONFLICT (task_id, provider, model)
 DO UPDATE SET
     input_tokens = EXCLUDED.input_tokens,
     output_tokens = EXCLUDED.output_tokens,
     cache_read_tokens = EXCLUDED.cache_read_tokens,
     cache_write_tokens = EXCLUDED.cache_write_tokens,
+    reasoning_tokens = EXCLUDED.reasoning_tokens,
     cost_usd_ticks = EXCLUDED.cost_usd_ticks,
     updated_at = now();
 
@@ -28,6 +29,7 @@ SELECT
     COALESCE(SUM(tu.output_tokens), 0)::bigint AS total_output_tokens,
     COALESCE(SUM(tu.cache_read_tokens), 0)::bigint AS total_cache_read_tokens,
     COALESCE(SUM(tu.cache_write_tokens), 0)::bigint AS total_cache_write_tokens,
+    COALESCE(SUM(tu.reasoning_tokens), 0)::bigint AS total_reasoning_tokens,
     COALESCE(SUM(tu.cost_usd_ticks), 0)::bigint AS total_cost_usd_ticks,
     COALESCE(SUM(tu.input_tokens)       FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_input_tokens,
     COALESCE(SUM(tu.output_tokens)      FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_output_tokens,
@@ -64,6 +66,7 @@ SELECT
     SUM(output_tokens)::bigint       AS output_tokens,
     SUM(cache_read_tokens)::bigint   AS cache_read_tokens,
     SUM(cache_write_tokens)::bigint  AS cache_write_tokens,
+    SUM(reasoning_tokens)::bigint    AS reasoning_tokens,
     SUM(cost_usd_ticks)::bigint                                          AS cost_usd_ticks,
     SUM(COALESCE(uncosted_input_tokens, input_tokens))::bigint           AS uncosted_input_tokens,
     SUM(COALESCE(uncosted_output_tokens, output_tokens))::bigint         AS uncosted_output_tokens,
@@ -100,6 +103,7 @@ SELECT
     SUM(output_tokens)::bigint       AS output_tokens,
     SUM(cache_read_tokens)::bigint   AS cache_read_tokens,
     SUM(cache_write_tokens)::bigint  AS cache_write_tokens,
+    SUM(reasoning_tokens)::bigint    AS reasoning_tokens,
     SUM(cost_usd_ticks)::bigint                                          AS cost_usd_ticks,
     SUM(COALESCE(uncosted_input_tokens, input_tokens))::bigint           AS uncosted_input_tokens,
     SUM(COALESCE(uncosted_output_tokens, output_tokens))::bigint         AS uncosted_output_tokens,

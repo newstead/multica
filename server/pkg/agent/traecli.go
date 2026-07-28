@@ -375,9 +375,7 @@ func (b *traecliBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 					finalError = "traecli cancelled the prompt"
 				}
 				c.usageMu.Lock()
-				c.usage.InputTokens += pr.usage.InputTokens
-				c.usage.OutputTokens += pr.usage.OutputTokens
-				c.usage.CacheReadTokens += pr.usage.CacheReadTokens
+				mergeACPPromptUsage(&c.usage, pr.usage)
 				c.usageMu.Unlock()
 			default:
 			}
@@ -424,7 +422,7 @@ func (b *traecliBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 		c.usageMu.Unlock()
 
 		var usageMap map[string]TokenUsage
-		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
+		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ReasoningTokens > 0 {
 			model := effectiveModel
 			if model == "" {
 				model = "unknown"

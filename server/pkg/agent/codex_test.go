@@ -772,8 +772,35 @@ func TestParseCodexSessionFileSubtractsCachedInput(t *testing.T) {
 	if got.usage.CacheReadTokens != 300 {
 		t.Fatalf("cache read tokens = %d, want 300", got.usage.CacheReadTokens)
 	}
-	if got.usage.OutputTokens != 50 {
-		t.Fatalf("output tokens = %d, want 50", got.usage.OutputTokens)
+	if got.usage.OutputTokens != 40 {
+		t.Fatalf("output tokens = %d, want 40", got.usage.OutputTokens)
+	}
+	if got.usage.ReasoningTokens != 10 {
+		t.Fatalf("reasoning tokens = %d, want 10", got.usage.ReasoningTokens)
+	}
+}
+
+func TestCodexExtractUsageFromMapReadsReasoningTokens(t *testing.T) {
+	t.Parallel()
+
+	c := &codexClient{}
+	c.extractUsageFromMap(map[string]any{
+		"usage": map[string]any{
+			"output_tokens":           float64(40),
+			"reasoning_output_tokens": float64(10),
+		},
+	})
+	c.extractUsageFromMap(map[string]any{
+		"usage": map[string]any{
+			"reasoning_tokens": float64(4),
+		},
+	})
+
+	if c.usage.OutputTokens != 40 {
+		t.Fatalf("output tokens = %d, want 40", c.usage.OutputTokens)
+	}
+	if c.usage.ReasoningTokens != 14 {
+		t.Fatalf("reasoning tokens = %d, want 14", c.usage.ReasoningTokens)
 	}
 }
 
@@ -859,7 +886,7 @@ func TestScanCodexSessionUsageSubtractsResumeBaseline(t *testing.T) {
 	}
 	// total_token_usage is cumulative for the resumed Codex session. This task
 	// should report only the delta after startTime, not the whole session total.
-	want := TokenUsage{InputTokens: 100, OutputTokens: 65, CacheReadTokens: 700}
+	want := TokenUsage{InputTokens: 100, OutputTokens: 50, CacheReadTokens: 700, ReasoningTokens: 15}
 	if got.usage != want {
 		t.Fatalf("usage = %+v, want resumed-task delta %+v", got.usage, want)
 	}

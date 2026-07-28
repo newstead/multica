@@ -17,6 +17,7 @@ SELECT
     COALESCE(SUM(tu.output_tokens), 0)::bigint AS total_output_tokens,
     COALESCE(SUM(tu.cache_read_tokens), 0)::bigint AS total_cache_read_tokens,
     COALESCE(SUM(tu.cache_write_tokens), 0)::bigint AS total_cache_write_tokens,
+    COALESCE(SUM(tu.reasoning_tokens), 0)::bigint AS total_reasoning_tokens,
     COALESCE(SUM(tu.cost_usd_ticks), 0)::bigint AS total_cost_usd_ticks,
     COALESCE(SUM(tu.input_tokens)       FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_input_tokens,
     COALESCE(SUM(tu.output_tokens)      FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_output_tokens,
@@ -33,6 +34,7 @@ type GetIssueUsageSummaryRow struct {
 	TotalOutputTokens        int64 `json:"total_output_tokens"`
 	TotalCacheReadTokens     int64 `json:"total_cache_read_tokens"`
 	TotalCacheWriteTokens    int64 `json:"total_cache_write_tokens"`
+	TotalReasoningTokens     int64 `json:"total_reasoning_tokens"`
 	TotalCostUsdTicks        int64 `json:"total_cost_usd_ticks"`
 	UncostedInputTokens      int64 `json:"uncosted_input_tokens"`
 	UncostedOutputTokens     int64 `json:"uncosted_output_tokens"`
@@ -49,6 +51,7 @@ func (q *Queries) GetIssueUsageSummary(ctx context.Context, issueID pgtype.UUID)
 		&i.TotalOutputTokens,
 		&i.TotalCacheReadTokens,
 		&i.TotalCacheWriteTokens,
+		&i.TotalReasoningTokens,
 		&i.TotalCostUsdTicks,
 		&i.UncostedInputTokens,
 		&i.UncostedOutputTokens,
@@ -60,7 +63,7 @@ func (q *Queries) GetIssueUsageSummary(ctx context.Context, issueID pgtype.UUID)
 }
 
 const getTaskUsage = `-- name: GetTaskUsage :many
-SELECT id, task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, created_at, updated_at, cost_usd_ticks FROM task_usage
+SELECT id, task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, created_at, updated_at, cost_usd_ticks, reasoning_tokens FROM task_usage
 WHERE task_id = $1
 ORDER BY model
 `
@@ -86,6 +89,7 @@ func (q *Queries) GetTaskUsage(ctx context.Context, taskID pgtype.UUID) ([]TaskU
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CostUsdTicks,
+			&i.ReasoningTokens,
 		); err != nil {
 			return nil, err
 		}
@@ -253,6 +257,7 @@ SELECT
     SUM(output_tokens)::bigint       AS output_tokens,
     SUM(cache_read_tokens)::bigint   AS cache_read_tokens,
     SUM(cache_write_tokens)::bigint  AS cache_write_tokens,
+    SUM(reasoning_tokens)::bigint    AS reasoning_tokens,
     SUM(cost_usd_ticks)::bigint                                          AS cost_usd_ticks,
     SUM(COALESCE(uncosted_input_tokens, input_tokens))::bigint           AS uncosted_input_tokens,
     SUM(COALESCE(uncosted_output_tokens, output_tokens))::bigint         AS uncosted_output_tokens,
@@ -281,6 +286,7 @@ type ListDashboardUsageByAgentRow struct {
 	OutputTokens             int64       `json:"output_tokens"`
 	CacheReadTokens          int64       `json:"cache_read_tokens"`
 	CacheWriteTokens         int64       `json:"cache_write_tokens"`
+	ReasoningTokens          int64       `json:"reasoning_tokens"`
 	CostUsdTicks             int64       `json:"cost_usd_ticks"`
 	UncostedInputTokens      int64       `json:"uncosted_input_tokens"`
 	UncostedOutputTokens     int64       `json:"uncosted_output_tokens"`
@@ -320,6 +326,7 @@ func (q *Queries) ListDashboardUsageByAgent(ctx context.Context, arg ListDashboa
 			&i.OutputTokens,
 			&i.CacheReadTokens,
 			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
 			&i.CostUsdTicks,
 			&i.UncostedInputTokens,
 			&i.UncostedOutputTokens,
@@ -346,6 +353,7 @@ SELECT
     SUM(output_tokens)::bigint       AS output_tokens,
     SUM(cache_read_tokens)::bigint   AS cache_read_tokens,
     SUM(cache_write_tokens)::bigint  AS cache_write_tokens,
+    SUM(reasoning_tokens)::bigint    AS reasoning_tokens,
     SUM(cost_usd_ticks)::bigint                                          AS cost_usd_ticks,
     SUM(COALESCE(uncosted_input_tokens, input_tokens))::bigint           AS uncosted_input_tokens,
     SUM(COALESCE(uncosted_output_tokens, output_tokens))::bigint         AS uncosted_output_tokens,
@@ -375,6 +383,7 @@ type ListDashboardUsageDailyRow struct {
 	OutputTokens             int64       `json:"output_tokens"`
 	CacheReadTokens          int64       `json:"cache_read_tokens"`
 	CacheWriteTokens         int64       `json:"cache_write_tokens"`
+	ReasoningTokens          int64       `json:"reasoning_tokens"`
 	CostUsdTicks             int64       `json:"cost_usd_ticks"`
 	UncostedInputTokens      int64       `json:"uncosted_input_tokens"`
 	UncostedOutputTokens     int64       `json:"uncosted_output_tokens"`
@@ -422,6 +431,7 @@ func (q *Queries) ListDashboardUsageDaily(ctx context.Context, arg ListDashboard
 			&i.OutputTokens,
 			&i.CacheReadTokens,
 			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
 			&i.CostUsdTicks,
 			&i.UncostedInputTokens,
 			&i.UncostedOutputTokens,
@@ -440,14 +450,15 @@ func (q *Queries) ListDashboardUsageDaily(ctx context.Context, arg ListDashboard
 }
 
 const upsertTaskUsage = `-- name: UpsertTaskUsage :exec
-INSERT INTO task_usage (task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd_ticks, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+INSERT INTO task_usage (task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_usd_ticks, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
 ON CONFLICT (task_id, provider, model)
 DO UPDATE SET
     input_tokens = EXCLUDED.input_tokens,
     output_tokens = EXCLUDED.output_tokens,
     cache_read_tokens = EXCLUDED.cache_read_tokens,
     cache_write_tokens = EXCLUDED.cache_write_tokens,
+    reasoning_tokens = EXCLUDED.reasoning_tokens,
     cost_usd_ticks = EXCLUDED.cost_usd_ticks,
     updated_at = now()
 `
@@ -460,6 +471,7 @@ type UpsertTaskUsageParams struct {
 	OutputTokens     int64       `json:"output_tokens"`
 	CacheReadTokens  int64       `json:"cache_read_tokens"`
 	CacheWriteTokens int64       `json:"cache_write_tokens"`
+	ReasoningTokens  int64       `json:"reasoning_tokens"`
 	CostUsdTicks     pgtype.Int8 `json:"cost_usd_ticks"`
 }
 
@@ -479,6 +491,7 @@ func (q *Queries) UpsertTaskUsage(ctx context.Context, arg UpsertTaskUsageParams
 		arg.OutputTokens,
 		arg.CacheReadTokens,
 		arg.CacheWriteTokens,
+		arg.ReasoningTokens,
 		arg.CostUsdTicks,
 	)
 	return err
