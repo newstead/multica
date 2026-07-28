@@ -140,6 +140,7 @@ type TokenUsage struct {
 	OutputTokens     int64
 	CacheReadTokens  int64
 	CacheWriteTokens int64
+	ReasoningTokens  int64
 	// CostUSDTicks is the provider's own statement of what this usage cost,
 	// in ticks of 1e-10 USD. Zero means "not reported" — only a few agents
 	// return it (xAI Grok Build does, via `_meta.usage.costUsdTicks`).

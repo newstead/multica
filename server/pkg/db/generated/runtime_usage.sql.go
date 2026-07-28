@@ -61,6 +61,7 @@ SELECT
     SUM(tu.output_tokens)::bigint AS output_tokens,
     SUM(tu.cache_read_tokens)::bigint AS cache_read_tokens,
     SUM(tu.cache_write_tokens)::bigint AS cache_write_tokens,
+    SUM(tu.reasoning_tokens)::bigint AS reasoning_tokens,
     COALESCE(SUM(tu.cost_usd_ticks), 0)::bigint AS cost_usd_ticks,
     COALESCE(SUM(tu.input_tokens)       FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_input_tokens,
     COALESCE(SUM(tu.output_tokens)      FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_output_tokens,
@@ -88,6 +89,7 @@ type GetRuntimeUsageByHourRow struct {
 	OutputTokens             int64  `json:"output_tokens"`
 	CacheReadTokens          int64  `json:"cache_read_tokens"`
 	CacheWriteTokens         int64  `json:"cache_write_tokens"`
+	ReasoningTokens          int64  `json:"reasoning_tokens"`
 	CostUsdTicks             int64  `json:"cost_usd_ticks"`
 	UncostedInputTokens      int64  `json:"uncosted_input_tokens"`
 	UncostedOutputTokens     int64  `json:"uncosted_output_tokens"`
@@ -120,6 +122,7 @@ func (q *Queries) GetRuntimeUsageByHour(ctx context.Context, arg GetRuntimeUsage
 			&i.OutputTokens,
 			&i.CacheReadTokens,
 			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
 			&i.CostUsdTicks,
 			&i.UncostedInputTokens,
 			&i.UncostedOutputTokens,
@@ -146,6 +149,7 @@ SELECT
     SUM(output_tokens)::bigint       AS output_tokens,
     SUM(cache_read_tokens)::bigint   AS cache_read_tokens,
     SUM(cache_write_tokens)::bigint  AS cache_write_tokens,
+    SUM(reasoning_tokens)::bigint    AS reasoning_tokens,
     SUM(cost_usd_ticks)::bigint                                          AS cost_usd_ticks,
     SUM(COALESCE(uncosted_input_tokens, input_tokens))::bigint           AS uncosted_input_tokens,
     SUM(COALESCE(uncosted_output_tokens, output_tokens))::bigint         AS uncosted_output_tokens,
@@ -172,6 +176,7 @@ type ListRuntimeUsageRow struct {
 	OutputTokens             int64       `json:"output_tokens"`
 	CacheReadTokens          int64       `json:"cache_read_tokens"`
 	CacheWriteTokens         int64       `json:"cache_write_tokens"`
+	ReasoningTokens          int64       `json:"reasoning_tokens"`
 	CostUsdTicks             int64       `json:"cost_usd_ticks"`
 	UncostedInputTokens      int64       `json:"uncosted_input_tokens"`
 	UncostedOutputTokens     int64       `json:"uncosted_output_tokens"`
@@ -207,6 +212,7 @@ func (q *Queries) ListRuntimeUsage(ctx context.Context, arg ListRuntimeUsagePara
 			&i.OutputTokens,
 			&i.CacheReadTokens,
 			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
 			&i.CostUsdTicks,
 			&i.UncostedInputTokens,
 			&i.UncostedOutputTokens,
@@ -232,6 +238,7 @@ SELECT
     SUM(tu.output_tokens)::bigint AS output_tokens,
     SUM(tu.cache_read_tokens)::bigint AS cache_read_tokens,
     SUM(tu.cache_write_tokens)::bigint AS cache_write_tokens,
+    SUM(tu.reasoning_tokens)::bigint AS reasoning_tokens,
     COALESCE(SUM(tu.cost_usd_ticks), 0)::bigint AS cost_usd_ticks,
     COALESCE(SUM(tu.input_tokens)       FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_input_tokens,
     COALESCE(SUM(tu.output_tokens)      FILTER (WHERE tu.cost_usd_ticks IS NULL), 0)::bigint AS uncosted_output_tokens,
@@ -259,6 +266,7 @@ type ListRuntimeUsageByAgentRow struct {
 	OutputTokens             int64       `json:"output_tokens"`
 	CacheReadTokens          int64       `json:"cache_read_tokens"`
 	CacheWriteTokens         int64       `json:"cache_write_tokens"`
+	ReasoningTokens          int64       `json:"reasoning_tokens"`
 	CostUsdTicks             int64       `json:"cost_usd_ticks"`
 	UncostedInputTokens      int64       `json:"uncosted_input_tokens"`
 	UncostedOutputTokens     int64       `json:"uncosted_output_tokens"`
@@ -295,6 +303,7 @@ func (q *Queries) ListRuntimeUsageByAgent(ctx context.Context, arg ListRuntimeUs
 			&i.OutputTokens,
 			&i.CacheReadTokens,
 			&i.CacheWriteTokens,
+			&i.ReasoningTokens,
 			&i.CostUsdTicks,
 			&i.UncostedInputTokens,
 			&i.UncostedOutputTokens,

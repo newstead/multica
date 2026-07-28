@@ -241,6 +241,7 @@ type TaskUsageEntry struct {
 	OutputTokens     int64  `json:"output_tokens"`
 	CacheReadTokens  int64  `json:"cache_read_tokens"`
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
+	ReasoningTokens  int64  `json:"reasoning_tokens,omitempty"`
 	// CostUSDTicks is the provider's own price for this usage, in 1e-10 USD.
 	// Omitted when the agent reports no cost, which is the common case — the
 	// server then leaves the column NULL and the client estimates from the

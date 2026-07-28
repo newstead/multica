@@ -254,7 +254,7 @@ func (m *BusinessMetrics) RecordTaskLeaseExpired(source string) {
 // when it reported none. When present it wins over the rate table: the table
 // cannot express request-level rules such as xAI's 2x surcharge above a 200K
 // prompt, so for those providers the local estimate is structurally low.
-func (m *BusinessMetrics) RecordLLMUsage(source, runtimeMode, rawProvider, modelAlias string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUSDTicks int64) {
+func (m *BusinessMetrics) RecordLLMUsage(source, runtimeMode, rawProvider, modelAlias string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, costUSDTicks int64) {
 	if m == nil {
 		return
 	}
@@ -268,6 +268,7 @@ func (m *BusinessMetrics) RecordLLMUsage(source, runtimeMode, rawProvider, model
 		m.recordUnpricedTokens(provider, alias, "output", outputTokens)
 		m.recordUnpricedTokens(provider, alias, "cache_read", cacheReadTokens)
 		m.recordUnpricedTokens(provider, alias, "cache_write", cacheWriteTokens)
+		m.recordUnpricedTokens(provider, alias, "reasoning", reasoningTokens)
 		// Having no rate row does not mean having no cost: the provider may
 		// have priced the turn itself (`grok-composer-*` is in the Grok Build
 		// catalog but absent from xAI's price sheet). Dropping the charge here
@@ -298,6 +299,7 @@ func (m *BusinessMetrics) RecordLLMUsage(source, runtimeMode, rawProvider, model
 	m.recordPricedTokens(price.Provider, price.Model, "output", runtimeMode, source, outputTokens, costs[1])
 	m.recordPricedTokens(price.Provider, price.Model, "cache_read", runtimeMode, source, cacheReadTokens, costs[2])
 	m.recordPricedTokens(price.Provider, price.Model, "cache_write", runtimeMode, source, cacheWriteTokens, costs[3])
+	m.recordPricedTokens(price.Provider, price.Model, "reasoning", runtimeMode, source, reasoningTokens, 0)
 	m.llmRequests.WithLabelValues(price.Provider, price.Model, runtimeMode).Inc()
 }
 

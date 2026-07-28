@@ -147,6 +147,7 @@ var (
 		"output":      "output",
 		"cache_read":  "cache_read",
 		"cache_write": "cache_write",
+		"reasoning":   "reasoning",
 	}
 	knownFailureReasons = map[string]string{}
 	modelAliasUnsafeRe  = regexp.MustCompile(`[^a-z0-9._:/+-]+`)
