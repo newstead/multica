@@ -424,10 +424,20 @@ describe("ApiClient workspace working agents", () => {
       client.getWorkspaceWorkingAgents("issue"),
     ).resolves.toEqual(payload);
     await expect(client.getWorkspaceWorkingAgents()).resolves.toEqual(payload);
+    await expect(
+      client.getWorkspaceWorkingAgents("issue", undefined, "parent-1"),
+    ).resolves.toEqual(payload);
+    // The server rejects parent alongside scope, so a My Issues relation wins
+    // and the parent is dropped rather than sent into a 400.
+    await expect(
+      client.getWorkspaceWorkingAgents("issue", "assigned", "parent-1"),
+    ).resolves.toEqual(payload);
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "https://api.example.test/api/working-agents?type=issue&scope=mine&relation=assigned",
       "https://api.example.test/api/working-agents?type=issue",
       "https://api.example.test/api/working-agents",
+      "https://api.example.test/api/working-agents?type=issue&parent=parent-1",
+      "https://api.example.test/api/working-agents?type=issue&scope=mine&relation=assigned",
     ]);
   });
 });
@@ -1419,6 +1429,45 @@ describe("ApiClient", () => {
       expect(body.get("chat_session_id")).toBe("session-123");
       expect(body.get("issue_id")).toBeNull();
       expect(body.get("comment_id")).toBeNull();
+    });
+
+    it("threads an AbortSignal into fetch so the coordinator can cancel it (MUL-5181)", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ id: "att-1", url: "https://cdn/x" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = new ApiClient("https://api.example.test");
+      const controller = new AbortController();
+      const file = new File(["hi"], "hi.png", { type: "image/png" });
+      await client.uploadFile(file, { issueId: "issue-1" }, controller.signal);
+
+      const [, init] = fetchMock.mock.calls[0]!;
+      expect(init?.signal).toBe(controller.signal);
+    });
+
+    it("rejects with the fetch AbortError when the signal is already aborted", async () => {
+      const fetchMock = vi.fn().mockImplementation((_url, init?: RequestInit) => {
+        if (init?.signal?.aborted) {
+          const err = new Error("The operation was aborted");
+          err.name = "AbortError";
+          return Promise.reject(err);
+        }
+        return Promise.resolve(new Response("{}", { status: 200 }));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const client = new ApiClient("https://api.example.test");
+      const controller = new AbortController();
+      controller.abort();
+      const file = new File(["hi"], "hi.png", { type: "image/png" });
+
+      await expect(
+        client.uploadFile(file, undefined, controller.signal),
+      ).rejects.toMatchObject({ name: "AbortError" });
     });
 
     it("sendChatMessage serialises attachment_ids onto the JSON body when present", async () => {

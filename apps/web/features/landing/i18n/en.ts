@@ -294,12 +294,65 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     },
     entries: [
       {
+        version: "0.4.13",
+        date: "2026-07-28",
+        title: "Claude Code resumes without rewriting its cache, plus usage insights",
+        changes: [],
+        features: [
+          "Usage now shows error trends, failure types, and the agents needing attention.",
+          "You can now import multiple repositories directly from your GitHub App installations.",
+          "Agent creation now offers thinking level and Codex speed when supported.",
+          "Parent issues now show how many agents are working across their sub-issues.",
+        ],
+        improvements: [
+          "Drafts and uploads now survive closing, reopening, and switching composer modes.",
+          "Long pasted text now becomes a text attachment automatically.",
+          "Uploads now appear once and become draft content only after they finish.",
+          "Webhook URLs now hide their secret tokens until you choose to reveal them.",
+          "Starting Multica with many workspaces now launches far fewer agent checks.",
+          "Usage rankings now focus on the top agents and sort failures more clearly.",
+          "Each composer now leaves the cursor where that surface expects it.",
+        ],
+        fixes: [
+          "Continuing a long issue with Claude Code no longer repeats about 95% of its cache writes.",
+          "Deleting an issue now returns you to the list you came from.",
+          "Stalled skill downloads now retry and show a clear reason.",
+          "Slack and Lark now receive only the final answer, including from Qoder agents.",
+        ],
+      },
+      {
+        version: "0.4.12",
+        date: "2026-07-27",
+        title: "Lark media, image zoom, and steadier agent tasks",
+        changes: [],
+        features: [
+          "Pull request cards now show live CI status and whether a PR is ready to merge.",
+          "Lark now brings in images and videos from chat as attachments.",
+          "You can now pan and zoom image attachment previews.",
+          "The project picker now has search and shows more projects at once.",
+          "You can now copy an agent to another runtime from the command line.",
+        ],
+        improvements: [
+          "The thread quick-jump rail now sits on the right edge.",
+          "The transcript now follows live task output as it streams in.",
+        ],
+        fixes: [
+          "Searching for someone to mention now works even with spaces in the name.",
+          "When quick-create fails, you now see the real reason instead of a generic error.",
+          "Repeating the same action quickly no longer causes an error.",
+          "Issue lists now stay up to date when you return to them.",
+          "Codex agents now resume their sessions reliably.",
+          "Images and other media now display correctly in the desktop app.",
+          "Cancelling a task now fully stops the agent.",
+          "Agent tasks now recover on their own when an earlier session can't be resumed.",
+        ],
+      },
+      {
         version: "0.4.11",
         date: "2026-07-25",
         title: "Live PR status and Claude Opus 5",
         changes: [],
         features: [
-          "Pull request cards now show live CI status and whether a PR is ready to merge.",
           "You can now build agents on Claude Opus 5.",
         ],
         improvements: [
