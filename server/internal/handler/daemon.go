@@ -2872,11 +2872,18 @@ func (h *Handler) ReportTaskProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 // CompleteTask marks a running task as completed.
+type TaskCompleteDiffStats struct {
+	Additions    int `json:"additions"`
+	Deletions    int `json:"deletions"`
+	FilesChanged int `json:"files_changed"`
+}
+
 type TaskCompleteRequest struct {
-	PRURL     string `json:"pr_url"`
-	Output    string `json:"output"`
-	SessionID string `json:"session_id"` // Claude session ID for future resumption
-	WorkDir   string `json:"work_dir"`   // working directory used during execution
+	PRURL     string                 `json:"pr_url"`
+	Output    string                 `json:"output"`
+	SessionID string                 `json:"session_id"` // Claude session ID for future resumption
+	WorkDir   string                 `json:"work_dir"`   // working directory used during execution
+	DiffStats *TaskCompleteDiffStats `json:"diff_stats,omitempty"`
 }
 
 func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {

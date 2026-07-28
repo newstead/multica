@@ -125,14 +125,15 @@ const (
 // reportTerminalTask gives the durable outbox one insertion point without
 // revisiting every task exit when it is added.
 type terminalTaskReport struct {
-	kind          terminalTaskReportKind
-	taskID        string
-	output        string
-	branchName    string
-	errorMessage  string
-	sessionID     string
-	workDir       string
-	failureReason string
+	kind           terminalTaskReportKind
+	taskID         string
+	output         string
+	branchName     string
+	errorMessage   string
+	sessionID      string
+	workDir        string
+	localDirectory bool
+	failureReason  string
 }
 
 type executionEnvironmentCommand func() ([]string, error)
@@ -3554,12 +3555,13 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 	case "completed":
 		taskLog.Info("task completed", "status", result.Status)
 		err := d.reportTerminalTask(ctx, terminalTaskReport{
-			kind:       terminalTaskReportComplete,
-			taskID:     taskID,
-			output:     result.Comment,
-			branchName: result.BranchName,
-			sessionID:  result.SessionID,
-			workDir:    result.WorkDir,
+			kind:           terminalTaskReportComplete,
+			taskID:         taskID,
+			output:         result.Comment,
+			branchName:     result.BranchName,
+			sessionID:      result.SessionID,
+			workDir:        result.WorkDir,
+			localDirectory: result.LocalDirectory,
 		})
 		if err == nil {
 			return
@@ -3643,7 +3645,12 @@ func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTa
 
 	switch report.kind {
 	case terminalTaskReportComplete:
-		return d.client.CompleteTask(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir)
+		var diffStats *DiffStats
+		if !report.localDirectory {
+			stats := collectTaskDiffStats(report.workDir, d.logger)
+			diffStats = &stats
+		}
+		return d.client.CompleteTask(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, diffStats)
 	case terminalTaskReportFail:
 		return d.client.FailTask(ctx, report.taskID, report.errorMessage, report.sessionID, report.workDir, report.failureReason)
 	default:
@@ -4792,12 +4799,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			// a normal completion so the task is not incorrectly marked as
 			// blocked.
 			return TaskResult{
-				Status:    "completed",
-				Comment:   "",
-				SessionID: result.SessionID,
-				WorkDir:   env.WorkDir,
-				EnvRoot:   env.RootDir,
-				Usage:     usageEntries,
+				Status:         "completed",
+				Comment:        "",
+				SessionID:      result.SessionID,
+				WorkDir:        env.WorkDir,
+				EnvRoot:        env.RootDir,
+				LocalDirectory: env.LocalDirectory,
+				Usage:          usageEntries,
 			}, nil
 		}
 		// Detect "poisoned" terminal output: the agent didn't reach a real
@@ -4812,22 +4820,24 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				"failure_reason", reason,
 			)
 			return TaskResult{
-				Status:        "blocked",
-				Comment:       result.Output,
-				SessionID:     result.SessionID,
-				WorkDir:       env.WorkDir,
-				EnvRoot:       env.RootDir,
-				Usage:         usageEntries,
-				FailureReason: reason,
+				Status:         "blocked",
+				Comment:        result.Output,
+				SessionID:      result.SessionID,
+				WorkDir:        env.WorkDir,
+				EnvRoot:        env.RootDir,
+				LocalDirectory: env.LocalDirectory,
+				Usage:          usageEntries,
+				FailureReason:  reason,
 			}, nil
 		}
 		return TaskResult{
-			Status:    "completed",
-			Comment:   result.Output,
-			SessionID: result.SessionID,
-			WorkDir:   env.WorkDir,
-			EnvRoot:   env.RootDir,
-			Usage:     usageEntries,
+			Status:         "completed",
+			Comment:        result.Output,
+			SessionID:      result.SessionID,
+			WorkDir:        env.WorkDir,
+			EnvRoot:        env.RootDir,
+			LocalDirectory: env.LocalDirectory,
+			Usage:          usageEntries,
 		}, nil
 	case "timeout":
 		// Surface session_id/work_dir so the chat resume pointer is kept
@@ -4846,13 +4856,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			failureReason = reason
 		}
 		return TaskResult{
-			Status:        "blocked",
-			Comment:       comment,
-			SessionID:     result.SessionID,
-			WorkDir:       env.WorkDir,
-			EnvRoot:       env.RootDir,
-			FailureReason: failureReason,
-			Usage:         usageEntries,
+			Status:         "blocked",
+			Comment:        comment,
+			SessionID:      result.SessionID,
+			WorkDir:        env.WorkDir,
+			EnvRoot:        env.RootDir,
+			LocalDirectory: env.LocalDirectory,
+			FailureReason:  failureReason,
+			Usage:          usageEntries,
 		}, nil
 	case "idle_watchdog":
 		// The idle watchdog force-stopped the run because the backend
@@ -4865,13 +4876,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			comment = idleWatchdogReason(d.cfg.AgentIdleWatchdog)
 		}
 		return TaskResult{
-			Status:        "blocked",
-			Comment:       comment,
-			SessionID:     result.SessionID,
-			WorkDir:       env.WorkDir,
-			EnvRoot:       env.RootDir,
-			FailureReason: "idle_watchdog",
-			Usage:         usageEntries,
+			Status:         "blocked",
+			Comment:        comment,
+			SessionID:      result.SessionID,
+			WorkDir:        env.WorkDir,
+			EnvRoot:        env.RootDir,
+			LocalDirectory: env.LocalDirectory,
+			FailureReason:  "idle_watchdog",
+			Usage:          usageEntries,
 		}, nil
 	case "cancelled":
 		// Server cancelled the task (e.g. issue reassignment, user cancel).
@@ -4880,12 +4892,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// status string for the "agent finished" log line so operators can
 		// distinguish "task cancelled by server" from a real timeout.
 		return TaskResult{
-			Status:    "cancelled",
-			Comment:   "task cancelled by server",
-			SessionID: result.SessionID,
-			WorkDir:   env.WorkDir,
-			EnvRoot:   env.RootDir,
-			Usage:     usageEntries,
+			Status:         "cancelled",
+			Comment:        "task cancelled by server",
+			SessionID:      result.SessionID,
+			WorkDir:        env.WorkDir,
+			EnvRoot:        env.RootDir,
+			LocalDirectory: env.LocalDirectory,
+			Usage:          usageEntries,
 		}, nil
 	default:
 		errMsg := result.Error
@@ -4923,13 +4936,14 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			failureReason = taskfailure.Classify(errMsg).String()
 		}
 		return TaskResult{
-			Status:        "blocked",
-			Comment:       errMsg,
-			SessionID:     result.SessionID,
-			WorkDir:       env.WorkDir,
-			EnvRoot:       env.RootDir,
-			Usage:         usageEntries,
-			FailureReason: failureReason,
+			Status:         "blocked",
+			Comment:        errMsg,
+			SessionID:      result.SessionID,
+			WorkDir:        env.WorkDir,
+			EnvRoot:        env.RootDir,
+			LocalDirectory: env.LocalDirectory,
+			Usage:          usageEntries,
+			FailureReason:  failureReason,
 		}, nil
 	}
 }
