@@ -1122,6 +1122,29 @@ func TestParseACPTokenUsageAliases(t *testing.T) {
 	}
 }
 
+func TestParseACPTokenUsageReasoningAliases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "camel", raw: `{"reasoningTokens":24}`},
+		{name: "snake", raw: `{"reasoning_tokens":24}`},
+		{name: "thought", raw: `{"thoughtTokens":24}`},
+		{name: "thinking", raw: `{"thinkingTokens":24}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			usage := parseACPTokenUsage(json.RawMessage(tt.raw))
+			if usage.ReasoningTokens != 24 {
+				t.Fatalf("ReasoningTokens: got %d, want 24", usage.ReasoningTokens)
+			}
+		})
+	}
+}
+
 // TestParseACPTokenUsageCachedInputBucketing pins when cached reads are moved
 // out of inputTokens. Persisting overlapping buckets makes the dashboard
 // charge the cached prefix at both the full input rate and the cache-read
@@ -1578,6 +1601,9 @@ func TestHermesClientExtractPromptResultMetaUsage(t *testing.T) {
 	}
 	if got.usage.CacheReadTokens != 10880 {
 		t.Errorf("cacheReadTokens: got %d, want 10880", got.usage.CacheReadTokens)
+	}
+	if got.usage.ReasoningTokens != 24 {
+		t.Errorf("reasoningTokens: got %d, want 24", got.usage.ReasoningTokens)
 	}
 	// The turn stamps the model it billed against. A resumed session has no
 	// other source for this (session/load reports no model id), so losing it

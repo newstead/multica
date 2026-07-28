@@ -499,7 +499,7 @@ func (b *grokBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		c.usageMu.Unlock()
 
 		var usageMap map[string]TokenUsage
-		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
+		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ReasoningTokens > 0 {
 			model := effectiveModel
 			if model == "" {
 				model = "unknown"

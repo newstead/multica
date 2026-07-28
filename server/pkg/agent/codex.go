@@ -1495,7 +1495,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 			}
 		}
 
-		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
+		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ReasoningTokens > 0 {
 			model := opts.Model
 			if model == "" {
 				model = "unknown"
@@ -2625,6 +2625,7 @@ func (c *codexClient) extractUsageFromMap(data map[string]any) {
 	cacheReadTokens := codexInt64(usageMap, "cached_input_tokens", "cache_read_tokens", "cache_read_input_tokens")
 	c.usage.InputTokens += codexUncachedInputTokens(inputTokens, cacheReadTokens)
 	c.usage.OutputTokens += codexInt64(usageMap, "output_tokens", "output", "completion_tokens")
+	c.usage.ReasoningTokens += codexInt64(usageMap, "reasoning_output_tokens", "reasoning_tokens")
 	c.usage.CacheReadTokens += cacheReadTokens
 	c.usage.CacheWriteTokens += codexInt64(usageMap, "cache_write_tokens", "cache_creation_input_tokens")
 }
@@ -2933,8 +2934,9 @@ func parseCodexSessionFileSince(path string, startTime time.Time, resumed bool) 
 	cachedTokens := finalUsage.CachedInputTokens
 	result.usage = TokenUsage{
 		InputTokens:     codexUncachedInputTokens(finalUsage.InputTokens, cachedTokens),
-		OutputTokens:    finalUsage.OutputTokens + finalUsage.ReasoningOutputTokens,
+		OutputTokens:    finalUsage.OutputTokens,
 		CacheReadTokens: cachedTokens,
+		ReasoningTokens: finalUsage.ReasoningOutputTokens,
 	}
 	return &result
 }

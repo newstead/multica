@@ -606,7 +606,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		c.usageMu.Unlock()
 
 		var usageMap map[string]TokenUsage
-		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
+		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ReasoningTokens > 0 {
 			model := effectiveModel
 			if model == "" {
 				model = "unknown"
@@ -1143,7 +1143,7 @@ func (c *hermesClient) extractPromptResult(data json.RawMessage) {
 
 // acpTokenUsagePresent reports whether any token counter is non-zero.
 func acpTokenUsagePresent(u TokenUsage) bool {
-	return u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0
+	return u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ReasoningTokens > 0
 }
 
 // parseACPTokenUsageFromMeta extracts token usage from an ACP result `_meta`
@@ -1666,6 +1666,9 @@ func (c *hermesClient) handleUsageUpdate(data json.RawMessage) {
 	if usage.CacheWriteTokens > c.usage.CacheWriteTokens {
 		c.usage.CacheWriteTokens = usage.CacheWriteTokens
 	}
+	if usage.ReasoningTokens > c.usage.ReasoningTokens {
+		c.usage.ReasoningTokens = usage.ReasoningTokens
+	}
 	if usage.CostUSDTicks > c.usage.CostUSDTicks {
 		c.usage.CostUSDTicks = usage.CostUSDTicks
 	}
@@ -1696,6 +1699,7 @@ func parseACPTokenUsage(data json.RawMessage) TokenUsage {
 			"cache_write_tokens",
 			"cache_creation_input_tokens",
 		),
+		ReasoningTokens: acpUsageInt64(fields, "reasoningTokens", "reasoning_tokens", "thoughtTokens", "thinkingTokens"),
 		// The provider's own price for this turn, already inclusive of
 		// request-level pricing rules we cannot reconstruct from token
 		// counts (see TokenUsage.CostUSDTicks).

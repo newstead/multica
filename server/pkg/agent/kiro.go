@@ -411,6 +411,7 @@ func (b *kiroBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 				c.usage.OutputTokens += pr.usage.OutputTokens
 				c.usage.CacheReadTokens += pr.usage.CacheReadTokens
 				c.usage.CacheWriteTokens += pr.usage.CacheWriteTokens
+				c.usage.ReasoningTokens += pr.usage.ReasoningTokens
 				c.usageMu.Unlock()
 			default:
 			}
@@ -444,7 +445,7 @@ func (b *kiroBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		c.usageMu.Unlock()
 
 		var usageMap map[string]TokenUsage
-		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 {
+		if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ReasoningTokens > 0 {
 			model := effectiveModel
 			if model == "" {
 				model = "unknown"
