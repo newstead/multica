@@ -850,6 +850,39 @@ const DashboardAgentRunTimeSchema = z.object({
 
 export const DashboardAgentRunTimeListSchema = z.array(DashboardAgentRunTimeSchema);
 
+const DashboardAgentFailureReasonSchema = z.object({
+  failure_reason: z.string().default(""),
+  count: z.number().default(0),
+}).loose();
+
+const DashboardAgentSessionsSchema = z.object({
+  agent_id: z.string().default(""),
+  task_count: z.number().default(0),
+  completed_count: z.number().default(0),
+  failed_count: z.number().default(0),
+  failure_reasons: z.array(DashboardAgentFailureReasonSchema).default([]),
+  queue_wait_p50_seconds: z.number().default(0),
+  queue_wait_p95_seconds: z.number().default(0),
+  run_duration_p50_seconds: z.number().default(0),
+  run_duration_p95_seconds: z.number().default(0),
+}).loose();
+
+export const DashboardAgentSessionsListSchema = z.array(DashboardAgentSessionsSchema);
+
+const DashboardAgentCodeSchema = z.object({
+  agent_id: z.string().default(""),
+  additions: z.number().default(0),
+  deletions: z.number().default(0),
+  files_changed: z.number().default(0),
+  task_count: z.number().default(0),
+  pr_additions: z.number().default(0),
+  pr_deletions: z.number().default(0),
+  pr_changed_files: z.number().default(0),
+  pull_request_count: z.number().default(0),
+}).loose();
+
+export const DashboardAgentCodeListSchema = z.array(DashboardAgentCodeSchema);
+
 const DashboardRunTimeDailySchema = z.object({
   date: z.string().default(""),
   total_seconds: z.number().default(0),
