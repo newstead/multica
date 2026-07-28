@@ -24,6 +24,43 @@ import (
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
+func TestPersistableCostTicksEstimatesPricedModel(t *testing.T) {
+	got := persistableCostTicks(TaskUsagePayload{
+		Model:            "gpt-5.6-sol",
+		InputTokens:      1_000_000,
+		OutputTokens:     2_000_000,
+		CacheReadTokens:  3_000_000,
+		CacheWriteTokens: 4_000_000,
+	})
+	if !got.Valid {
+		t.Fatal("expected estimated cost to be persisted")
+	}
+	if want := int64(915000000000); got.Int64 != want {
+		t.Fatalf("persistableCostTicks = %d, want %d", got.Int64, want)
+	}
+}
+
+func TestPersistableCostTicksProviderCostWins(t *testing.T) {
+	got := persistableCostTicks(TaskUsagePayload{
+		Model:            "gpt-5.6-sol",
+		InputTokens:      1_000_000,
+		OutputTokens:     2_000_000,
+		CacheReadTokens:  3_000_000,
+		CacheWriteTokens: 4_000_000,
+		CostUSDTicks:     12345,
+	})
+	if !got.Valid || got.Int64 != 12345 {
+		t.Fatalf("persistableCostTicks = %+v, want 12345 valid", got)
+	}
+}
+
+func TestPersistableCostTicksUnknownModelStaysNull(t *testing.T) {
+	got := persistableCostTicks(TaskUsagePayload{Model: "unknown-model", InputTokens: 1_000_000})
+	if got.Valid {
+		t.Fatalf("persistableCostTicks = %+v, want NULL", got)
+	}
+}
+
 func TestLogClaimEndpointSlowIncludesPayloadFields(t *testing.T) {
 	var logs bytes.Buffer
 	prev := slog.Default()

@@ -210,3 +210,21 @@ func TestGrokPricingMatchesRecordedTurn(t *testing.T) {
 		t.Fatalf("recomputed cost = %.10f, want %.10f (xAI costUsdTicks)", got, wantUSD)
 	}
 }
+
+func TestEstimateCostUSDTicksUsesStaticRates(t *testing.T) {
+	ticks, ok := EstimateCostUSDTicks("gpt-5.6-sol", 1_000_000, 2_000_000, 3_000_000, 4_000_000)
+	if !ok {
+		t.Fatal("gpt-5.6-sol did not resolve")
+	}
+	// 1M input at $5, 2M output at $30, 3M cache-read at $0.50,
+	// and 4M cache-write at $6.25 = $91.50.
+	if want := int64(915 * CostUSDTicksPerUSD / 10); ticks != want {
+		t.Fatalf("EstimateCostUSDTicks = %d, want %d", ticks, want)
+	}
+}
+
+func TestEstimateCostUSDTicksUnknownModel(t *testing.T) {
+	if ticks, ok := EstimateCostUSDTicks("unknown-model", 1, 1, 1, 1); ok || ticks != 0 {
+		t.Fatalf("EstimateCostUSDTicks unknown = %d, %v; want 0, false", ticks, ok)
+	}
+}

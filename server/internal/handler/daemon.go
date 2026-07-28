@@ -3399,21 +3399,25 @@ type TaskUsagePayload struct {
 	CacheWriteTokens int64  `json:"cache_write_tokens"`
 	ReasoningTokens  int64  `json:"reasoning_tokens"`
 	// CostUSDTicks is the provider's own price for this usage in 1e-10 USD.
-	// Absent or 0 from every daemon that doesn't have one (older builds, and
-	// every provider except Grok today) — stored as NULL so the reader knows
-	// to fall back to rate-table estimation rather than reading a real $0.
+	// Absent or 0 from daemons that do not report one; the server may persist a
+	// static-rate-table estimate instead when the model is priced locally.
 	CostUSDTicks int64 `json:"cost_usd_ticks"`
 }
 
-// authoritativeCostTicks converts a reported cost into the nullable column.
-// Only a positive figure is authoritative: 0 is what a daemon that knows
-// nothing about cost sends, and storing it would claim a genuine $0 spend and
-// suppress the estimate. Negative is nonsense from a malformed report.
-func authoritativeCostTicks(ticks int64) pgtype.Int8 {
-	if ticks <= 0 {
+// persistableCostTicks converts incoming usage into the nullable cost column.
+// Provider-reported positive costs win. For daemons that omit cost, reuse the
+// server pricing table so persisted task_usage matches the Prometheus cost
+// metric. Unknown models stay NULL so readers can continue surfacing them as
+// unpriced instead of claiming a real $0.
+func persistableCostTicks(u TaskUsagePayload) pgtype.Int8 {
+	if u.CostUSDTicks > 0 {
+		return pgtype.Int8{Int64: u.CostUSDTicks, Valid: true}
+	}
+	estimated, ok := obsmetrics.EstimateCostUSDTicks(u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens)
+	if !ok || estimated <= 0 {
 		return pgtype.Int8{}
 	}
-	return pgtype.Int8{Int64: ticks, Valid: true}
+	return pgtype.Int8{Int64: estimated, Valid: true}
 }
 
 func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
@@ -3453,6 +3457,11 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 			}
 			provider = runtimeProvider
 		}
+		costTicks := persistableCostTicks(u)
+		recordCostTicks := u.CostUSDTicks
+		if costTicks.Valid {
+			recordCostTicks = costTicks.Int64
+		}
 		if err := h.Queries.UpsertTaskUsage(r.Context(), db.UpsertTaskUsageParams{
 			TaskID:           parseUUID(taskID),
 			Provider:         provider,
@@ -3462,12 +3471,12 @@ func (h *Handler) ReportTaskUsage(w http.ResponseWriter, r *http.Request) {
 			CacheReadTokens:  u.CacheReadTokens,
 			CacheWriteTokens: u.CacheWriteTokens,
 			ReasoningTokens:  u.ReasoningTokens,
-			CostUsdTicks:     authoritativeCostTicks(u.CostUSDTicks),
+			CostUsdTicks:     costTicks,
 		}); err != nil {
 			slog.Warn("upsert task usage failed", "task_id", taskID, "model", u.Model, "error", err)
 			continue
 		}
-		h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.ReasoningTokens, u.CostUSDTicks)
+		h.TaskService.CaptureTaskUsage(r.Context(), task, provider, u.Model, u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.ReasoningTokens, recordCostTicks)
 
 		// Surface prompt-cache effectiveness per run so cache hit rates are
 		// observable in logs, not just queryable from runtime_usage. The ratio

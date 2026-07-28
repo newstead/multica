@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math"
 	"regexp"
 	"strings"
 )
@@ -141,4 +142,21 @@ func tokenCostUSD(tokens int64, pricePerM float64) float64 {
 		return 0
 	}
 	return float64(tokens) * pricePerM / 1_000_000
+}
+
+// EstimateCostUSDTicks returns the static-rate-table cost for a priced model,
+// in the same 1e-10 USD tick unit used by provider-reported usage costs.
+func EstimateCostUSDTicks(modelAlias string, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens int64) (int64, bool) {
+	price, ok := PriceForModelAlias(modelAlias)
+	if !ok {
+		return 0, false
+	}
+	usd := tokenCostUSD(inputTokens, price.InputPerM) +
+		tokenCostUSD(outputTokens, price.OutputPerM) +
+		tokenCostUSD(cacheReadTokens, price.CacheReadPerM) +
+		tokenCostUSD(cacheWriteTokens, price.CacheWritePerM)
+	if usd <= 0 {
+		return 0, true
+	}
+	return int64(math.Round(usd * CostUSDTicksPerUSD)), true
 }
