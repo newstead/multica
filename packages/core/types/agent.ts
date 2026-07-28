@@ -924,6 +924,38 @@ export interface DashboardAgentRunTime {
   failed_count: number;
 }
 
+export interface DashboardAgentFailureReason {
+  failure_reason: string;
+  count: number;
+}
+
+// Per-agent terminal task/session summary for the workspace dashboard.
+export interface DashboardAgentSessions {
+  agent_id: string;
+  task_count: number;
+  completed_count: number;
+  failed_count: number;
+  failure_reasons: DashboardAgentFailureReason[];
+  queue_wait_p50_seconds: number;
+  queue_wait_p95_seconds: number;
+  run_duration_p50_seconds: number;
+  run_duration_p95_seconds: number;
+}
+
+// Per-agent code-change summary. Task-level stats come from task result
+// diff_stats; PR-level stats come from linked GitHub pull request snapshots.
+export interface DashboardAgentCode {
+  agent_id: string;
+  additions: number;
+  deletions: number;
+  files_changed: number;
+  task_count: number;
+  pr_additions: number;
+  pr_deletions: number;
+  pr_changed_files: number;
+  pull_request_count: number;
+}
+
 // One (date) bucket of terminal-task run-time + counts for the workspace
 // dashboard. Powers the Time and Tasks metrics on the daily-trend toggle
 // — same toggle as Tokens / Cost, anchored on completed_at so day buckets
