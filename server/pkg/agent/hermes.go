@@ -548,9 +548,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				}
 				// Merge usage from the PromptResponse.
 				c.usageMu.Lock()
-				c.usage.InputTokens += pr.usage.InputTokens
-				c.usage.OutputTokens += pr.usage.OutputTokens
-				c.usage.CacheReadTokens += pr.usage.CacheReadTokens
+				mergeACPPromptUsage(&c.usage, pr.usage)
 				c.usageMu.Unlock()
 			default:
 			}
@@ -1144,6 +1142,15 @@ func (c *hermesClient) extractPromptResult(data json.RawMessage) {
 // acpTokenUsagePresent reports whether any token counter is non-zero.
 func acpTokenUsagePresent(u TokenUsage) bool {
 	return u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadTokens > 0 || u.CacheWriteTokens > 0 || u.ReasoningTokens > 0
+}
+
+func mergeACPPromptUsage(dst *TokenUsage, usage TokenUsage) {
+	dst.InputTokens += usage.InputTokens
+	dst.OutputTokens += usage.OutputTokens
+	dst.CacheReadTokens += usage.CacheReadTokens
+	dst.CacheWriteTokens += usage.CacheWriteTokens
+	dst.ReasoningTokens += usage.ReasoningTokens
+	dst.CostUSDTicks += usage.CostUSDTicks
 }
 
 // parseACPTokenUsageFromMeta extracts token usage from an ACP result `_meta`

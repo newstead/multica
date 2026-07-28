@@ -199,7 +199,7 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"ses_model","models":{"currentModelId":"qoder:auto","availableModels":[{"modelId":"qoder:auto","name":"Qoder Auto"}]}}}\n' "$id"
       ;;
     *'"method":"session/prompt"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":17,"outputTokens":5,"cachedReadTokens":3}}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":17,"outputTokens":5,"cachedReadTokens":3,"reasoningTokens":11}}}\n' "$id"
       exit 0
       ;;
   esac
@@ -693,8 +693,8 @@ func TestQoderBackendAttributesUsageToACPDefaultModel(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected usage under Qoder current model, got %+v", result.Usage)
 		}
-		if usage.InputTokens != 17 || usage.OutputTokens != 5 || usage.CacheReadTokens != 3 {
-			t.Fatalf("usage = %+v, want input=17 output=5 cache_read=3", usage)
+		if usage.InputTokens != 17 || usage.OutputTokens != 5 || usage.CacheReadTokens != 3 || usage.ReasoningTokens != 11 {
+			t.Fatalf("usage = %+v, want input=17 output=5 cache_read=3 reasoning=11", usage)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for result")

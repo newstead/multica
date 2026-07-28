@@ -367,9 +367,7 @@ func (b *qoderBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 					finalError = "qoder cancelled the prompt"
 				}
 				c.usageMu.Lock()
-				c.usage.InputTokens += pr.usage.InputTokens
-				c.usage.OutputTokens += pr.usage.OutputTokens
-				c.usage.CacheReadTokens += pr.usage.CacheReadTokens
+				mergeACPPromptUsage(&c.usage, pr.usage)
 				c.usageMu.Unlock()
 			default:
 			}

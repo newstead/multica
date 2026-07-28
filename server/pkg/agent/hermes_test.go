@@ -1145,6 +1145,18 @@ func TestParseACPTokenUsageReasoningAliases(t *testing.T) {
 	}
 }
 
+func TestMergeACPPromptUsageCarriesReasoningTokens(t *testing.T) {
+	t.Parallel()
+
+	usage := TokenUsage{InputTokens: 1, OutputTokens: 2, CacheReadTokens: 3, CacheWriteTokens: 4, ReasoningTokens: 5, CostUSDTicks: 6}
+	var got TokenUsage
+	mergeACPPromptUsage(&got, usage)
+
+	if got != usage {
+		t.Fatalf("merged usage = %+v, want %+v", got, usage)
+	}
+}
+
 // TestParseACPTokenUsageCachedInputBucketing pins when cached reads are moved
 // out of inputTokens. Persisting overlapping buckets makes the dashboard
 // charge the cached prefix at both the full input rate and the cache-read
@@ -2119,7 +2131,7 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"ses_model","models":{"currentModelId":"nous:moonshotai/kimi-k2.6","availableModels":[{"modelId":"nous:moonshotai/kimi-k2.6","name":"moonshotai/kimi-k2.6"}]}}}\n' "$id"
       ;;
     *'"method":"session/prompt"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":17,"outputTokens":5,"cachedReadTokens":3}}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":17,"outputTokens":5,"cachedReadTokens":3,"reasoningTokens":11}}}\n' "$id"
       exit 0
       ;;
   esac
@@ -2167,8 +2179,8 @@ func TestHermesBackendAttributesUsageToACPDefaultModel(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected usage under Hermes current model, got %+v", result.Usage)
 		}
-		if usage.InputTokens != 17 || usage.OutputTokens != 5 || usage.CacheReadTokens != 3 {
-			t.Fatalf("usage = %+v, want input=17 output=5 cache_read=3", usage)
+		if usage.InputTokens != 17 || usage.OutputTokens != 5 || usage.CacheReadTokens != 3 || usage.ReasoningTokens != 11 {
+			t.Fatalf("usage = %+v, want input=17 output=5 cache_read=3 reasoning=11", usage)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for result")
