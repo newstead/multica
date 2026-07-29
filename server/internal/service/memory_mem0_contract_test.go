@@ -414,6 +414,74 @@ func TestMem0ProviderRetryResponseAndTokenBounds(t *testing.T) {
 	}
 }
 
+func TestMem0ProviderRecallBudgetsSerializedPayloadWithLargeMetadata(t *testing.T) {
+	t.Parallel()
+
+	mapped, err := MapMem0Scope(mem0TestScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory := mem0TestMemory(mapped, "bounded-memory", "Prefers concise answers", 0.95)
+	metadata := memory["metadata"].(map[string]any)
+	metadata["source_type"] = "issue_comment"
+	metadata["source_id"] = "66666666-6666-6666-6666-666666666666"
+	metadata["source_version"] = "7"
+	metadata["provider_controlled_blob"] = strings.Repeat("untrusted", 16*1024)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeMem0TestJSON(t, w, map[string]any{"results": []any{memory}})
+	}))
+	defer server.Close()
+
+	const tokenBudget = 80
+	provider := newMem0TestProvider(t, server.URL, Mem0ProviderConfig{
+		MaxRecallTokens: tokenBudget,
+		MaxMemoryTokens: 20,
+	})
+	recalled, err := provider.Recall(context.Background(), MemoryRecallRequest{
+		Scope: mem0TestScope(),
+		Query: "response preference",
+		Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+
+	injectedTokens := approximateTokens(string(recalled.Results))
+	if injectedTokens > tokenBudget {
+		t.Fatalf("serialized recall payload uses %d tokens, budget %d: %s", injectedTokens, tokenBudget, recalled.Results)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(recalled.Results, &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("recall items = %#v", items)
+	}
+	if len(items[0]) != 4 || items[0]["text"] != "Prefers concise answers" {
+		t.Fatalf("injected result is not the strict projection: %#v", items[0])
+	}
+	if _, ok := items[0]["metadata"]; ok {
+		t.Fatalf("provider metadata leaked into injected result: %#v", items[0])
+	}
+
+	var provenance map[string]any
+	if err := json.Unmarshal(recalled.Provenance, &provenance); err != nil {
+		t.Fatal(err)
+	}
+	if estimated := int(provenance["estimated_injected_tokens"].(float64)); estimated != injectedTokens || estimated > tokenBudget {
+		t.Fatalf("estimated injected tokens = %d, actual = %d, budget = %d", estimated, injectedTokens, tokenBudget)
+	}
+	provenanceItems := provenance["items"].([]any)
+	source := provenanceItems[0].(map[string]any)["source"].(map[string]any)
+	if source["source_type"] != "issue_comment" || source["source_id"] != "66666666-6666-6666-6666-666666666666" || source["source_version"] != "7" {
+		t.Fatalf("source provenance = %#v", source)
+	}
+	if strings.Contains(string(recalled.Provenance), "provider_controlled_blob") {
+		t.Fatalf("arbitrary provider metadata leaked into provenance")
+	}
+}
+
 func newMem0TestProvider(t *testing.T, baseURL string, overrides Mem0ProviderConfig) *Mem0Provider {
 	t.Helper()
 	overrides.BaseURL = baseURL

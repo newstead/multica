@@ -408,7 +408,11 @@ func (p *Mem0Provider) Recall(ctx context.Context, req MemoryRecallRequest) (Mem
 	provenanceItems := make([]map[string]any, 0, len(memories))
 	rejected := 0
 	truncated := 0
-	usedTokens := 0
+	resultsJSON, err := json.Marshal(results)
+	if err != nil {
+		return MemoryRecallResult{}, err
+	}
+	usedTokens := approximateTokens(string(resultsJSON))
 	recalledAt := p.clock().UTC().Format(time.RFC3339Nano)
 	for _, memory := range memories {
 		if err := validateMem0MemoryScope(memory, mapping); err != nil {
@@ -419,41 +423,36 @@ func (p *Mem0Provider) Recall(ctx context.Context, req MemoryRecallRequest) (Mem
 		if textTruncated {
 			truncated++
 		}
-		itemTokens := approximateTokens(text) + 24
-		if usedTokens+itemTokens > p.maxRecallTokens {
-			truncated++
-			continue
-		}
-		usedTokens += itemTokens
 		scopeJSON := mem0ScopeProvenance(memory, mapping)
+		// Results are prompt-injected. Keep this projection strict and budget
+		// its final serialized form; provider metadata belongs in provenance.
 		result := map[string]any{
-			"memory_id":          memory.ID,
 			"provider":           Mem0ProviderName,
 			"provider_record_id": memory.ID,
 			"text":               text,
 			"score":              memory.Score,
-			"scope":              scopeJSON,
-			"metadata":           memory.Metadata,
-			"created_at":         memory.CreatedAt,
-			"updated_at":         memory.UpdatedAt,
 		}
-		results = append(results, result)
+		candidateResults := append(results, result)
+		candidateJSON, err := json.Marshal(candidateResults)
+		if err != nil {
+			return MemoryRecallResult{}, err
+		}
+		candidateTokens := approximateTokens(string(candidateJSON))
+		if candidateTokens > p.maxRecallTokens {
+			truncated++
+			continue
+		}
+		results = candidateResults
+		resultsJSON = candidateJSON
+		usedTokens = candidateTokens
 		provenanceItems = append(provenanceItems, map[string]any{
 			"provider":           Mem0ProviderName,
 			"provider_record_id": memory.ID,
 			"score":              memory.Score,
 			"scope":              scopeJSON,
-			"source": map[string]any{
-				"source_type":    memory.Metadata["source_type"],
-				"source_id":      memory.Metadata["source_id"],
-				"source_version": memory.Metadata["source_version"],
-			},
-			"recalled_at": recalledAt,
+			"source":             mem0SourceProvenance(memory.Metadata),
+			"recalled_at":        recalledAt,
 		})
-	}
-	resultsJSON, err := json.Marshal(results)
-	if err != nil {
-		return MemoryRecallResult{}, err
 	}
 	provenanceJSON, err := json.Marshal(map[string]any{
 		"provider":                     Mem0ProviderName,
@@ -1000,6 +999,14 @@ func mem0ScopeProvenance(memory mem0Memory, mapping Mem0ScopeMapping) map[string
 		"agent_id":     memory.Metadata["multica_agent_id"],
 		"issue_id":     memory.Metadata["multica_issue_id"],
 		"task_id":      memory.Metadata["multica_task_id"],
+	}
+}
+
+func mem0SourceProvenance(metadata map[string]any) map[string]any {
+	return map[string]any{
+		"source_type":    stringValue(metadata["source_type"]),
+		"source_id":      stringValue(metadata["source_id"]),
+		"source_version": stringValue(metadata["source_version"]),
 	}
 }
 
