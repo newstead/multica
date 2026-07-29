@@ -1,5 +1,4 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { renderWithI18n } from "../../test/i18n";
@@ -117,7 +116,7 @@ function dailyRow(
 describe("AgentsUsagePage daily usage window", () => {
   beforeEach(() => {
     cleanup();
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-07-29T12:00:00Z"));
     tzRef.current = "UTC";
     chartRowsRef.current = [];
@@ -143,24 +142,21 @@ describe("AgentsUsagePage daily usage window", () => {
     vi.useRealTimers();
   });
 
-  it("trims the API headroom day before computing Agents daily KPIs and chart rows", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  it("trims the API headroom day before computing Agents daily KPIs and chart rows", () => {
     renderWithI18n(<AgentsUsagePage />);
 
-    await user.click(screen.getByRole("button", { name: "1d" }));
+    fireEvent.click(screen.getByRole("button", { name: "1d" }));
 
-    await waitFor(() => {
-      expect(chartRowsRef.current).toEqual([
-        {
-          date: "2026-07-29",
-          label: "7/29",
-          input: 1_000_000,
-          output: 0,
-          cacheRead: 1_000_000,
-          cacheWrite: 0,
-        },
-      ]);
-    });
+    expect(chartRowsRef.current).toEqual([
+      {
+        date: "2026-07-29",
+        label: "7/29",
+        input: 1_000_000,
+        output: 0,
+        cacheRead: 1_000_000,
+        cacheWrite: 0,
+      },
+    ]);
     expect(screen.getByText("$3.30")).toBeInTheDocument();
     expect(screen.getByText("50%")).toBeInTheDocument();
     expect(screen.getByText("1M cache reads")).toBeInTheDocument();
