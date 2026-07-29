@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
 // TestDashboardEndpoints covers the workspace-dashboard rollups:
@@ -1649,6 +1652,165 @@ func TestDashboardFailureWireContractKeepsEmptyReason(t *testing.T) {
 				t.Errorf("succeeded rows must serialize an explicit empty failure_reason, got %s", body)
 			}
 		})
+	}
+}
+
+func TestListDashboardAgentSessionsClassifiesEmptyFailureReason(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var runtimeID, agentID string
+	if err := testPool.QueryRow(ctx, `SELECT id FROM agent_runtime WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&runtimeID); err != nil {
+		t.Fatalf("fetch runtime: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID); err != nil {
+		t.Fatalf("fetch agent: %v", err)
+	}
+
+	var projectID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO project (workspace_id, title)
+		VALUES ($1, 'dashboard sessions unclassified query test')
+		RETURNING id
+	`, testWorkspaceID).Scan(&projectID); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectID) })
+
+	var issueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, creator_id, creator_type, project_id, number)
+		VALUES ($1, 'dashboard sessions unclassified issue', $2, 'member', $3,
+		        (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1))
+		RETURNING id
+	`, testWorkspaceID, testUserID, projectID).Scan(&issueID); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
+
+	now := time.Now().UTC()
+	insertFailed := func(name string, failureReason any) {
+		var taskID string
+		if err := testPool.QueryRow(ctx, `
+			INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, created_at, started_at, completed_at, failure_reason)
+			VALUES ($1, $2, $3, 'failed', $4, $5, $6, $7)
+			RETURNING id
+		`, agentID, issueID, runtimeID, now.Add(-30*time.Minute), now.Add(-25*time.Minute), now.Add(-5*time.Minute), failureReason).Scan(&taskID); err != nil {
+			t.Fatalf("insert %s task: %v", name, err)
+		}
+		t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
+	}
+	insertFailed("null reason", nil)
+	insertFailed("empty reason", "")
+
+	rows, err := testHandler.Queries.ListDashboardAgentSessions(ctx, db.ListDashboardAgentSessionsParams{
+		WorkspaceID: parseUUID(testWorkspaceID),
+		Since: pgtype.Timestamptz{
+			Time:  now.Add(-1 * time.Hour),
+			Valid: true,
+		},
+		ProjectID: parseUUID(projectID),
+	})
+	if err != nil {
+		t.Fatalf("list agent sessions: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one agent sessions row, got %d: %+v", len(rows), rows)
+	}
+
+	var reasons []DashboardAgentFailureReasonResponse
+	if err := json.Unmarshal(rows[0].FailureReasons, &reasons); err != nil {
+		t.Fatalf("decode failure reasons: %v", err)
+	}
+	byReason := map[string]int32{}
+	for _, r := range reasons {
+		byReason[r.FailureReason] += r.Count
+	}
+	if byReason["unclassified"] != 2 {
+		t.Fatalf("reason-less failures must be unclassified, got %+v", byReason)
+	}
+	if _, ok := byReason["unknown"]; ok {
+		t.Fatalf("agent sessions must not expose unknown for reason-less failures, got %+v", byReason)
+	}
+}
+
+func TestDashboardAgentSessionsUsesExactWindow(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var runtimeID, agentID string
+	if err := testPool.QueryRow(ctx, `SELECT id FROM agent_runtime WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&runtimeID); err != nil {
+		t.Fatalf("fetch runtime: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID); err != nil {
+		t.Fatalf("fetch agent: %v", err)
+	}
+
+	var projectID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO project (workspace_id, title)
+		VALUES ($1, 'dashboard sessions exact window project')
+		RETURNING id
+	`, testWorkspaceID).Scan(&projectID); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectID) })
+
+	var issueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, creator_id, creator_type, project_id, number)
+		VALUES ($1, 'dashboard sessions exact window issue', $2, 'member', $3,
+		        (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1))
+		RETURNING id
+	`, testWorkspaceID, testUserID, projectID).Scan(&issueID); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
+
+	now := time.Now().UTC()
+	startOfTodayUTC := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	yesterdayStarted := startOfTodayUTC.AddDate(0, 0, -1).Add(11 * time.Hour)
+	yesterdayCompleted := startOfTodayUTC.AddDate(0, 0, -1).Add(12 * time.Hour)
+
+	var taskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, started_at, completed_at, failure_reason, created_at)
+		VALUES ($1, $2, $3, 'failed', $4, $5, 'rol59_sessions_exact_window', now())
+		RETURNING id
+	`, agentID, issueID, runtimeID, yesterdayStarted, yesterdayCompleted).Scan(&taskID); err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
+
+	decodeRows := func(body []byte) []DashboardAgentSessionsResponse {
+		var rows []DashboardAgentSessionsResponse
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("decode agent sessions: %v", err)
+		}
+		return rows
+	}
+
+	w := httptest.NewRecorder()
+	testHandler.GetDashboardAgentSessions(w, newRequest("GET", "/api/dashboard/agents/sessions?days=1&tz=UTC&project_id="+projectID, nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("days=1: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if rows := decodeRows(w.Body.Bytes()); len(rows) != 0 {
+		t.Fatalf("days=1 must not reach yesterday's session, got %+v", rows)
+	}
+
+	w = httptest.NewRecorder()
+	testHandler.GetDashboardAgentSessions(w, newRequest("GET", "/api/dashboard/agents/sessions?days=2&tz=UTC&project_id="+projectID, nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("days=2: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	rows := decodeRows(w.Body.Bytes())
+	if len(rows) != 1 || rows[0].AgentID != agentID || rows[0].FailedCount != 1 {
+		t.Fatalf("days=2 must include yesterday's session, got %+v", rows)
 	}
 }
 

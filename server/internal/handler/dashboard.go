@@ -429,8 +429,11 @@ func (h *Handler) GetDashboardAgentSessions(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	// This response has no date dimension, so the client cannot trim the
+	// surplus N+1 bucket returned by parseSinceParamInTZ. Use the exact
+	// dashboard window, matching failures/by-agent.
 	tz := h.resolveViewingTZ(r)
-	since := parseSinceParamInTZ(r, 30, tz)
+	since := parseExactSinceParamInTZ(r, 30, tz)
 
 	rows, err := h.Queries.ListDashboardAgentSessions(r.Context(), db.ListDashboardAgentSessionsParams{
 		WorkspaceID: parseUUID(workspaceID),
