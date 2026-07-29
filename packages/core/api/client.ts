@@ -166,19 +166,11 @@ import type {
   CreateBillingCheckoutSessionResponse,
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
+  MemoryConfig,
+  MemoryRecallSamplesResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type { CreateFeedbackResponse, FeedbackKind } from "../feedback/types";
-import type {
-  ListMemoryRecallSamplesResponse,
-  MemoryConfig,
-} from "../memory/types";
-import {
-  EMPTY_LIST_MEMORY_RECALL_SAMPLES_RESPONSE,
-  EMPTY_MEMORY_CONFIG,
-  ListMemoryRecallSamplesResponseSchema,
-  MemoryConfigSchema,
-} from "../memory/schemas";
 import type {
   CloudRuntimeNode,
   CreateCloudRuntimeNodeRequest,
@@ -309,6 +301,10 @@ import {
   EMPTY_GITHUB_CONNECT_RESPONSE,
   EMPTY_LIST_GITHUB_INSTALLATIONS_RESPONSE,
   EMPTY_LIST_GITHUB_REPOSITORIES_RESPONSE,
+  EMPTY_MEMORY_CONFIG,
+  EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE,
+  MemoryConfigSchema,
+  MemoryRecallSamplesResponseSchema,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1709,6 +1705,50 @@ export class ApiClient {
     );
   }
 
+  async getMemoryConfig(workspaceId: string): Promise<MemoryConfig> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/memory/config`,
+    );
+    return parseWithFallback<MemoryConfig>(
+      raw,
+      MemoryConfigSchema,
+      EMPTY_MEMORY_CONFIG,
+      { endpoint: "GET /api/workspaces/:id/memory/config" },
+    );
+  }
+
+  async getMemoryRecallSamples(
+    workspaceId: string,
+    params: {
+      limit?: number;
+      offset?: number;
+      provider?: string;
+      project_id?: string;
+      agent_id?: string;
+    } = {},
+  ): Promise<MemoryRecallSamplesResponse> {
+    const search = new URLSearchParams();
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.offset) search.set("offset", String(params.offset));
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/memory/recall-samples?${search}`,
+    );
+    const parsed = parseWithFallback<MemoryRecallSamplesResponse>(
+      raw,
+      MemoryRecallSamplesResponseSchema,
+      EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/memory/recall-samples" },
+    );
+    return {
+      samples: parsed.samples.filter((sample) => {
+        if (params.provider && sample.provider !== params.provider) return false;
+        if (params.project_id && sample.project_id !== params.project_id) return false;
+        if (params.agent_id && sample.agent_id !== params.agent_id) return false;
+        return true;
+      }),
+    };
+  }
+
   async initiateUpdate(
     runtimeId: string,
     targetVersion: string,
@@ -2889,33 +2929,6 @@ export class ApiClient {
       WebhookDeliveryResponseSchema,
       { ...EMPTY_WEBHOOK_DELIVERY, autopilot_id: autopilotId },
       { endpoint: "POST /api/autopilots/:id/deliveries/:deliveryId/replay" },
-    );
-  }
-
-  // Memory gateway
-  async getMemoryConfig(workspaceId: string): Promise<MemoryConfig> {
-    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/memory/config`);
-    return parseWithFallback(raw, MemoryConfigSchema, EMPTY_MEMORY_CONFIG, {
-      endpoint: "GET /api/workspaces/:id/memory/config",
-    });
-  }
-
-  async listMemoryRecallSamples(
-    workspaceId: string,
-    params?: { limit?: number; offset?: number },
-  ): Promise<ListMemoryRecallSamplesResponse> {
-    const search = new URLSearchParams();
-    if (params?.limit) search.set("limit", params.limit.toString());
-    if (params?.offset) search.set("offset", params.offset.toString());
-    const suffix = search.size > 0 ? `?${search.toString()}` : "";
-    const raw = await this.fetch<unknown>(
-      `/api/workspaces/${workspaceId}/memory/recall-samples${suffix}`,
-    );
-    return parseWithFallback(
-      raw,
-      ListMemoryRecallSamplesResponseSchema,
-      EMPTY_LIST_MEMORY_RECALL_SAMPLES_RESPONSE,
-      { endpoint: "GET /api/workspaces/:id/memory/recall-samples" },
     );
   }
 

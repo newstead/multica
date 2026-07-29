@@ -46,6 +46,10 @@ import type {
   User,
   WebhookDelivery,
 } from "../types";
+import type {
+  MemoryConfig,
+  MemoryRecallSamplesResponse,
+} from "../types/memory";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
 
@@ -977,6 +981,50 @@ const DashboardFailureByAgentSchema = z.object({
 export const DashboardFailureByAgentListSchema = z.array(
   DashboardFailureByAgentSchema,
 );
+
+export const MemoryConfigSchema = z.object({
+  workspace_id: z.string().default(""),
+  enabled: z.boolean().default(false),
+  primary_provider: z.string().default(""),
+  shadow_provider: z.string().nullable().optional(),
+  read_mode: z.string().default("primary"),
+  provider_settings: z.record(z.string(), z.unknown()).default({}),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+}).loose();
+
+export const EMPTY_MEMORY_CONFIG: MemoryConfig = {
+  workspace_id: "",
+  enabled: false,
+  primary_provider: "",
+  shadow_provider: null,
+  read_mode: "primary",
+  provider_settings: {},
+};
+
+const MemoryRecallSampleSchema = z.object({
+  id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  project_id: z.string().nullable().optional(),
+  agent_id: z.string().nullable().optional(),
+  issue_id: z.string().nullable().optional(),
+  task_id: z.string().nullable().optional(),
+  provider: z.string().default(""),
+  read_mode: z.string().default("primary"),
+  recall_correlation_id: z.string().default(""),
+  query: z.string().default(""),
+  results: z.array(z.unknown()).default([]),
+  provenance: z.record(z.string(), z.unknown()).default({}),
+  sampled_at: z.string().default(""),
+}).loose();
+
+export const MemoryRecallSamplesResponseSchema = z.object({
+  samples: z.array(MemoryRecallSampleSchema).default([]),
+}).loose();
+
+export const EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE: MemoryRecallSamplesResponse = {
+  samples: [],
+};
 
 // ---------------------------------------------------------------------------
 // Runtime usage schemas — the runtime-detail page's four usage endpoints

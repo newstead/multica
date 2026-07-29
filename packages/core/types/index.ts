@@ -113,6 +113,11 @@ export type {
 } from "./chat";
 export type { StorageAdapter } from "./storage";
 export type {
+  MemoryConfig,
+  MemoryRecallSample,
+  MemoryRecallSamplesResponse,
+} from "./memory";
+export type {
   Project,
   ProjectStatus,
   ProjectPriority,
