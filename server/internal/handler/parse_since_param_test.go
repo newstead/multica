@@ -166,3 +166,44 @@ func TestParseSinceParamInTZ(t *testing.T) {
 		})
 	}
 }
+
+func TestParseExactSinceParamInTZ(t *testing.T) {
+	utc := time.UTC
+
+	expectDays := func(days int) time.Time {
+		return sinceFromDays(time.Now(), days-1, utc)
+	}
+
+	cases := []struct {
+		name        string
+		query       string
+		defaultDays int
+		wantDays    int
+	}{
+		{"days=1 starts today", "days=1", 30, 1},
+		{"days=7 starts six days ago", "days=7", 30, 7},
+		{"invalid days uses default exactly", "days=0", 30, 30},
+		{"no days param uses default exactly", "", 90, 90},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			url := "/api/dashboard/usage/by-agent"
+			if tc.query != "" {
+				url += "?" + tc.query
+			}
+			req := httptest.NewRequest("GET", url, nil)
+
+			got := parseExactSinceParamInTZ(req, tc.defaultDays, "UTC")
+			if !got.Valid {
+				t.Fatalf("expected a valid timestamptz, got Valid=false")
+			}
+			want := expectDays(tc.wantDays)
+			if diff := got.Time.Sub(want); diff < -2*time.Second || diff > 2*time.Second {
+				t.Errorf("cutoff mismatch: got %s, want ~%s (effective days=%d)",
+					got.Time.Format(time.RFC3339), want.Format(time.RFC3339), tc.wantDays)
+			}
+		})
+	}
+}
