@@ -233,6 +233,7 @@ export type {
   CreateBillingPortalSessionResponse,
 } from "./billing";
 export type {
+  MemoryConfig,
   MemoryConfigResponse,
   MemoryMem0BoardDelivery,
   MemoryMem0BoardResponse,

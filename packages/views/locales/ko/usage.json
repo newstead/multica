@@ -99,6 +99,7 @@
   "tabs": {
     "overview": "개요",
     "agents": "에이전트",
+    "hindsight": "Hindsight",
     "mem0": "mem0"
   },
   "agents": {
@@ -171,6 +172,59 @@
       "queue_p95": "대기 p95",
       "run_p50": "실행 p50",
       "run_p95": "실행 p95"
+    }
+  },
+  "hindsight": {
+    "title": "Hindsight 메모리",
+    "subtitle": "Hindsight 뱅크의 recall 품질, provider 상태, 감사 가능한 샘플을 봅니다.",
+    "filters": {
+      "all_agents": "모든 에이전트"
+    },
+    "badges": {
+      "live": "라이브 샘플",
+      "seeded": "시드 기준선"
+    },
+    "error": {
+      "title": "메모리 보드를 불러올 수 없음",
+      "body": "Hindsight 보드를 불러오지 못했습니다. 워크스페이스 권한은 계속 적용되며 원본 메모리 내용은 렌더링하지 않습니다."
+    },
+    "empty": {
+      "title": "라이브 Hindsight 샘플 없음",
+      "body": "이 워크스페이스에 recall 샘플이 캡처될 때까지 시드 기준선 보드를 표시합니다."
+    },
+    "kpi": {
+      "quality": "Recall 품질",
+      "samples": "샘플 {{count}}개",
+      "latency": "Recall 지연",
+      "p95": "p95 {{value}}",
+      "tokens_cost": "Token / 비용",
+      "errors": "오류"
+    },
+    "health": {
+      "healthy": "뱅크 정상",
+      "degraded": "뱅크 저하",
+      "offline": "뱅크 오프라인"
+    },
+    "growth": {
+      "title": "스토리지 증가",
+      "subtitle": "샘플 기간의 facts, observations, 뱅크 크기입니다.",
+      "facts": "Facts",
+      "observations": "Observations",
+      "storage": "Storage MB"
+    },
+    "mix": {
+      "facts_observations": "Facts / observations",
+      "consolidation_ops": "Consolidation / ops",
+      "mental_models": "Mental models",
+      "storage": "Storage"
+    },
+    "samples": {
+      "title": "Recall 품질 샘플",
+      "subtitle": "감사 가능한 샘플 메타데이터, 결과 수, 점수, provenance 키입니다.",
+      "results": "결과",
+      "no_provenance": "Provenance 없음",
+      "issue_link": "Issue",
+      "latency": "{{value}}ms"
     }
   },
   "memory": {

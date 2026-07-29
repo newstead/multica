@@ -45,10 +45,12 @@ import type {
   TimelineEntry,
   User,
   WebhookDelivery,
-  MemoryConfigResponse,
+} from "../types";
+import type {
+  MemoryConfig,
   MemoryMem0BoardResponse,
   MemoryRecallSamplesResponse,
-} from "../types";
+} from "../types/memory";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
 
@@ -151,90 +153,6 @@ export const IssuePullRequestsResponseSchema = z.object({
 
 export const EMPTY_ISSUE_PULL_REQUESTS_RESPONSE: { pull_requests: GitHubPullRequest[] } = {
   pull_requests: [],
-};
-
-export const MemoryConfigResponseSchema = z.object({
-  workspace_id: z.string().optional().default(""),
-  enabled: z.boolean().optional().default(false),
-  primary_provider: z.string().optional().default(""),
-  shadow_provider: z.string().nullable().optional().default(null),
-  read_mode: z.string().optional().default("primary"),
-  provider_settings: z.record(z.string(), z.unknown()).optional().default({}),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
-}).loose();
-
-export const EMPTY_MEMORY_CONFIG_RESPONSE: MemoryConfigResponse = {
-  workspace_id: "",
-  enabled: false,
-  primary_provider: "",
-  shadow_provider: null,
-  read_mode: "primary",
-  provider_settings: {},
-};
-
-export const MemoryRecallSampleSchema = z.object({
-  id: z.string().optional().default(""),
-  workspace_id: z.string().optional().default(""),
-  project_id: z.string().nullable().optional(),
-  agent_id: z.string().nullable().optional(),
-  issue_id: z.string().nullable().optional(),
-  task_id: z.string().nullable().optional(),
-  provider: z.string().optional().default(""),
-  read_mode: z.string().optional().default("primary"),
-  recall_correlation_id: z.string().optional().default(""),
-  query: z.string().optional().default(""),
-  results: z.array(z.unknown()).optional().default([]),
-  provenance: z.record(z.string(), z.unknown()).optional().default({}),
-  sampled_at: z.string().optional().default(""),
-}).loose();
-
-
-export const MemoryProviderHealthSchema = z.object({
-  provider: z.string().optional().default(""),
-  ok: z.boolean().optional().default(false),
-  details: z.record(z.string(), z.unknown()).optional(),
-}).loose();
-
-export const MemoryMem0BoardDeliverySchema = z.object({
-  id: z.string().optional().default(""),
-  workspace_id: z.string().optional().default(""),
-  memory_event_id: z.string().optional().default(""),
-  project_id: z.string().nullable().optional(),
-  agent_id: z.string().nullable().optional(),
-  issue_id: z.string().nullable().optional(),
-  task_id: z.string().nullable().optional(),
-  event_type: z.string().optional().default(""),
-  provider: z.string().optional().default("mem0"),
-  status: z.string().optional().default("unknown"),
-  attempt_count: z.number().optional().default(0),
-  delivery_lag_ms: z.number().optional().default(0),
-  event_created_at: z.string().optional().default(""),
-  delivery_created_at: z.string().optional().default(""),
-  last_attempt_at: z.string().optional(),
-  terminal_at: z.string().optional(),
-  updated_at: z.string().optional().default(""),
-}).loose();
-
-export const MemoryMem0BoardResponseSchema = z.object({
-  health: MemoryProviderHealthSchema.nullable().optional().default(null),
-  health_error: z.string().optional(),
-  deliveries: z.array(MemoryMem0BoardDeliverySchema).default([]),
-  recall_samples: z.array(MemoryRecallSampleSchema).default([]),
-}).loose();
-
-export const EMPTY_MEMORY_MEM0_BOARD_RESPONSE: MemoryMem0BoardResponse = {
-  health: null,
-  deliveries: [],
-  recall_samples: [],
-};
-
-export const MemoryRecallSamplesResponseSchema = z.object({
-  samples: z.array(MemoryRecallSampleSchema).default([]),
-}).loose();
-
-export const EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE: MemoryRecallSamplesResponse = {
-  samples: [],
 };
 
 // Label responses are consumed by settings tables and resource pickers. Keep
@@ -1064,6 +982,89 @@ const DashboardFailureByAgentSchema = z.object({
 export const DashboardFailureByAgentListSchema = z.array(
   DashboardFailureByAgentSchema,
 );
+
+export const MemoryConfigSchema = z.object({
+  workspace_id: z.string().default(""),
+  enabled: z.boolean().default(false),
+  primary_provider: z.string().default(""),
+  shadow_provider: z.string().nullable().optional(),
+  read_mode: z.string().default("primary"),
+  provider_settings: z.record(z.string(), z.unknown()).default({}),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+}).loose();
+
+export const EMPTY_MEMORY_CONFIG: MemoryConfig = {
+  workspace_id: "",
+  enabled: false,
+  primary_provider: "",
+  shadow_provider: null,
+  read_mode: "primary",
+  provider_settings: {},
+};
+
+const MemoryRecallSampleSchema = z.object({
+  id: z.string().default(""),
+  workspace_id: z.string().default(""),
+  project_id: z.string().nullable().optional(),
+  agent_id: z.string().nullable().optional(),
+  issue_id: z.string().nullable().optional(),
+  task_id: z.string().nullable().optional(),
+  provider: z.string().default(""),
+  read_mode: z.string().default("primary"),
+  recall_correlation_id: z.string().default(""),
+  query: z.string().default(""),
+  results: z.array(z.unknown()).default([]),
+  provenance: z.record(z.string(), z.unknown()).default({}),
+  sampled_at: z.string().default(""),
+}).loose();
+
+export const MemoryProviderHealthSchema = z.object({
+  provider: z.string().optional().default(""),
+  ok: z.boolean().optional().default(false),
+  details: z.record(z.string(), z.unknown()).optional(),
+}).loose();
+
+export const MemoryMem0BoardDeliverySchema = z.object({
+  id: z.string().optional().default(""),
+  workspace_id: z.string().optional().default(""),
+  memory_event_id: z.string().optional().default(""),
+  project_id: z.string().nullable().optional(),
+  agent_id: z.string().nullable().optional(),
+  issue_id: z.string().nullable().optional(),
+  task_id: z.string().nullable().optional(),
+  event_type: z.string().optional().default(""),
+  provider: z.string().optional().default("mem0"),
+  status: z.string().optional().default("unknown"),
+  attempt_count: z.number().optional().default(0),
+  delivery_lag_ms: z.number().optional().default(0),
+  event_created_at: z.string().optional().default(""),
+  delivery_created_at: z.string().optional().default(""),
+  last_attempt_at: z.string().optional(),
+  terminal_at: z.string().optional(),
+  updated_at: z.string().optional().default(""),
+}).loose();
+
+export const MemoryMem0BoardResponseSchema = z.object({
+  health: MemoryProviderHealthSchema.nullable().optional().default(null),
+  health_error: z.string().optional(),
+  deliveries: z.array(MemoryMem0BoardDeliverySchema).optional().default([]),
+  recall_samples: z.array(MemoryRecallSampleSchema).optional().default([]),
+}).loose();
+
+export const EMPTY_MEMORY_MEM0_BOARD_RESPONSE: MemoryMem0BoardResponse = {
+  health: null,
+  deliveries: [],
+  recall_samples: [],
+};
+
+export const MemoryRecallSamplesResponseSchema = z.object({
+  samples: z.array(MemoryRecallSampleSchema).default([]),
+}).loose();
+
+export const EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE: MemoryRecallSamplesResponse = {
+  samples: [],
+};
 
 // ---------------------------------------------------------------------------
 // Runtime usage schemas — the runtime-detail page's four usage endpoints

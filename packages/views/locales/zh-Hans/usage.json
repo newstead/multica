@@ -99,6 +99,7 @@
   "tabs": {
     "overview": "概览",
     "agents": "智能体",
+    "hindsight": "Hindsight",
     "mem0": "mem0"
   },
   "agents": {
@@ -171,6 +172,59 @@
       "queue_p95": "排队 p95",
       "run_p50": "运行 p50",
       "run_p95": "运行 p95"
+    }
+  },
+  "hindsight": {
+    "title": "Hindsight 记忆",
+    "subtitle": "查看 Hindsight 记忆库的召回质量、provider 健康度和可审计样本。",
+    "filters": {
+      "all_agents": "全部智能体"
+    },
+    "badges": {
+      "live": "实时样本",
+      "seeded": "种子基线"
+    },
+    "error": {
+      "title": "记忆看板不可用",
+      "body": "Hindsight 看板加载失败。工作区权限仍然生效，此处不会渲染原始记忆内容。"
+    },
+    "empty": {
+      "title": "还没有实时 Hindsight 样本",
+      "body": "在此工作区产生召回样本前，先显示种子基线看板。"
+    },
+    "kpi": {
+      "quality": "召回质量",
+      "samples": "{{count}} 个样本",
+      "latency": "召回延迟",
+      "p95": "p95 {{value}}",
+      "tokens_cost": "Token / 成本",
+      "errors": "错误"
+    },
+    "health": {
+      "healthy": "记忆库健康",
+      "degraded": "记忆库降级",
+      "offline": "记忆库离线"
+    },
+    "growth": {
+      "title": "存储增长",
+      "subtitle": "采样窗口内的事实、观察和记忆库大小。",
+      "facts": "事实",
+      "observations": "观察",
+      "storage": "存储 MB"
+    },
+    "mix": {
+      "facts_observations": "事实 / 观察",
+      "consolidation_ops": "整理 / 操作",
+      "mental_models": "心智模型",
+      "storage": "存储"
+    },
+    "samples": {
+      "title": "召回质量样本",
+      "subtitle": "展示可审计样本元数据、结果数量、评分和 provenance 键。",
+      "results": "结果",
+      "no_provenance": "无 provenance",
+      "issue_link": "Issue",
+      "latency": "{{value}}ms"
     }
   },
   "memory": {

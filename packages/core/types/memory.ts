@@ -1,7 +1,7 @@
 export type MemoryProvider = "hindsight" | "mem0" | string;
 export type MemoryReadMode = "primary" | "shadow" | "dual" | string;
 
-export interface MemoryConfigResponse {
+export interface MemoryConfig {
   workspace_id: string;
   enabled: boolean;
   primary_provider: MemoryProvider;
@@ -12,6 +12,7 @@ export interface MemoryConfigResponse {
   updated_at?: string;
 }
 
+export type MemoryConfigResponse = MemoryConfig;
 
 export interface MemoryProviderHealth {
   provider: MemoryProvider;
@@ -39,13 +40,6 @@ export interface MemoryMem0BoardDelivery {
   updated_at: string;
 }
 
-export interface MemoryMem0BoardResponse {
-  health?: MemoryProviderHealth | null;
-  health_error?: string;
-  deliveries: MemoryMem0BoardDelivery[];
-  recall_samples: MemoryRecallSample[];
-}
-
 export interface MemoryRecallSample {
   id: string;
   workspace_id: string;
@@ -60,6 +54,13 @@ export interface MemoryRecallSample {
   results: unknown[];
   provenance: Record<string, unknown>;
   sampled_at: string;
+}
+
+export interface MemoryMem0BoardResponse {
+  health?: MemoryProviderHealth | null;
+  health_error?: string;
+  deliveries: MemoryMem0BoardDelivery[];
+  recall_samples: MemoryRecallSample[];
 }
 
 export interface MemoryRecallSamplesResponse {

@@ -99,6 +99,7 @@
   "tabs": {
     "overview": "概要",
     "agents": "エージェント",
+    "hindsight": "Hindsight",
     "mem0": "mem0"
   },
   "agents": {
@@ -171,6 +172,59 @@
       "queue_p95": "待機 p95",
       "run_p50": "実行 p50",
       "run_p95": "実行 p95"
+    }
+  },
+  "hindsight": {
+    "title": "Hindsight メモリ",
+    "subtitle": "Hindsight バンクの recall 品質、provider の健全性、監査可能なサンプルを表示します。",
+    "filters": {
+      "all_agents": "すべてのエージェント"
+    },
+    "badges": {
+      "live": "ライブサンプル",
+      "seeded": "シード基準"
+    },
+    "error": {
+      "title": "メモリボードを読み込めません",
+      "body": "Hindsight ボードを読み込めませんでした。ワークスペース権限は維持され、ここでは生のメモリ内容を表示しません。"
+    },
+    "empty": {
+      "title": "ライブ Hindsight サンプルはまだありません",
+      "body": "このワークスペースで recall サンプルが取得されるまで、シード基準ボードを表示します。"
+    },
+    "kpi": {
+      "quality": "Recall 品質",
+      "samples": "{{count}} サンプル",
+      "latency": "Recall レイテンシ",
+      "p95": "p95 {{value}}",
+      "tokens_cost": "Token / コスト",
+      "errors": "エラー"
+    },
+    "health": {
+      "healthy": "バンク正常",
+      "degraded": "バンク低下",
+      "offline": "バンクオフライン"
+    },
+    "growth": {
+      "title": "ストレージ増加",
+      "subtitle": "サンプル期間の facts、observations、バンクサイズです。",
+      "facts": "Facts",
+      "observations": "Observations",
+      "storage": "Storage MB"
+    },
+    "mix": {
+      "facts_observations": "Facts / observations",
+      "consolidation_ops": "Consolidation / ops",
+      "mental_models": "Mental models",
+      "storage": "Storage"
+    },
+    "samples": {
+      "title": "Recall 品質サンプル",
+      "subtitle": "監査可能なサンプルメタデータ、結果数、スコア、provenance キーです。",
+      "results": "結果",
+      "no_provenance": "Provenance なし",
+      "issue_link": "Issue",
+      "latency": "{{value}}ms"
     }
   },
   "memory": {
