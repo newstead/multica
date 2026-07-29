@@ -1730,6 +1730,9 @@ export class ApiClient {
     const search = new URLSearchParams();
     if (params.limit) search.set("limit", String(params.limit));
     if (params.offset) search.set("offset", String(params.offset));
+    if (params.provider) search.set("provider", params.provider);
+    if (params.project_id) search.set("project_id", params.project_id);
+    if (params.agent_id) search.set("agent_id", params.agent_id);
     const raw = await this.fetch<unknown>(
       `/api/workspaces/${workspaceId}/memory/recall-samples?${search}`,
     );

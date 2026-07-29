@@ -1509,3 +1509,37 @@ describe("ApiClient", () => {
     });
   });
 });
+
+describe("ApiClient memory recall samples", () => {
+  it("sends filters in the request query before pagination is applied", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ samples: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example.test");
+    await client.getMemoryRecallSamples("ws-1", {
+      limit: 25,
+      offset: 50,
+      provider: "hindsight",
+      project_id: "project-1",
+      agent_id: "agent-1",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0]!;
+    const requestUrl = new URL(url as string);
+
+    expect(requestUrl.pathname).toBe("/api/workspaces/ws-1/memory/recall-samples");
+    expect(Object.fromEntries(requestUrl.searchParams)).toEqual({
+      limit: "25",
+      offset: "50",
+      provider: "hindsight",
+      project_id: "project-1",
+      agent_id: "agent-1",
+    });
+  });
+});
