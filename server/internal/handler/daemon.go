@@ -2943,11 +2943,11 @@ type TaskCompleteDiffStats struct {
 }
 
 type TaskCompleteRequest struct {
-	PRURL     string                 `json:"pr_url"`
-	Output    string                 `json:"output"`
-	SessionID string                 `json:"session_id"` // Claude session ID for future resumption
-	WorkDir   string                 `json:"work_dir"`   // working directory used during execution
-	DiffStats    *TaskCompleteDiffStats             `json:"diff_stats,omitempty"`
+	PRURL        string                            `json:"pr_url"`
+	Output       string                            `json:"output"`
+	SessionID    string                            `json:"session_id"` // Claude session ID for future resumption
+	WorkDir      string                            `json:"work_dir"`   // working directory used during execution
+	DiffStats    *TaskCompleteDiffStats            `json:"diff_stats,omitempty"`
 	MemoryRecall []protocol.MemoryRecallProvenance `json:"memory_recall,omitempty"`
 	// SessionRolloutMissing: the daemon withheld this task's Codex session
 	// because its rollout was missing (MUL-5305). Clear the resume pointer and
