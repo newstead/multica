@@ -231,7 +231,7 @@
   "detail": {
     "not_found": "这个 issue 不存在或已在该工作区被删除。",
     "breadcrumb_project_unknown": "未知项目",
-    "back_to_issues": "返回 issue 列表",
+    "back": "返回",
     "title_placeholder": "issue 标题",
     "desc_placeholder": "添加描述...",
     "sub_issues_label": "子 issue",
@@ -515,6 +515,7 @@
     "due_next_week": "下周",
     "due_clear": "清除日期",
     "unassigned": "未分配",
+    "open_in_new_tab": "在新标签页打开",
     "pin_to_sidebar": "固定到侧边栏",
     "unpin_from_sidebar": "从侧边栏取消固定",
     "copy_link": "复制链接",

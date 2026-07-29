@@ -231,7 +231,7 @@
   "detail": {
     "not_found": "이 워크스페이스에 해당 이슈가 없거나 삭제되었습니다.",
     "breadcrumb_project_unknown": "알 수 없는 프로젝트",
-    "back_to_issues": "이슈로 돌아가기",
+    "back": "뒤로",
     "title_placeholder": "이슈 제목",
     "desc_placeholder": "설명 추가...",
     "sub_issues_label": "하위 이슈",
@@ -515,6 +515,7 @@
     "due_next_week": "다음 주",
     "due_clear": "날짜 지우기",
     "unassigned": "담당자 없음",
+    "open_in_new_tab": "새 탭에서 열기",
     "pin_to_sidebar": "사이드바에 고정",
     "unpin_from_sidebar": "사이드바 고정 해제",
     "copy_link": "링크 복사",
