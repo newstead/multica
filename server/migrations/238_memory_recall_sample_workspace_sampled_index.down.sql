@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_memory_recall_sample_workspace_sampled;

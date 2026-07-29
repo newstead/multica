@@ -25,3 +25,10 @@ func TestAgentSkillTogglesCompatDecisionStaysEnabled(t *testing.T) {
 		t.Fatal("agent skill toggles must stay enabled for installed v0.4.0 clients")
 	}
 }
+
+func TestMemoryGatewayReleaseFlagDefaultsToOff(t *testing.T) {
+	ctx := context.Background()
+	if MemoryGatewayEnabled(ctx, nil) {
+		t.Fatal("memory gateway release flag must default to off")
+	}
+}
