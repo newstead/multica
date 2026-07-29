@@ -3,9 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryAuditEvent, MemoryMutationResponse } from "@multica/core/types";
 import { renderWithI18n } from "../test/i18n";
-import { MemoryPage } from "./memory-page";
+import { MemoryAuditBoard } from "./memory-audit-board";
 
 const deleteMemory = vi.hoisted(() => vi.fn());
+const eraseMemory = vi.hoisted(() => vi.fn());
 const auditState = vi.hoisted(() => ({
   current: {
     events: [] as MemoryAuditEvent[],
@@ -27,7 +28,7 @@ vi.mock("@multica/core/memory", () => ({
   useCorrectMemory: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useInvalidateMemory: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useDeleteMemory: () => ({ isPending: false, mutateAsync: deleteMemory }),
-  useEraseMemoryScope: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useEraseMemoryScope: () => ({ isPending: false, mutateAsync: eraseMemory }),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -90,10 +91,11 @@ describe("MemoryPage", () => {
   beforeEach(() => {
     auditState.current.events = [event];
     deleteMemory.mockReset();
+    eraseMemory.mockReset();
   });
 
   it("surfaces provider delivery failures in the audit table", () => {
-    renderWithI18n(<MemoryPage />);
+    renderWithI18n(<MemoryAuditBoard />);
 
     expect(screen.getByText("mem0")).toBeInTheDocument();
     expect(screen.getByText("hindsight")).toBeInTheDocument();
@@ -112,7 +114,7 @@ describe("MemoryPage", () => {
     };
     deleteMemory.mockResolvedValue(response);
 
-    renderWithI18n(<MemoryPage />);
+    renderWithI18n(<MemoryAuditBoard />);
 
     await user.click(screen.getAllByTitle("Delete")[0]!);
     const dialog = screen.getByRole("dialog", { name: "Delete memory" });
@@ -131,5 +133,54 @@ describe("MemoryPage", () => {
       confirmation: "DELETE",
     });
     expect(await within(dialog).findByText(/Provider result 1\/2/)).toBeInTheDocument();
+    expect(within(dialog).getByText("mem0")).toBeInTheDocument();
+    expect(within(dialog).getByText("delivered")).toBeInTheDocument();
+    expect(within(dialog).getByText("hindsight")).toBeInTheDocument();
+    expect(within(dialog).getByText("terminal_failed")).toBeInTheDocument();
+    expect(within(dialog).getByText("provider rejected delete")).toBeInTheDocument();
   });
+  it("erases project and issue scopes with confirmation and filter ids", async () => {
+    const user = userEvent.setup();
+    const response: MemoryMutationResponse = {
+      operation: "erase",
+      results: [
+        { provider: "mem0", status: "delivered", provider_memory_id: "mem-1234567890" },
+        { provider: "hindsight", status: "terminal_failed", provider_memory_id: "hind-1234567890", error: "erase failed" },
+      ],
+    };
+    eraseMemory.mockResolvedValue(response);
+
+    renderWithI18n(<MemoryAuditBoard />);
+
+    const projectErase = screen.getByRole("button", { name: "Erase project" });
+    const issueErase = screen.getByRole("button", { name: "Erase issue" });
+    expect(projectErase).toBeDisabled();
+    expect(issueErase).toBeDisabled();
+
+    await user.type(screen.getByPlaceholderText("Project ID"), "project-12345678");
+    await user.type(screen.getByPlaceholderText("Issue ID"), "issue-12345678");
+    await user.type(screen.getByPlaceholderText("ERASE"), "ERASE");
+
+    expect(projectErase).toBeEnabled();
+    expect(issueErase).toBeEnabled();
+
+    await user.click(projectErase);
+    expect(eraseMemory).toHaveBeenLastCalledWith({
+      scope: "project",
+      project_id: "project-12345678",
+      issue_id: undefined,
+      confirmation: "ERASE",
+    });
+    expect(await screen.findByText(/Provider result 1\/2/)).toBeInTheDocument();
+    expect(screen.getByText("erase failed")).toBeInTheDocument();
+
+    await user.click(issueErase);
+    expect(eraseMemory).toHaveBeenLastCalledWith({
+      scope: "issue",
+      project_id: undefined,
+      issue_id: "issue-12345678",
+      confirmation: "ERASE",
+    });
+  });
+
 });

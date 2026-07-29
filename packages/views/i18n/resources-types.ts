@@ -28,7 +28,6 @@ import type usage from "../locales/en/usage.json";
 import type memory from "../locales/en/memory.json";
 import type squads from "../locales/en/squads.json";
 import type billing from "../locales/en/billing.json";
-import type memory from "../locales/en/memory.json";
 
 // Module augmentation enables i18next v26 selector API across the monorepo:
 // `t($ => $.signin.title)` resolves to the value in en/auth.json.
@@ -71,7 +70,6 @@ declare global {
     memory: typeof memory;
     squads: typeof squads;
     billing: typeof billing;
-    memory: typeof memory;
   }
 }
 
