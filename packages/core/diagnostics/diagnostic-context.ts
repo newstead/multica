@@ -71,6 +71,7 @@ const WORKSPACE_ROUTES: readonly RoutePattern[] = [
   ["usage"],
   ["usage", "agents"],
   ["usage", "hindsight"],
+  ["memory"],
   ["billing"],
   ["runtimes"],
   ["runtimes", ":id"],
