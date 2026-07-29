@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DashboardUsageDaily } from "@multica/core/types";
 import {
   aggregateAgentFailures,
   anonymizeUnresolvedAgentRows,
@@ -15,11 +16,133 @@ import {
   computeDailyTotals,
   computeFailureTotals,
   DELETED_AGENTS_ROW_ID,
+  filterDailyRowsToWindow,
   formatDuration,
   hasRateSample,
   mergeAgentDashboardRows,
   sortAgentFailures,
 } from "./utils";
+
+describe("filterDailyRowsToWindow", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function row(date: string, input = 1): DashboardUsageDaily {
+    return {
+      date,
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      input_tokens: input,
+      output_tokens: input * 2,
+      cache_read_tokens: input * 3,
+      cache_write_tokens: input * 4,
+      task_count: input,
+    };
+  }
+
+  function dateRangeEnding(today: string, count: number): DashboardUsageDaily[] {
+    return Array.from({ length: count }, (_, i) => {
+      const dt = new Date(today + "T00:00:00Z");
+      dt.setUTCDate(dt.getUTCDate() - (count - 1 - i));
+      return row(dt.toISOString().slice(0, 10));
+    });
+  }
+
+  it("keeps only today when days=1 and the API returns yesterday plus today", () => {
+    vi.setSystemTime(new Date("2026-07-29T12:00:00Z"));
+
+    const filtered = filterDailyRowsToWindow(
+      [row("2026-07-28", 100), row("2026-07-29", 1)],
+      1,
+      "UTC",
+    );
+
+    expect(filtered.map((r) => r.date)).toEqual(["2026-07-29"]);
+    const totals = computeDailyTotals(filtered);
+    expect(totals.input).toBe(1);
+    expect(totals.cacheRead).toBe(3);
+    expect(aggregateDailyTokens(filtered)).toEqual([
+      {
+        date: "2026-07-29",
+        label: "7/29",
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+      },
+    ]);
+  });
+
+  it.each([7, 30, 90, 180])("selects exactly %i calendar dates", (days) => {
+    vi.setSystemTime(new Date("2026-07-29T12:00:00Z"));
+
+    const rows = dateRangeEnding("2026-07-29", days + 1);
+    const filtered = filterDailyRowsToWindow(rows, days, "UTC");
+
+    expect(filtered).toHaveLength(days);
+    expect(filtered[0]?.date).toBe(rows[1]?.date);
+    expect(filtered.at(-1)?.date).toBe("2026-07-29");
+  });
+
+  it("uses the UTC calendar boundary", () => {
+    vi.setSystemTime(new Date("2026-05-20T00:30:00Z"));
+
+    expect(
+      filterDailyRowsToWindow(
+        [row("2026-05-19"), row("2026-05-20")],
+        1,
+        "UTC",
+      ).map((r) => r.date),
+    ).toEqual(["2026-05-20"]);
+  });
+
+  it("uses a non-UTC viewer calendar boundary", () => {
+    vi.setSystemTime(new Date("2026-05-20T00:30:00Z"));
+
+    expect(
+      filterDailyRowsToWindow(
+        [row("2026-05-18"), row("2026-05-19")],
+        1,
+        "America/Los_Angeles",
+      ).map((r) => r.date),
+    ).toEqual(["2026-05-19"]);
+  });
+
+  it("stays on calendar days across a DST boundary", () => {
+    vi.setSystemTime(new Date("2026-03-08T08:30:00Z"));
+
+    expect(
+      filterDailyRowsToWindow(
+        [row("2026-03-01"), row("2026-03-02"), row("2026-03-08")],
+        7,
+        "America/Los_Angeles",
+      ).map((r) => r.date),
+    ).toEqual(["2026-03-02", "2026-03-08"]);
+  });
+
+  it("excludes dates after today in the viewer timezone", () => {
+    vi.setSystemTime(new Date("2026-07-29T12:00:00Z"));
+
+    expect(
+      filterDailyRowsToWindow(
+        [row("2026-07-29"), row("2026-07-30")],
+        1,
+        "UTC",
+      ).map((r) => r.date),
+    ).toEqual(["2026-07-29"]);
+  });
+
+  it("keeps empty data empty", () => {
+    vi.setSystemTime(new Date("2026-07-29T12:00:00Z"));
+
+    expect(filterDailyRowsToWindow([], 30, "UTC")).toEqual([]);
+  });
+});
 
 describe("aggregateDailyCost", () => {
   it("collapses multiple rows per day into one stack and sorts by date asc", () => {
