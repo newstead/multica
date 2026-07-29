@@ -1415,14 +1415,6 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 			Actor:      service.MemoryActor{Type: "member", ID: comment.AuthorID},
 			Text:       comment.Content,
 		})
-	} else if authorType == "agent" && comment.SourceTaskID.Valid {
-		h.captureMemoryBestEffort(r.Context(), service.MemoryCaptureSource{
-			SourceType: service.MemorySourceAgentOutcomeSummary,
-			SourceID:   comment.ID,
-			Scope:      issueMemoryScope(issue, comment.AuthorID),
-			Actor:      service.MemoryActor{Type: "agent", ID: comment.AuthorID},
-			Text:       comment.Content,
-		})
 	}
 	h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), authorType, authorID, map[string]any{
 		"comment":             resp,

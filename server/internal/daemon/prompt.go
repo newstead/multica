@@ -104,11 +104,18 @@ func buildMemoryRecallBlock(items []protocol.MemoryRecallData) string {
 			fmt.Fprintf(&b, " captured_at=%s", item.CapturedAt)
 		}
 		b.WriteString("\n")
-		b.WriteString(strings.TrimSpace(item.Text))
+		b.WriteString(escapeMemoryRecallText(item.Text))
 		b.WriteString("\n")
 	}
 	b.WriteString("END_UNTRUSTED_RECALLED_MEMORY\n\n")
 	return b.String()
+}
+
+func escapeMemoryRecallText(text string) string {
+	text = strings.TrimSpace(text)
+	text = strings.ReplaceAll(text, "BEGIN_UNTRUSTED_RECALLED_MEMORY", "BEGIN-UNTRUSTED-RECALLED-MEMORY")
+	text = strings.ReplaceAll(text, "END_UNTRUSTED_RECALLED_MEMORY", "END-UNTRUSTED-RECALLED-MEMORY")
+	return text
 }
 
 func formatMemoryRecallScope(scope protocol.MemoryRecallScope) string {

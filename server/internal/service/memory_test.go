@@ -237,6 +237,33 @@ func TestMemoryCapturePolicyAllowsOnlyApprovedVisibleSources(t *testing.T) {
 	}
 }
 
+func TestMemoryCapturePolicyUsesContentRevisionInKey(t *testing.T) {
+	workspaceID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
+	issueID := util.MustParseUUID("22222222-2222-2222-2222-222222222222")
+	src := MemoryCaptureSource{
+		SourceType: MemorySourceIssueDescription,
+		SourceID:   issueID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID, IssueID: issueID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "first description",
+	}
+	first, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		t.Fatal("first issue description should pass capture policy")
+	}
+	src.Text = "second description"
+	second, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		t.Fatal("second issue description should pass capture policy")
+	}
+	if first.IdempotencyKey == second.IdempotencyKey {
+		t.Fatalf("idempotency key did not change across content revisions: %s", first.IdempotencyKey)
+	}
+	if first.Metadata["content_sha256"] == "" || first.Metadata["content_sha256"] == second.Metadata["content_sha256"] {
+		t.Fatalf("content hashes did not track revisions: first=%#v second=%#v", first.Metadata, second.Metadata)
+	}
+}
+
 func TestMemoryRecallForTaskScopesAndTruncates(t *testing.T) {
 	pool := newMemoryServiceIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -299,6 +326,9 @@ func TestMemoryRecallForTaskScopesAndTruncates(t *testing.T) {
 	}
 	if len(items) != 1 {
 		t.Fatalf("recall items = %d, want 1 scoped item: %#v", len(items), items)
+	}
+	if items[0].Provider != memoryAuditLogFallbackProvider {
+		t.Fatalf("recall provider = %q, want truthful fallback provider", items[0].Provider)
 	}
 	if items[0].Scope.WorkspaceID != util.UUIDToString(workspaceID) || items[0].Scope.IssueID != util.UUIDToString(issueID) {
 		t.Fatalf("wrong recall scope: %#v", items[0].Scope)

@@ -3745,6 +3745,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			workDir:               result.WorkDir,
 			localDirectory:        result.LocalDirectory,
 			sessionRolloutMissing: result.SessionRolloutMissing,
+			memoryRecall:          result.MemoryRecall,
 		})
 		if err == nil {
 			return

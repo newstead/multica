@@ -136,6 +136,7 @@ const (
 	defaultMemoryRecallLimit       = 8
 	maxMemoryRecallEventScan       = 200
 	maxMemoryRecallTextTokens      = 220
+	memoryAuditLogFallbackProvider = "local_audit_log"
 )
 
 var approvedMemorySources = map[string]bool{
@@ -282,9 +283,11 @@ func BuildApprovedMemoryRetainRequest(src MemoryCaptureSource) (MemoryRetainRequ
 	if err != nil {
 		return MemoryRetainRequest{}, false
 	}
+	contentHash := memoryContentHash(text)
 	metadata := map[string]any{
-		"source_type": sourceType,
-		"source_id":   uuidString(src.SourceID),
+		"source_type":    sourceType,
+		"source_id":      uuidString(src.SourceID),
+		"content_sha256": contentHash,
 	}
 	for k, v := range src.Metadata {
 		if strings.TrimSpace(k) != "" {
@@ -299,6 +302,7 @@ func BuildApprovedMemoryRetainRequest(src MemoryCaptureSource) (MemoryRetainRequ
 		uuidString(src.Scope.IssueID),
 		uuidString(src.Scope.TaskID),
 		uuidString(src.SourceID),
+		contentHash,
 	}
 	return MemoryRetainRequest{
 		Scope:          src.Scope,
@@ -350,10 +354,6 @@ func (s *MemoryService) RecallForTask(ctx context.Context, req MemoryRecallForTa
 	if !cfg.Enabled {
 		return nil, ErrMemoryDisabled
 	}
-	provider := strings.TrimSpace(cfg.PrimaryProvider)
-	if provider == "" {
-		return nil, fmt.Errorf("%w: primary provider is required when enabled", ErrMemoryConfig)
-	}
 	limit := req.Limit
 	if limit <= 0 {
 		limit = defaultMemoryRecallLimit
@@ -374,7 +374,7 @@ func (s *MemoryService) RecallForTask(ctx context.Context, req MemoryRecallForTa
 	recalledAt := s.now().Format(time.RFC3339)
 	items := make([]protocol.MemoryRecallData, 0, len(rows))
 	for _, row := range rows {
-		item, ok := memoryRecallDataFromEvent(row, provider, recalledAt)
+		item, ok := memoryRecallDataFromEvent(row, memoryAuditLogFallbackProvider, recalledAt)
 		if !ok || !memoryEventMatchesScope(row, req.Scope) {
 			continue
 		}
@@ -518,6 +518,11 @@ func BuildMemoryEventEnvelope(req MemoryRetainRequest) (MemoryEventEnvelope, []b
 func MemoryIdempotencyKey(envelope []byte) string {
 	sum := sha256.Sum256(envelope)
 	return "mem_" + hex.EncodeToString(sum[:])
+}
+
+func memoryContentHash(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
 
 func memoryEventFromUpsertRow(row db.UpsertMemoryEventRow) db.MemoryEvent {

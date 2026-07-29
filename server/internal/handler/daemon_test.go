@@ -2863,6 +2863,15 @@ func TestCompleteTaskStoresDiffStatsInResult(t *testing.T) {
 				"deletions":     2,
 				"files_changed": 3,
 			},
+			"memory_recall": []map[string]any{{
+				"memory_id":   "mem-1",
+				"provider":    "local_audit_log",
+				"source_type": "human_comment",
+				"scope": map[string]any{
+					"workspace_id": testWorkspaceID,
+					"issue_id":     issueID,
+				},
+			}},
 		},
 		testWorkspaceID, "legit-daemon")
 	rctx := chi.NewRouteContext()
@@ -2875,18 +2884,24 @@ func TestCompleteTaskStoresDiffStatsInResult(t *testing.T) {
 	}
 
 	var additions, deletions, filesChanged int
+	var memoryID, provider string
 	if err := testPool.QueryRow(ctx, `
 		SELECT
 			(result->'diff_stats'->>'additions')::int,
 			(result->'diff_stats'->>'deletions')::int,
-			(result->'diff_stats'->>'files_changed')::int
+			(result->'diff_stats'->>'files_changed')::int,
+			result->'memory_recall'->0->>'memory_id',
+			result->'memory_recall'->0->>'provider'
 		FROM agent_task_queue
 		WHERE id = $1
-	`, taskID).Scan(&additions, &deletions, &filesChanged); err != nil {
+	`, taskID).Scan(&additions, &deletions, &filesChanged, &memoryID, &provider); err != nil {
 		t.Fatalf("query stored diff_stats: %v", err)
 	}
 	if additions != 7 || deletions != 2 || filesChanged != 3 {
 		t.Fatalf("stored diff_stats = additions:%d deletions:%d files_changed:%d", additions, deletions, filesChanged)
+	}
+	if memoryID != "mem-1" || provider != "local_audit_log" {
+		t.Fatalf("stored memory_recall = memory_id:%q provider:%q", memoryID, provider)
 	}
 }
 

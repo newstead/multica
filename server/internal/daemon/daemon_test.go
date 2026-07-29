@@ -23,6 +23,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
 	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func createDaemonTestRepo(t *testing.T) string {
@@ -3307,6 +3308,12 @@ func TestReportTaskResult_CompletedHitsCompleteEndpoint(t *testing.T) {
 		BranchName: "agent/foo",
 		SessionID:  "ses-1",
 		WorkDir:    "/tmp/foo",
+		MemoryRecall: []protocol.MemoryRecallProvenance{{
+			MemoryID:   "mem-1",
+			Provider:   "local_audit_log",
+			SourceType: "human_comment",
+			Scope:      protocol.MemoryRecallScope{WorkspaceID: "ws-1", IssueID: "issue-1"},
+		}},
 	}, slog.Default())
 
 	rec.mu.Lock()
@@ -3322,6 +3329,17 @@ func TestReportTaskResult_CompletedHitsCompleteEndpoint(t *testing.T) {
 	}
 	if rec.payload["session_id"] != "ses-1" {
 		t.Errorf("session_id: got %v", rec.payload["session_id"])
+	}
+	recall, ok := rec.payload["memory_recall"].([]any)
+	if !ok || len(recall) != 1 {
+		t.Fatalf("memory_recall payload = %#v, want one provenance item", rec.payload["memory_recall"])
+	}
+	item, ok := recall[0].(map[string]any)
+	if !ok {
+		t.Fatalf("memory_recall[0] = %#v, want object", recall[0])
+	}
+	if item["memory_id"] != "mem-1" || item["provider"] != "local_audit_log" {
+		t.Fatalf("memory_recall[0] = %#v", item)
 	}
 }
 
