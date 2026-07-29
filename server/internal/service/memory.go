@@ -135,12 +135,13 @@ type MemoryDispatchResult struct {
 }
 
 type MemoryService struct {
-	Queries             *db.Queries
-	TxStarter           TxStarter
-	Clock               func() time.Time
-	Providers           map[string]MemoryProvider
-	MaxDeliveryAttempts int32
-	BaseBackoff         time.Duration
+	Queries              *db.Queries
+	TxStarter            TxStarter
+	Clock                func() time.Time
+	Providers            map[string]MemoryProvider
+	MaxDeliveryAttempts  int32
+	BaseBackoff          time.Duration
+	DeliveryLeaseTimeout time.Duration
 }
 
 func NewMemoryService(queries *db.Queries, txStarter ...TxStarter) *MemoryService {
@@ -149,12 +150,13 @@ func NewMemoryService(queries *db.Queries, txStarter ...TxStarter) *MemoryServic
 		tx = txStarter[0]
 	}
 	return &MemoryService{
-		Queries:             queries,
-		TxStarter:           tx,
-		Clock:               time.Now,
-		Providers:           map[string]MemoryProvider{},
-		MaxDeliveryAttempts: 5,
-		BaseBackoff:         time.Minute,
+		Queries:              queries,
+		TxStarter:            tx,
+		Clock:                time.Now,
+		Providers:            map[string]MemoryProvider{},
+		MaxDeliveryAttempts:  5,
+		BaseBackoff:          time.Minute,
+		DeliveryLeaseTimeout: 2 * time.Minute,
 	}
 }
 
@@ -275,9 +277,15 @@ func (s *MemoryService) DispatchDueMemoryProviderDeliveries(ctx context.Context,
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.Queries.ListDueMemoryProviderDeliveries(ctx, db.ListDueMemoryProviderDeliveriesParams{
+	now := s.now()
+	leaseTimeout := s.DeliveryLeaseTimeout
+	if leaseTimeout <= 0 {
+		leaseTimeout = 2 * time.Minute
+	}
+	rows, err := s.Queries.ClaimDueMemoryProviderDeliveries(ctx, db.ClaimDueMemoryProviderDeliveriesParams{
 		WorkspaceID:   workspaceID,
-		NextAttemptAt: pgtype.Timestamptz{Time: s.now(), Valid: true},
+		NextAttemptAt: pgtype.Timestamptz{Time: now, Valid: true},
+		UpdatedAt:     pgtype.Timestamptz{Time: now.Add(-leaseTimeout), Valid: true},
 		Limit:         limit,
 	})
 	if err != nil {
@@ -285,7 +293,8 @@ func (s *MemoryService) DispatchDueMemoryProviderDeliveries(ctx context.Context,
 	}
 	results := make([]MemoryDispatchResult, 0, len(rows))
 	for _, row := range rows {
-		result, dispatchErr := s.dispatchMemoryProviderDelivery(ctx, row.MemoryProviderDelivery, row.Envelope, row.EventType, row.EventCreatedAt)
+		delivery := memoryProviderDeliveryFromClaimRow(row)
+		result, dispatchErr := s.dispatchMemoryProviderDelivery(ctx, delivery, row.Envelope, row.EventType, row.EventCreatedAt)
 		results = append(results, result)
 		if dispatchErr != nil {
 			return results, dispatchErr
@@ -296,6 +305,9 @@ func (s *MemoryService) DispatchDueMemoryProviderDeliveries(ctx context.Context,
 
 func (s *MemoryService) dispatchMemoryProviderDelivery(ctx context.Context, delivery db.MemoryProviderDelivery, raw []byte, eventType string, eventCreatedAt pgtype.Timestamptz) (MemoryDispatchResult, error) {
 	result := MemoryDispatchResult{Provider: delivery.Provider, Delivery: delivery}
+	if delivery.Status != "queued" && delivery.Status != "retry" && delivery.Status != "delivering" {
+		return result, nil
+	}
 	var envelope MemoryEventEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		updated, updateErr := s.recordMemoryDeliveryFailure(ctx, delivery, eventCreatedAt, fmt.Errorf("decode memory envelope: %w", err))
@@ -622,6 +634,26 @@ func memoryEventFromUpsertRow(row db.UpsertMemoryEventRow) db.MemoryEvent {
 }
 
 func memoryDeliveryFromUpsertRow(row db.UpsertMemoryProviderDeliveryRow) db.MemoryProviderDelivery {
+	return db.MemoryProviderDelivery{
+		ID:               row.ID,
+		WorkspaceID:      row.WorkspaceID,
+		MemoryEventID:    row.MemoryEventID,
+		Provider:         row.Provider,
+		Status:           row.Status,
+		AttemptCount:     row.AttemptCount,
+		NextAttemptAt:    row.NextAttemptAt,
+		LastAttemptAt:    row.LastAttemptAt,
+		TerminalAt:       row.TerminalAt,
+		ProviderMemoryID: row.ProviderMemoryID,
+		Response:         row.Response,
+		Error:            row.Error,
+		DeliveryLagMs:    row.DeliveryLagMs,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+	}
+}
+
+func memoryProviderDeliveryFromClaimRow(row db.ClaimDueMemoryProviderDeliveriesRow) db.MemoryProviderDelivery {
 	return db.MemoryProviderDelivery{
 		ID:               row.ID,
 		WorkspaceID:      row.WorkspaceID,

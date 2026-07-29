@@ -68,21 +68,50 @@ JOIN memory_event
 WHERE memory_provider_delivery.id = $1
   AND memory_provider_delivery.workspace_id = $2;
 
--- name: ListDueMemoryProviderDeliveries :many
+-- name: ClaimDueMemoryProviderDeliveries :many
+WITH due AS (
+    SELECT memory_provider_delivery.id, memory_provider_delivery.workspace_id
+    FROM memory_provider_delivery
+    WHERE memory_provider_delivery.workspace_id = $1
+      AND (
+        (memory_provider_delivery.status IN ('queued', 'retry') AND memory_provider_delivery.next_attempt_at <= $2)
+        OR (memory_provider_delivery.status = 'delivering' AND memory_provider_delivery.updated_at <= $3)
+      )
+    ORDER BY memory_provider_delivery.next_attempt_at ASC, memory_provider_delivery.created_at ASC
+    FOR UPDATE SKIP LOCKED
+    LIMIT $4
+), claimed AS (
+    UPDATE memory_provider_delivery
+    SET status = 'delivering', updated_at = now()
+    FROM due
+    WHERE memory_provider_delivery.id = due.id
+      AND memory_provider_delivery.workspace_id = due.workspace_id
+    RETURNING memory_provider_delivery.*
+)
 SELECT
-    sqlc.embed(memory_provider_delivery),
+    claimed.id,
+    claimed.workspace_id,
+    claimed.memory_event_id,
+    claimed.provider,
+    claimed.status,
+    claimed.attempt_count,
+    claimed.next_attempt_at,
+    claimed.last_attempt_at,
+    claimed.terminal_at,
+    claimed.provider_memory_id,
+    claimed.response,
+    claimed.error,
+    claimed.created_at,
+    claimed.updated_at,
+    claimed.delivery_lag_ms,
     memory_event.envelope,
     memory_event.event_type,
     memory_event.created_at AS event_created_at
-FROM memory_provider_delivery
+FROM claimed
 JOIN memory_event
-  ON memory_event.id = memory_provider_delivery.memory_event_id
- AND memory_event.workspace_id = memory_provider_delivery.workspace_id
-WHERE memory_provider_delivery.workspace_id = $1
-  AND memory_provider_delivery.status IN ('queued', 'retry')
-  AND memory_provider_delivery.next_attempt_at <= $2
-ORDER BY memory_provider_delivery.next_attempt_at ASC, memory_provider_delivery.created_at ASC
-LIMIT $3;
+  ON memory_event.id = claimed.memory_event_id
+ AND memory_event.workspace_id = claimed.workspace_id
+ORDER BY claimed.next_attempt_at ASC, claimed.created_at ASC;
 
 -- name: UpdateMemoryProviderDeliveryResult :one
 UPDATE memory_provider_delivery

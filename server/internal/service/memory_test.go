@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -472,6 +473,102 @@ func TestMemoryDispatchDeleteEventUsesProviderDelete(t *testing.T) {
 	}
 }
 
+func TestMemoryDispatchDueDeliveriesConcurrentClaimDoesNotDuplicateProviderMemory(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	cleanupMemoryServiceRows(t, pool, workspaceID)
+
+	if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  workspaceID,
+		Enabled:                      true,
+		PrimaryProvider:              "hindsight",
+		ReadMode:                     "primary",
+		ProviderSettings:             []byte(`{}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("seed memory config: %v", err)
+	}
+
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	provider := &fakeMemoryProvider{name: "hindsight", providerMemoryID: "provider-memory-1", retainStarted: started, retainBlock: unblock}
+	svc := NewMemoryService(queries, pool)
+	svc.DeliveryLeaseTimeout = time.Hour
+	svc.Providers = map[string]MemoryProvider{"hindsight": provider}
+
+	retain, err := svc.Retain(ctx, MemoryRetainRequest{
+		Scope:          MemoryScope{WorkspaceID: workspaceID},
+		Actor:          MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "concurrent-claim-" + uuid.NewString(),
+		Content:        json.RawMessage(`{"text":"claim once"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+
+	type dispatchResult struct {
+		results []MemoryDispatchResult
+		err     error
+	}
+	firstDone := make(chan dispatchResult, 1)
+	go func() {
+		results, err := svc.DispatchDueMemoryProviderDeliveries(ctx, workspaceID, 10)
+		firstDone <- dispatchResult{results: results, err: err}
+	}()
+
+	select {
+	case <-started:
+	case <-ctx.Done():
+		t.Fatal("first dispatch did not reach provider")
+	}
+	second, err := svc.DispatchDueMemoryProviderDeliveries(ctx, workspaceID, 10)
+	if err != nil {
+		t.Fatalf("second dispatch: %v", err)
+	}
+	if len(second) != 0 {
+		t.Fatalf("second dispatch claimed %d deliveries while first worker owned the row", len(second))
+	}
+
+	close(unblock)
+	first := <-firstDone
+	if first.err != nil {
+		t.Fatalf("first dispatch: %v", first.err)
+	}
+	if len(first.results) != 1 {
+		t.Fatalf("first dispatch results = %d, want 1", len(first.results))
+	}
+	if len(provider.retained) != 1 {
+		t.Fatalf("provider retain calls = %d, want 1", len(provider.retained))
+	}
+
+	// A stale explicit reclaim after the row is delivered must not call the
+	// provider again or regress the durable delivery row.
+	if _, err := svc.DispatchMemoryProviderDelivery(ctx, workspaceID, retain.Deliveries[0].ID); err != nil {
+		t.Fatalf("stale explicit reclaim: %v", err)
+	}
+	if len(provider.retained) != 1 {
+		t.Fatalf("provider retain calls after stale reclaim = %d, want 1", len(provider.retained))
+	}
+	var status string
+	var attempts int32
+	var providerMemoryID pgtype.Text
+	if err := pool.QueryRow(ctx, `
+		SELECT status, attempt_count, provider_memory_id
+		FROM memory_provider_delivery
+		WHERE workspace_id = $1 AND memory_event_id = $2 AND provider = 'hindsight'
+	`, workspaceID, retain.Event.ID).Scan(&status, &attempts, &providerMemoryID); err != nil {
+		t.Fatalf("read final delivery: %v", err)
+	}
+	if status != "delivered" || attempts != 1 || providerMemoryID.String != "provider-memory-1" {
+		t.Fatalf("final delivery status/attempts/provider_memory_id = %q/%d/%q, want delivered/1/provider-memory-1", status, attempts, providerMemoryID.String)
+	}
+}
+
 func TestMemoryRecallDualRecordsPairedSamples(t *testing.T) {
 	pool := newMemoryServiceIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -567,6 +664,9 @@ type fakeMemoryProvider struct {
 	recallErr        error
 	recallResults    json.RawMessage
 	retained         []MemoryEventEnvelope
+	retainStarted    chan struct{}
+	retainBlock      chan struct{}
+	retainStartOnce  sync.Once
 	updated          []MemoryEventEnvelope
 	invalidated      []MemoryEventEnvelope
 	deleted          []MemoryEventEnvelope
@@ -576,6 +676,12 @@ func (p *fakeMemoryProvider) Name() string { return p.name }
 
 func (p *fakeMemoryProvider) Retain(_ context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
 	p.retained = append(p.retained, event)
+	if p.retainStarted != nil {
+		p.retainStartOnce.Do(func() { close(p.retainStarted) })
+	}
+	if p.retainBlock != nil {
+		<-p.retainBlock
+	}
 	if len(p.retainErrs) > 0 {
 		err := p.retainErrs[0]
 		p.retainErrs = p.retainErrs[1:]

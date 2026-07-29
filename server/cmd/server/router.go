@@ -215,6 +215,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		LLMAPIKey:                strings.TrimSpace(os.Getenv("MULTICA_LLM_API_KEY")),
 		LLMBaseURL:               strings.TrimSpace(os.Getenv("MULTICA_LLM_BASE_URL")),
 		LLMDefaultModel:          strings.TrimSpace(os.Getenv("MULTICA_LLM_DEFAULT_MODEL")),
+		MemoryHindsightBaseURL:   strings.TrimSpace(os.Getenv("MULTICA_MEMORY_HINDSIGHT_BASE_URL")),
+		MemoryHindsightAPIKey:    strings.TrimSpace(os.Getenv("MULTICA_MEMORY_HINDSIGHT_API_KEY")),
+		MemoryMem0BaseURL:        strings.TrimSpace(os.Getenv("MULTICA_MEMORY_MEM0_BASE_URL")),
+		MemoryMem0APIKey:         strings.TrimSpace(os.Getenv("MULTICA_MEMORY_MEM0_API_KEY")),
 		ServerVersion:            normalizeServerVersion(version),
 	}
 	h := handler.New(queries, pool, hub, bus, emailSvc, store, cfSigner, analyticsClient, signupConfig, daemonHub)

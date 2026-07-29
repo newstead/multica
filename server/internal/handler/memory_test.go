@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
@@ -63,6 +64,36 @@ func enableMemoryConfigForTest(t *testing.T, workspaceID, primary, shadow string
 	})
 	if err != nil {
 		t.Fatalf("enable memory config: %v", err)
+	}
+}
+
+func TestNewRegistersMemoryProvidersFromConfig(t *testing.T) {
+	h := New(nil, nil, nil, nil, nil, nil, nil, nil, Config{
+		MemoryHindsightBaseURL: "https://hindsight.example.test",
+		MemoryMem0BaseURL:      "https://mem0.example.test",
+		MemoryMem0APIKey:       "mem0-test-key",
+	})
+	if h.MemoryService == nil {
+		t.Fatal("MemoryService is nil")
+	}
+	if _, ok := h.MemoryService.Providers["hindsight"]; !ok {
+		t.Fatalf("hindsight provider was not registered: %#v", h.MemoryService.Providers)
+	}
+	if _, ok := h.MemoryService.Providers[service.Mem0ProviderName]; !ok {
+		t.Fatalf("mem0 provider was not registered: %#v", h.MemoryService.Providers)
+	}
+	if h.MemoryDeliveryWorker == nil {
+		t.Fatal("MemoryDeliveryWorker is nil")
+	}
+}
+
+func TestMemoryDeliveryWorkerRunStopsBoundedPool(t *testing.T) {
+	worker := NewMemoryDeliveryWorker(testHandler)
+	ctx, cancel := context.WithCancel(context.Background())
+	go worker.Run(ctx)
+	cancel()
+	if !worker.WaitWithTimeout(time.Second) {
+		t.Fatal("bounded memory delivery worker pool did not stop after cancellation")
 	}
 }
 
@@ -234,12 +265,14 @@ func TestCreateMemoryRecallHonorsReleaseFlagRollback(t *testing.T) {
 type memoryHandlerFakeProvider struct {
 	name          string
 	recallResults json.RawMessage
+	retained      []service.MemoryEventEnvelope
 }
 
 func (p *memoryHandlerFakeProvider) Name() string { return p.name }
 
-func (p *memoryHandlerFakeProvider) Retain(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
-	return service.MemoryProviderResult{}, nil
+func (p *memoryHandlerFakeProvider) Retain(_ context.Context, event service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	p.retained = append(p.retained, event)
+	return service.MemoryProviderResult{ProviderMemoryID: "handler-memory-1", Response: json.RawMessage(`{"ok":true}`)}, nil
 }
 
 func (p *memoryHandlerFakeProvider) Recall(_ context.Context, req service.MemoryRecallRequest) (service.MemoryRecallResult, error) {
@@ -260,6 +293,98 @@ func (p *memoryHandlerFakeProvider) Delete(context.Context, service.MemoryEventE
 
 func (p *memoryHandlerFakeProvider) Health(context.Context) (service.MemoryProviderHealth, error) {
 	return service.MemoryProviderHealth{Provider: p.name, OK: true}, nil
+}
+
+func TestMemoryDeliveryWorkerHonorsReleaseFlagRollback(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	enableMemoryConfigForTest(t, testWorkspaceID, "hindsight", "")
+
+	provider := &memoryHandlerFakeProvider{name: "hindsight"}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"hindsight": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	if _, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "worker-flag-off",
+		Content:        json.RawMessage(`{"text":"do not dispatch"}`),
+	}); err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+
+	worker := NewMemoryDeliveryWorker(testHandler)
+	worked, err := worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext: %v", err)
+	}
+	if worked {
+		t.Fatal("worker reported work while memory gateway flag was disabled")
+	}
+	if len(provider.retained) != 0 {
+		t.Fatalf("provider retain calls = %d, want 0", len(provider.retained))
+	}
+	var status string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT status FROM memory_provider_delivery WHERE workspace_id = $1 AND provider = 'hindsight'
+	`, testWorkspaceID).Scan(&status); err != nil {
+		t.Fatalf("read delivery status: %v", err)
+	}
+	if status != "queued" {
+		t.Fatalf("delivery status = %q, want queued", status)
+	}
+}
+
+func TestMemoryDeliveryWorkerDispatchesDueProviderDelivery(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "hindsight", "")
+
+	provider := &memoryHandlerFakeProvider{name: "hindsight"}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"hindsight": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	retain, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "worker-dispatches-due",
+		Content:        json.RawMessage(`{"text":"dispatch me"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+
+	worker := NewMemoryDeliveryWorker(testHandler)
+	worked, err := worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch due delivery")
+	}
+	if len(provider.retained) != 1 {
+		t.Fatalf("provider retain calls = %d, want 1", len(provider.retained))
+	}
+	var status string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT status FROM memory_provider_delivery WHERE workspace_id = $1 AND memory_event_id = $2 AND provider = 'hindsight'
+	`, testWorkspaceID, retain.Event.ID).Scan(&status); err != nil {
+		t.Fatalf("read delivery status: %v", err)
+	}
+	if status != "delivered" {
+		t.Fatalf("delivery status = %q, want delivered", status)
+	}
 }
 
 func TestMemoryEventReadIsWorkspaceScoped(t *testing.T) {
