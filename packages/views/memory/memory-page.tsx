@@ -17,6 +17,7 @@ import { PageHeader } from "../layout/page-header";
 import { useT } from "../i18n";
 import {
   buildMemoryComparisonModel,
+  summarizeRedactedProvenance,
   type MemoryComparisonModel,
   type MemoryProvider,
   type PairedMemorySample,
@@ -48,6 +49,8 @@ export function MemoryPage() {
   const samplesQuery = useQuery(memoryRecallSamplesOptions(wsId, { limit: 500 }));
   const samples = samplesQuery.data?.samples ?? EMPTY_SAMPLES;
   const model = useMemo(() => buildMemoryComparisonModel(samples), [samples]);
+  const hasConfigError = configQuery.isError;
+  const hasSamplesError = samplesQuery.isError;
 
   const isLoading = configQuery.isLoading || samplesQuery.isLoading;
   const config = configQuery.data;
@@ -59,7 +62,7 @@ export function MemoryPage() {
           <Database className="size-4 shrink-0 text-muted-foreground" />
           <h1 className="truncate text-sm font-semibold">{t("page.title")}</h1>
           <span className="hidden rounded-sm bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground sm:inline">
-            {config?.enabled ? t("status.enabled") : t("status.disabled")}
+            {hasConfigError ? t("status.unavailable") : config?.enabled ? t("status.enabled") : t("status.disabled")}
           </span>
         </div>
       </PageHeader>
@@ -101,6 +104,8 @@ export function MemoryPage() {
                   <Skeleton className="h-6 w-full" />
                   <Skeleton className="h-6 w-3/4" />
                 </div>
+              ) : hasConfigError ? (
+                <UnavailableState title={t("errors.config_title")} description={t("errors.config_description")} />
               ) : (
                 <div className="space-y-3 text-sm">
                   <StatusLine label={t("config.primary")} value={config?.primary_provider || t("common.unknown")} />
@@ -111,12 +116,21 @@ export function MemoryPage() {
             </div>
           </section>
 
-          <CoverageBanner model={model} />
-
-          {tab === "comparison" ? (
-            <ComparisonBoard model={model} locale={locale} />
+          {hasSamplesError ? (
+            <UnavailableState
+              title={t("errors.samples_title")}
+              description={t("errors.samples_description")}
+              variant="section"
+            />
           ) : (
-            <ProviderBoard provider={tab} model={model} locale={locale} />
+            <>
+              <CoverageBanner model={model} />
+              {tab === "comparison" ? (
+                <ComparisonBoard model={model} locale={locale} />
+              ) : (
+                <ProviderBoard provider={tab} model={model} locale={locale} />
+              )}
+            </>
           )}
         </div>
       </main>
@@ -129,6 +143,29 @@ function StatusLine({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>
       <span className="truncate font-medium">{value}</span>
+    </div>
+  );
+}
+
+function UnavailableState({
+  title,
+  description,
+  variant = "inline",
+}: {
+  title: string;
+  description: string;
+  variant?: "inline" | "section";
+}) {
+  return (
+    <div className={cn(
+      "flex items-start gap-3 text-sm",
+      variant === "section" && "rounded-md border bg-card p-4",
+    )}>
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium">{title}</p>
+        <p className="text-muted-foreground">{description}</p>
+      </div>
     </div>
   );
 }
@@ -173,6 +210,7 @@ function ComparisonBoard({ model, locale }: { model: MemoryComparisonModel; loca
         <SummaryTiles model={model} locale={locale} />
         <WriteMatrix model={model} locale={locale} />
         <RecallMetrics model={model} locale={locale} />
+        <RankMetrics model={model} />
         <LifecycleTable model={model} />
       </div>
       <div className="space-y-4">
@@ -270,6 +308,42 @@ function RecallMetrics({ model, locale }: { model: MemoryComparisonModel; locale
                 <td className="py-3 text-right">{formatNumber(summary.totalTokens, locale)}</td>
                 <td className="py-3 text-right">{formatUsd(summary.totalCostUsd)}</td>
                 <td className="py-3 text-right">{formatBytes(summary.storageBytes, locale)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+
+function RankMetrics({ model }: { model: MemoryComparisonModel }) {
+  const t = useMemoryT();
+  return (
+    <section className="rounded-md border bg-card p-4">
+      <SectionHeader title={t("rank.title")} description={t("rank.description")} />
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead className="border-b text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="py-2 text-left font-medium">{t("table.query")}</th>
+              <th className="py-2 text-right font-medium">{t("rank.hindsight_rank")}</th>
+              <th className="py-2 text-right font-medium">{t("rank.mem0_rank")}</th>
+              <th className="py-2 text-right font-medium">{t("rank.delta")}</th>
+              <th className="py-2 text-right font-medium">{t("rank.overlap")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {model.samples.map((sample) => (
+              <tr key={sample.correlationId} className="border-b last:border-b-0">
+                <td className="max-w-md py-3 pr-4">
+                  <span className="line-clamp-2">{sample.query}</span>
+                </td>
+                <td className="py-3 text-right">{formatRank(sample.hindsight.matchedRank)}</td>
+                <td className="py-3 text-right">{formatRank(sample.mem0.matchedRank)}</td>
+                <td className="py-3 text-right">{formatDelta(sample.rankDelta)}</td>
+                <td className="py-3 text-right">{formatNullablePercent(sample.overlap)}</td>
               </tr>
             ))}
           </tbody>
@@ -485,14 +559,20 @@ function formatCi(ci: [number, number] | null): string {
   return `95% CI ${formatPercent(ci[0])}-${formatPercent(ci[1])}`;
 }
 
+function formatRank(value: number | null): string {
+  return value == null ? "-" : `#${value}`;
+}
+
+function formatDelta(value: number | null): string {
+  if (value == null) return "-";
+  if (value === 0) return "0";
+  return value > 0 ? `+${value}` : `${value}`;
+}
+
 function formatProvenance(provenance: Record<string, unknown>): string {
-  const redacted = JSON.stringify(provenance, (key, value) => {
-    const lower = key.toLowerCase();
-    if (lower.includes("token") || lower.includes("secret") || lower.includes("password") || lower.includes("api_key")) {
-      return "[redacted]";
-    }
-    if (typeof value === "string" && value.length > 240) return `${value.slice(0, 240)}...`;
-    return value;
-  }, 2);
-  return redacted || "{}";
+  const summary = summarizeRedactedProvenance(provenance);
+  return JSON.stringify({
+    ...summary.fields,
+    omitted_field_count: summary.omittedFieldCount,
+  }, null, 2);
 }

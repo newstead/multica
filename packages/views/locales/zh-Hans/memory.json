@@ -7,7 +7,8 @@
   },
   "status": {
     "enabled": "已启用",
-    "disabled": "未启用"
+    "disabled": "未启用",
+    "unavailable": "不可用"
   },
   "config": {
     "primary": "主提供方",
@@ -107,5 +108,19 @@
       "incorrect": "Incorrect",
       "unknown": "Unknown"
     }
+  },
+  "errors": {
+    "config_title": "记忆配置不可用",
+    "config_description": "记忆网关配置请求失败，无法确定当前提供方状态。",
+    "samples_title": "记忆样本不可用",
+    "samples_description": "无法加载召回样本，因此不会为失败请求显示配对覆盖率或 fixture 回退。"
+  },
+  "rank": {
+    "title": "配对排名指标",
+    "description": "当 provenance 包含预期 memory id 或明确匹配排名时，按配对查询显示排名。",
+    "hindsight_rank": "Hindsight 排名",
+    "mem0_rank": "mem0 排名",
+    "delta": "mem0 - Hindsight",
+    "overlap": "重叠率"
   }
 }

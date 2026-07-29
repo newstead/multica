@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryRecallSample } from "@multica/core/memory";
-import { buildMemoryComparisonModel } from "./analysis";
+import { buildMemoryComparisonModel, summarizeRedactedProvenance } from "./analysis";
 
 function sample(
   id: string,
@@ -57,5 +57,50 @@ describe("buildMemoryComparisonModel", () => {
     expect(model.samples[0]?.hindsight.matchedRank).toBe(1);
     expect(model.samples[0]?.mem0.matchedRank).toBe(2);
     expect(model.samples[0]?.rankDelta).toBe(1);
+  });
+});
+
+
+describe("summarizeRedactedProvenance", () => {
+  it("keeps allowed metric fields and omits nested sensitive variants", () => {
+    const summary = summarizeRedactedProvenance({
+      expected_memory_id: "safe-id",
+      latency_ms: 42,
+      redacted_source: "issue:ROL-76 comment:[redacted]",
+      authorization: "Bearer live-token",
+      headers: {
+        cookie: "session=secret-cookie",
+        Authorization: "Bearer nested-token",
+        "x-api-key": "api-secret",
+      },
+      credentials: {
+        private_key: "private-secret",
+        accessKeyId: "access-secret",
+      },
+    });
+    const serialized = JSON.stringify(summary);
+
+    expect(summary.fields).toMatchObject({
+      expected_memory_id: "safe-id",
+      latency_ms: 42,
+      redacted_source: "issue:ROL-76 comment:[redacted]",
+    });
+    expect(summary.omittedFieldCount).toBeGreaterThan(0);
+    expect(serialized).not.toContain("live-token");
+    expect(serialized).not.toContain("secret-cookie");
+    expect(serialized).not.toContain("nested-token");
+    expect(serialized).not.toContain("api-secret");
+    expect(serialized).not.toContain("private-secret");
+    expect(serialized).not.toContain("access-secret");
+  });
+
+  it("does not serialize structured values even for allowlisted keys", () => {
+    const summary = summarizeRedactedProvenance({
+      expected_memory_id: { value: "hidden" },
+      answer_correct: true,
+    });
+
+    expect(summary.fields.expected_memory_id).toBe("[structured value hidden]");
+    expect(JSON.stringify(summary)).not.toContain("\"value\"");
   });
 });

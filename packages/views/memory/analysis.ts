@@ -60,6 +60,11 @@ export interface ProviderSummary {
   storageBytes: number;
 }
 
+export interface RedactedProvenanceSummary {
+  fields: Record<string, string | number | boolean | null>;
+  omittedFieldCount: number;
+}
+
 export interface MemoryComparisonModel {
   samples: PairedMemorySample[];
   source: "live" | "fixture";
@@ -74,6 +79,65 @@ export interface MemoryComparisonModel {
 }
 
 const PROVIDERS: MemoryProvider[] = ["hindsight", "mem0"];
+
+
+const PROVENANCE_ALLOWLIST = new Set([
+  "answer_correct",
+  "confidence",
+  "correction_result",
+  "cost_usd",
+  "delivery_lag_ms",
+  "delivery_status",
+  "deletion_result",
+  "expected_id",
+  "expected_memory_id",
+  "expected_rank",
+  "latency_ms",
+  "matched_rank",
+  "rank",
+  "read_latency_ms",
+  "recall_latency_ms",
+  "redacted_source",
+  "replication_lag_ms",
+  "stale_result",
+  "status",
+  "storage_bytes",
+  "token_count",
+  "tokens",
+  "total_tokens",
+  "write_status",
+]);
+
+export function summarizeRedactedProvenance(
+  provenance: Record<string, unknown>,
+): RedactedProvenanceSummary {
+  const fields: Record<string, string | number | boolean | null> = {};
+  let omittedFieldCount = 0;
+
+  for (const [key, value] of Object.entries(provenance)) {
+    if (!PROVENANCE_ALLOWLIST.has(key)) {
+      omittedFieldCount += countLeafFields(value);
+      continue;
+    }
+    fields[key] = summarizeAllowedValue(value);
+  }
+
+  return { fields, omittedFieldCount };
+}
+
+function summarizeAllowedValue(value: unknown): string | number | boolean | null {
+  if (value == null) return null;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "string") return value.length > 240 ? `${value.slice(0, 240)}...` : value;
+  return "[structured value hidden]";
+}
+
+function countLeafFields(value: unknown): number {
+  if (Array.isArray(value)) return value.reduce((acc, item) => acc + countLeafFields(item), 0) || 1;
+  if (!value || typeof value !== "object") return 1;
+  const entries = Object.values(value as Record<string, unknown>);
+  return entries.reduce<number>((acc, item) => acc + countLeafFields(item), 0) || 1;
+}
 
 const FIXTURE_TIME = "2026-07-29T00:00:00Z";
 

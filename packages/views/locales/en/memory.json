@@ -7,7 +7,8 @@
   },
   "status": {
     "enabled": "Enabled",
-    "disabled": "Disabled"
+    "disabled": "Disabled",
+    "unavailable": "Unavailable"
   },
   "config": {
     "primary": "Primary",
@@ -107,5 +108,19 @@
       "incorrect": "Incorrect",
       "unknown": "Unknown"
     }
+  },
+  "errors": {
+    "config_title": "Memory config unavailable",
+    "config_description": "The memory gateway config request failed. Current provider state cannot be determined.",
+    "samples_title": "Memory samples unavailable",
+    "samples_description": "Recall samples could not be loaded, so paired coverage and fixture fallback are not shown for this failed request."
+  },
+  "rank": {
+    "title": "Paired rank metrics",
+    "description": "Ranks are shown per paired query when provenance includes an expected memory id or explicit matched rank.",
+    "hindsight_rank": "Hindsight rank",
+    "mem0_rank": "mem0 rank",
+    "delta": "mem0 - Hindsight",
+    "overlap": "Overlap"
   }
 }

@@ -7,7 +7,8 @@
   },
   "status": {
     "enabled": "사용 중",
-    "disabled": "사용 안 함"
+    "disabled": "사용 안 함",
+    "unavailable": "사용 불가"
   },
   "config": {
     "primary": "기본 제공자",
@@ -107,5 +108,19 @@
       "incorrect": "Incorrect",
       "unknown": "Unknown"
     }
+  },
+  "errors": {
+    "config_title": "메모리 설정을 불러올 수 없음",
+    "config_description": "메모리 게이트웨이 설정 요청이 실패해 현재 제공자 상태를 확인할 수 없습니다.",
+    "samples_title": "메모리 샘플을 불러올 수 없음",
+    "samples_description": "리콜 샘플을 불러오지 못했으므로 이 실패한 요청에는 페어링 커버리지와 fixture 대체를 표시하지 않습니다."
+  },
+  "rank": {
+    "title": "페어링 순위 지표",
+    "description": "provenance에 예상 메모리 id 또는 명시적 매칭 순위가 있을 때 페어링된 쿼리별 순위를 표시합니다.",
+    "hindsight_rank": "Hindsight 순위",
+    "mem0_rank": "mem0 순위",
+    "delta": "mem0 - Hindsight",
+    "overlap": "중복률"
   }
 }

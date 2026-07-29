@@ -7,7 +7,8 @@
   },
   "status": {
     "enabled": "有効",
-    "disabled": "無効"
+    "disabled": "無効",
+    "unavailable": "利用不可"
   },
   "config": {
     "primary": "プライマリ",
@@ -107,5 +108,19 @@
       "incorrect": "Incorrect",
       "unknown": "Unknown"
     }
+  },
+  "errors": {
+    "config_title": "メモリ設定を取得できません",
+    "config_description": "メモリゲートウェイ設定リクエストが失敗したため、現在のプロバイダー状態を判定できません。",
+    "samples_title": "メモリサンプルを取得できません",
+    "samples_description": "リコールサンプルを読み込めないため、この失敗したリクエストではペアカバレッジや fixture フォールバックを表示しません。"
+  },
+  "rank": {
+    "title": "ペア順位指標",
+    "description": "provenance に期待 memory id または明示的な一致順位がある場合、ペアクエリごとの順位を表示します。",
+    "hindsight_rank": "Hindsight 順位",
+    "mem0_rank": "mem0 順位",
+    "delta": "mem0 - Hindsight",
+    "overlap": "重複率"
   }
 }
