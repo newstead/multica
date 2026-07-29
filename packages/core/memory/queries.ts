@@ -28,7 +28,6 @@ export function memoryConfigOptions(wsId: string) {
   });
 }
 
-
 export function memoryMem0BoardOptions(
   wsId: string,
   params: {

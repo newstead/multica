@@ -20,6 +20,7 @@ import { isGlobalPath, isReservedSlug } from "@multica/core/paths";
  */
 const WORKSPACE_ROUTE_SEGMENTS = new Set([
   "usage",
+  "memory",
   "issues",
   "projects",
   "autopilots",

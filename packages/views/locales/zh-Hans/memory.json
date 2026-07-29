@@ -1,0 +1,126 @@
+{
+  "page": {
+    "title": "长期记忆",
+    "eyebrow": "长期记忆",
+    "heading": "双头对比看板",
+    "description": "只使用配对召回样本比较 Hindsight 和 mem0。样本量、置信度和覆盖率充足之前，指标仅作描述。"
+  },
+  "status": {
+    "enabled": "已启用",
+    "disabled": "未启用",
+    "unavailable": "不可用"
+  },
+  "config": {
+    "primary": "主提供方",
+    "shadow": "影子提供方",
+    "read_mode": "读取模式"
+  },
+  "common": {
+    "unknown": "未知",
+    "none": "无"
+  },
+  "tabs": {
+    "label": "记忆看板标签",
+    "comparison": "对比",
+    "hindsight": "Hindsight",
+    "mem0": "mem0"
+  },
+  "coverage": {
+    "fixture_title": "Deterministic paired fixture mode",
+    "fixture_body": "No live paired deliveries are available yet, so the board is showing {{count}} deterministic paired fixtures for UI and benchmark validation.",
+    "live_title": "Live paired samples",
+    "live_body": "Using {{paired}} paired samples from {{live}} live recall samples. {{unpaired}} live samples are mismatched or missing their paired delivery. Coverage: {{coverage}}."
+  },
+  "summary": {
+    "sample_size": "Sample size",
+    "paired_only": "Paired samples only",
+    "overlap": "Recall overlap",
+    "mean_jaccard": "Mean Jaccard overlap",
+    "hindsight_correctness": "Hindsight correctness",
+    "mem0_correctness": "mem0 correctness"
+  },
+  "write": {
+    "title": "Write success matrix",
+    "description": "Success, retry/backlog, missing delivery, and replication lag by provider.",
+    "success": "Success",
+    "retry_backlog": "Retry/backlog",
+    "missing": "Missing/failed",
+    "p50_lag": "p50 lag",
+    "p95_lag": "p95 lag"
+  },
+  "recall": {
+    "title": "Recall, correctness, latency, and cost",
+    "description": "Side-by-side read metrics with confidence intervals and coverage implied by known correctness samples.",
+    "correctness": "Correctness",
+    "confidence": "Confidence",
+    "p50_latency": "p50 latency",
+    "p95_latency": "p95 latency",
+    "tokens": "Tokens",
+    "cost": "Cost",
+    "storage": "Storage"
+  },
+  "lifecycle": {
+    "title": "Stale, correction, and deletion checks",
+    "description": "Lifecycle outcomes are counted only when provenance includes the relevant evidence flag.",
+    "stale": "Stale filtered",
+    "correction": "Correction applied",
+    "deletion": "Deletion respected"
+  },
+  "chart": {
+    "title": "Delivery status distribution",
+    "description": "Stacked counts per provider for paired samples."
+  },
+  "provenance": {
+    "title": "Redacted provenance drill-down",
+    "description": "Inspect the provenance payload used for each paired sample. Sensitive-looking fields are redacted in the UI."
+  },
+  "provider": {
+    "samples": "Samples",
+    "correctness": "Correctness",
+    "latency": "Latency",
+    "cost_storage": "Cost and storage",
+    "p95_detail": "p95 read latency",
+    "deliveries_title": "Provider sample details",
+    "deliveries_description": "Per-query status, rank, correctness, latency, lag, and result count."
+  },
+  "table": {
+    "provider": "Provider",
+    "query": "Query",
+    "write_status": "Write status",
+    "rank": "Rank",
+    "correctness": "Correctness",
+    "latency": "Latency",
+    "lag": "Lag",
+    "results": "Results"
+  },
+  "states": {
+    "write": {
+      "success": "Success",
+      "retry": "Retry",
+      "backlog": "Backlog",
+      "failed": "Failed",
+      "missing": "Missing",
+      "unknown": "Unknown"
+    },
+    "correctness": {
+      "correct": "Correct",
+      "partial": "Partial",
+      "incorrect": "Incorrect",
+      "unknown": "Unknown"
+    }
+  },
+  "errors": {
+    "config_title": "记忆配置不可用",
+    "config_description": "记忆网关配置请求失败，无法确定当前提供方状态。",
+    "samples_title": "记忆样本不可用",
+    "samples_description": "无法加载召回样本，因此不会为失败请求显示配对覆盖率或 fixture 回退。"
+  },
+  "rank": {
+    "title": "配对排名指标",
+    "description": "当 provenance 包含预期 memory id 或明确匹配排名时，按配对查询显示排名。",
+    "hindsight_rank": "Hindsight 排名",
+    "mem0_rank": "mem0 排名",
+    "delta": "mem0 - Hindsight",
+    "overlap": "重叠率"
+  }
+}
