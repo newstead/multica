@@ -2992,7 +2992,7 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			h.captureMemoryBestEffort(r.Context(), service.MemoryCaptureSource{
 				SourceType: service.MemorySourceAgentOutcomeSummary,
 				SourceID:   task.ID,
-				Scope:      service.MemoryScope{WorkspaceID: issue.WorkspaceID, ProjectID: issue.ProjectID, AgentID: task.AgentID, IssueID: issue.ID, TaskID: task.ID},
+				Scope:      service.MemoryScope{WorkspaceID: issue.WorkspaceID, ProjectID: issue.ProjectID, AgentID: task.AgentID, IssueID: issue.ID},
 				Actor:      service.MemoryActor{Type: "agent", ID: task.AgentID},
 				Text:       req.Output,
 			})

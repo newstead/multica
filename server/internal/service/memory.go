@@ -10,12 +10,14 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/multica-ai/multica/server/pkg/redact"
 )
 
 var (
@@ -143,7 +145,6 @@ var approvedMemorySources = map[string]bool{
 	MemorySourceIssueDescription:    true,
 	MemorySourceHumanComment:        true,
 	MemorySourceAgentOutcomeSummary: true,
-	MemorySourceExplicitFeedback:    true,
 	MemorySourceMergedPRVerdict:     true,
 }
 
@@ -271,8 +272,9 @@ func (s *MemoryService) RetainApprovedSource(ctx context.Context, src MemoryCapt
 
 func BuildApprovedMemoryRetainRequest(src MemoryCaptureSource) (MemoryRetainRequest, bool) {
 	sourceType := strings.TrimSpace(src.SourceType)
-	text := strings.TrimSpace(src.Text)
-	if !approvedMemorySources[sourceType] || text == "" || containsMemoryDeniedContent(text) {
+	rawText := strings.TrimSpace(src.Text)
+	text := strings.TrimSpace(redact.Text(rawText))
+	if !approvedMemorySources[sourceType] || rawText == "" || text == "" || containsMemoryDeniedContent(rawText) {
 		return MemoryRetainRequest{}, false
 	}
 	content, err := json.Marshal(map[string]any{
@@ -334,7 +336,17 @@ func containsMemoryDeniedContent(text string) bool {
 			return true
 		}
 	}
-	return false
+	return looksLikeRawExecutionLog(lower)
+}
+
+func looksLikeRawExecutionLog(lower string) bool {
+	markers := 0
+	for _, needle := range []string{"chunk id:", "process exited with code", "original token count:", "output:\n", "wall time:"} {
+		if strings.Contains(lower, needle) {
+			markers++
+		}
+	}
+	return markers >= 2
 }
 
 func (s *MemoryService) RecallForTask(ctx context.Context, req MemoryRecallForTaskRequest) ([]protocol.MemoryRecallData, error) {
@@ -674,18 +686,35 @@ func memoryScopeSpecificity(scope protocol.MemoryRecallScope) int {
 }
 
 func approxTokenCount(text string) int {
-	return len(strings.Fields(text))
+	count := 0
+	for _, r := range text {
+		if !unicode.IsSpace(r) {
+			count++
+		}
+	}
+	return count
 }
 
 func truncateApproxTokens(text string, maxTokens int) string {
 	if maxTokens <= 0 {
 		return ""
 	}
-	fields := strings.Fields(text)
-	if len(fields) <= maxTokens {
-		return strings.TrimSpace(text)
+	text = strings.TrimSpace(text)
+	if approxTokenCount(text) <= maxTokens {
+		return text
 	}
-	return strings.Join(fields[:maxTokens], " ") + " ..."
+	var b strings.Builder
+	used := 0
+	for _, r := range text {
+		if !unicode.IsSpace(r) {
+			if used >= maxTokens {
+				return strings.TrimSpace(b.String())
+			}
+			used++
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func timestamptzString(ts pgtype.Timestamptz) string {

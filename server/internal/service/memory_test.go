@@ -264,6 +264,123 @@ func TestMemoryCapturePolicyUsesContentRevisionInKey(t *testing.T) {
 	}
 }
 
+func TestMemoryCaptureRedactsSecretsAndRejectsRawExecutionLogs(t *testing.T) {
+	workspaceID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
+	commentID := util.MustParseUUID("22222222-2222-2222-2222-222222222222")
+	req, ok := BuildApprovedMemoryRetainRequest(MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   commentID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "PASSWORD: hunter2 ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa sk-abcdefghijklmnopqrstuvwxyz",
+	})
+	if !ok {
+		t.Fatal("redactable visible comment should pass capture policy")
+	}
+	var content map[string]any
+	if err := json.Unmarshal(req.Content, &content); err != nil {
+		t.Fatalf("unmarshal retained content: %v", err)
+	}
+	text, _ := content["text"].(string)
+	for _, leaked := range []string{"hunter2", "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sk-abcdefghijklmnopqrstuvwxyz"} {
+		if strings.Contains(text, leaked) {
+			t.Fatalf("retained text leaked %q: %s", leaked, text)
+		}
+	}
+	if !strings.Contains(text, "[REDACTED") {
+		t.Fatalf("retained text did not use canonical redaction markers: %s", text)
+	}
+
+	_, ok = BuildApprovedMemoryRetainRequest(MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   commentID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "Chunk ID: abc123\nWall time: 0.1s\nProcess exited with code 0\nOutput:\nsecret-ish log",
+	})
+	if ok {
+		t.Fatal("raw execution logs must not pass memory capture policy")
+	}
+}
+
+func TestMemoryTokenBudgetTruncatesCJKAndUnbrokenText(t *testing.T) {
+	for _, text := range []string{strings.Repeat("记", 80), strings.Repeat("a", 80)} {
+		got := truncateApproxTokens(text, 16)
+		if got == text {
+			t.Fatalf("text was not truncated: %q", text[:16])
+		}
+		if tokens := approxTokenCount(got); tokens > 16 {
+			t.Fatalf("truncated token count = %d, want <= 16 for %q", tokens, got)
+		}
+	}
+}
+
+func TestMemoryRecallForTaskFindsDurableAgentOutcomeAcrossTasks(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	agentID := util.MustParseUUID(uuid.NewString())
+	otherAgentID := util.MustParseUUID(uuid.NewString())
+	issueID := util.MustParseUUID(uuid.NewString())
+	otherIssueID := util.MustParseUUID(uuid.NewString())
+	taskAID := util.MustParseUUID(uuid.NewString())
+	taskBID := util.MustParseUUID(uuid.NewString())
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_provider_delivery WHERE workspace_id = $1`, workspaceID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_event WHERE workspace_id = $1`, workspaceID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_workspace_config WHERE workspace_id = $1`, workspaceID)
+	})
+	if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  workspaceID,
+		Enabled:                      true,
+		PrimaryProvider:              "hindsight",
+		ReadMode:                     "primary",
+		ProviderSettings:             []byte(`{}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("seed memory config: %v", err)
+	}
+
+	svc := NewMemoryService(queries, pool)
+	if _, err := svc.Retain(ctx, mustMemoryRetain(t, MemoryCaptureSource{
+		SourceType: MemorySourceAgentOutcomeSummary,
+		SourceID:   taskAID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID, AgentID: agentID, IssueID: issueID},
+		Actor:      MemoryActor{Type: "agent", ID: agentID},
+		Text:       "final outcome should be durable for the next task",
+	})); err != nil {
+		t.Fatalf("retain outcome memory: %v", err)
+	}
+
+	items, err := svc.RecallForTask(ctx, MemoryRecallForTaskRequest{
+		Scope: MemoryScope{WorkspaceID: workspaceID, AgentID: agentID, IssueID: issueID, TaskID: taskBID},
+		Limit: 4,
+	})
+	if err != nil {
+		t.Fatalf("recall same issue next task: %v", err)
+	}
+	if len(items) != 1 || items[0].SourceID != util.UUIDToString(taskAID) || items[0].Scope.TaskID != "" {
+		t.Fatalf("durable outcome recall = %#v, want task A source with no task-scoped recall", items)
+	}
+	for name, scope := range map[string]MemoryScope{
+		"other agent": {WorkspaceID: workspaceID, AgentID: otherAgentID, IssueID: issueID, TaskID: taskBID},
+		"other issue": {WorkspaceID: workspaceID, AgentID: agentID, IssueID: otherIssueID, TaskID: taskBID},
+	} {
+		items, err := svc.RecallForTask(ctx, MemoryRecallForTaskRequest{Scope: scope, Limit: 4})
+		if err != nil {
+			t.Fatalf("recall %s: %v", name, err)
+		}
+		if len(items) != 0 {
+			t.Fatalf("recall %s leaked outcome memory: %#v", name, items)
+		}
+	}
+}
+
 func TestMemoryRecallForTaskScopesAndTruncates(t *testing.T) {
 	pool := newMemoryServiceIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
