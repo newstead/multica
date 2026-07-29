@@ -7,6 +7,7 @@ import {
   aggregateAgentTokens,
   aggregateDailyCost,
   aggregateDailyErrors,
+  aggregateDailyTokens,
   aggregateFailureClasses,
   aggregateFailureReasons,
   aggregateWeeklyErrors,
