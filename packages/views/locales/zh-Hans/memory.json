@@ -23,7 +23,8 @@
     "label": "记忆看板标签",
     "comparison": "对比",
     "hindsight": "Hindsight",
-    "mem0": "mem0"
+    "mem0": "mem0",
+    "audit": "审计"
   },
   "coverage": {
     "fixture_title": "Deterministic paired fixture mode",
@@ -122,5 +123,62 @@
     "mem0_rank": "mem0 排名",
     "delta": "mem0 - Hindsight",
     "overlap": "重叠率"
+  },
+  "audit": {
+    "title": "Memory 审计",
+    "subtitle": "检查已捕获的记忆、provider 投递状态、修正、失效、删除、范围擦除和元数据导出。",
+    "refresh": "刷新",
+    "export": "导出",
+    "loading": "正在加载 memory 审计...",
+    "empty": "没有符合筛选条件的 memory 事件。",
+    "cancel": "取消",
+    "confirm": "确认",
+    "filters": {
+      "project": "项目 ID",
+      "issue": "Issue ID",
+      "agent": "Agent ID",
+      "apply": "应用"
+    },
+    "stats": {
+      "events": "事件",
+      "delivered": "已投递",
+      "failed": "失败"
+    },
+    "scope": {
+      "project": "项目",
+      "issue": "Issue"
+    },
+    "table": {
+      "created": "创建时间",
+      "source": "来源",
+      "scope": "范围",
+      "event": "事件",
+      "delivery": "Provider 投递",
+      "actions": "操作",
+      "no_delivery": "无 provider 投递"
+    },
+    "actions": {
+      "correct": "修正",
+      "invalidate": "失效",
+      "delete": "删除"
+    },
+    "dialog": {
+      "reason": "原因",
+      "result": "Provider 结果 {{count}}",
+      "correct": {
+        "title": "修正 memory"
+      },
+      "invalidate": {
+        "title": "使 memory 失效"
+      },
+      "delete": {
+        "title": "删除 memory"
+      }
+    },
+    "erase": {
+      "workspace": "擦除工作区",
+      "project": "擦除项目",
+      "issue": "擦除 Issue"
+    }
   }
 }

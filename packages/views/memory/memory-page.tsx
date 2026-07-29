@@ -5,6 +5,7 @@ import { AlertTriangle, Database, GitCompareArrows, ShieldCheck } from "lucide-r
 import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { memoryConfigOptions, memoryRecallSamplesOptions, type MemoryRecallSample } from "@multica/core/memory";
+import { MemoryAuditBoard } from "./memory-audit-board";
 import { useWorkspaceId } from "@multica/core/hooks";
 import {
   ChartContainer,
@@ -25,9 +26,9 @@ import {
   type ProviderSummary,
 } from "./analysis";
 
-type MemoryTab = "comparison" | MemoryProvider;
+type MemoryTab = "comparison" | "audit" | MemoryProvider;
 
-const TABS: MemoryTab[] = ["comparison", "hindsight", "mem0"];
+const TABS: MemoryTab[] = ["comparison", "hindsight", "mem0", "audit"];
 const EMPTY_SAMPLES: MemoryRecallSample[] = [];
 
 
@@ -125,7 +126,9 @@ export function MemoryPage() {
           ) : (
             <>
               <CoverageBanner model={model} />
-              {tab === "comparison" ? (
+              {tab === "audit" ? (
+                <MemoryAuditBoard />
+              ) : tab === "comparison" ? (
                 <ComparisonBoard model={model} locale={locale} />
               ) : (
                 <ProviderBoard provider={tab} model={model} locale={locale} />

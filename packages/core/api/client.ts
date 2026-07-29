@@ -169,6 +169,10 @@ import type {
   MemoryConfig,
   MemoryMem0BoardResponse,
   MemoryRecallSamplesResponse,
+  MemoryAuditListResponse,
+  MemoryMutationRequest,
+  MemoryEraseRequest,
+  MemoryMutationResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type { CreateFeedbackResponse, FeedbackKind } from "../feedback/types";
@@ -3065,6 +3069,60 @@ export class ApiClient {
       `/api/workspaces/${workspaceId}/vcs/connections/${connectionId}/rotate-webhook`,
       { method: "POST" },
     );
+  }
+
+
+  // Memory gateway audit and controls
+  async listMemoryAudit(
+    workspaceId: string,
+    params: { limit?: number; offset?: number; project_id?: string; agent_id?: string; issue_id?: string; task_id?: string } = {},
+  ): Promise<MemoryAuditListResponse> {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    }
+    const suffix = search.size > 0 ? `?${search.toString()}` : "";
+    return this.fetch(`/api/workspaces/${workspaceId}/memory/audit${suffix}`);
+  }
+
+  async exportMemoryAudit(
+    workspaceId: string,
+    params: { project_id?: string; agent_id?: string; issue_id?: string; task_id?: string } = {},
+  ): Promise<MemoryAuditListResponse> {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    }
+    const suffix = search.size > 0 ? `?${search.toString()}` : "";
+    return this.fetch(`/api/workspaces/${workspaceId}/memory/audit/export${suffix}`);
+  }
+
+  async correctMemoryAuditEvent(workspaceId: string, eventId: string, body: MemoryMutationRequest): Promise<MemoryMutationResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/memory/audit/${eventId}/correct`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async invalidateMemoryAuditEvent(workspaceId: string, eventId: string, body: MemoryMutationRequest): Promise<MemoryMutationResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/memory/audit/${eventId}/invalidate`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteMemoryAuditEvent(workspaceId: string, eventId: string, body: MemoryMutationRequest): Promise<MemoryMutationResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/memory/audit/${eventId}`, {
+      method: "DELETE",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async eraseMemoryScope(workspaceId: string, body: MemoryEraseRequest): Promise<MemoryMutationResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/memory/erase`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   }
 
   // Lark integration

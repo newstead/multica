@@ -66,3 +66,79 @@ export interface MemoryMem0BoardResponse {
 export interface MemoryRecallSamplesResponse {
   samples: MemoryRecallSample[];
 }
+
+export interface MemoryAuditDelivery {
+  id: string;
+  provider: string;
+  status: string;
+  attempt_count: number;
+  provider_memory_id?: string | null;
+  response: Record<string, unknown>;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+  terminal_at?: string | null;
+  delivery_lag_ms: number;
+}
+
+export interface MemoryAuditEvent {
+  id: string;
+  workspace_id: string;
+  project_id?: string | null;
+  agent_id?: string | null;
+  issue_id?: string | null;
+  task_id?: string | null;
+  actor_type: string;
+  actor_id?: string | null;
+  event_type: string;
+  idempotency_key: string;
+  status: string;
+  source_type?: string | null;
+  source_id?: string | null;
+  text?: string | null;
+  envelope: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  deliveries: MemoryAuditDelivery[];
+}
+
+export interface MemoryAuditListResponse {
+  events: MemoryAuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface MemoryMutationRequest {
+  provider?: string;
+  provider_memory_id?: string;
+  memory_id?: string;
+  document_id?: string;
+  text?: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+  confirmation?: string;
+}
+
+export interface MemoryEraseRequest {
+  scope: "workspace" | "project" | "issue";
+  project_id?: string;
+  issue_id?: string;
+  confirmation: "ERASE";
+}
+
+export interface MemoryMutationProviderResult {
+  provider: string;
+  provider_memory_id?: string;
+  event_id?: string;
+  delivery_id?: string;
+  status: string;
+  error?: string;
+  response?: Record<string, unknown>;
+}
+
+export interface MemoryMutationResponse {
+  operation: string;
+  results: MemoryMutationProviderResult[];
+}

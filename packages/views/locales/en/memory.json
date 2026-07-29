@@ -23,7 +23,8 @@
     "label": "Memory board tabs",
     "comparison": "Comparison",
     "hindsight": "Hindsight",
-    "mem0": "mem0"
+    "mem0": "mem0",
+    "audit": "Audit"
   },
   "coverage": {
     "fixture_title": "Deterministic paired fixture mode",
@@ -122,5 +123,62 @@
     "mem0_rank": "mem0 rank",
     "delta": "mem0 - Hindsight",
     "overlap": "Overlap"
+  },
+  "audit": {
+    "title": "Memory audit",
+    "subtitle": "Inspect captured memories, provider delivery state, corrections, invalidations, deletes, scope erases, and export metadata.",
+    "refresh": "Refresh",
+    "export": "Export",
+    "loading": "Loading memory audit...",
+    "empty": "No memory events match these filters.",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "filters": {
+      "project": "Project ID",
+      "issue": "Issue ID",
+      "agent": "Agent ID",
+      "apply": "Apply"
+    },
+    "stats": {
+      "events": "Events",
+      "delivered": "Delivered",
+      "failed": "Failed"
+    },
+    "scope": {
+      "project": "Project",
+      "issue": "Issue"
+    },
+    "table": {
+      "created": "Created",
+      "source": "Source",
+      "scope": "Scope",
+      "event": "Event",
+      "delivery": "Provider delivery",
+      "actions": "Actions",
+      "no_delivery": "No provider delivery"
+    },
+    "actions": {
+      "correct": "Correct",
+      "invalidate": "Invalidate",
+      "delete": "Delete"
+    },
+    "dialog": {
+      "reason": "Reason",
+      "result": "Provider result {{count}}",
+      "correct": {
+        "title": "Correct memory"
+      },
+      "invalidate": {
+        "title": "Invalidate memory"
+      },
+      "delete": {
+        "title": "Delete memory"
+      }
+    },
+    "erase": {
+      "workspace": "Erase workspace",
+      "project": "Erase project",
+      "issue": "Erase issue"
+    }
   }
 }
