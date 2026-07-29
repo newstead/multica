@@ -109,14 +109,20 @@ type MemoryRecallResult struct {
 
 type MemoryService struct {
 	Queries             *db.Queries
+	TxStarter           TxStarter
 	Clock               func() time.Time
 	MaxDeliveryAttempts int32
 	BaseBackoff         time.Duration
 }
 
-func NewMemoryService(queries *db.Queries) *MemoryService {
+func NewMemoryService(queries *db.Queries, txStarter ...TxStarter) *MemoryService {
+	var tx TxStarter
+	if len(txStarter) > 0 {
+		tx = txStarter[0]
+	}
 	return &MemoryService{
 		Queries:             queries,
+		TxStarter:           tx,
 		Clock:               time.Now,
 		MaxDeliveryAttempts: 5,
 		BaseBackoff:         time.Minute,
@@ -167,46 +173,63 @@ func (s *MemoryService) Retain(ctx context.Context, req MemoryRetainRequest) (Me
 		key = MemoryIdempotencyKey(raw)
 	}
 	now := s.now()
-	eventRow, err := s.Queries.UpsertMemoryEvent(ctx, db.UpsertMemoryEventParams{
-		WorkspaceID:    req.Scope.WorkspaceID,
-		ProjectID:      req.Scope.ProjectID,
-		AgentID:        req.Scope.AgentID,
-		IssueID:        req.Scope.IssueID,
-		TaskID:         req.Scope.TaskID,
-		ActorType:      normalizeMemoryActorType(req.Actor.Type),
-		ActorID:        req.Actor.ID,
-		EventType:      req.EventType,
-		IdempotencyKey: key,
-		Envelope:       raw,
-		AvailableAt:    pgtype.Timestamptz{Time: now, Valid: true},
-	})
-	if err != nil {
-		return MemoryRetainResult{}, err
-	}
-
-	out := MemoryRetainResult{
-		Event:        memoryEventFromUpsertRow(eventRow),
-		Inserted:     eventRow.Inserted,
-		Envelope:     envelope,
-		EnvelopeJSON: raw,
-	}
-	if !eventRow.Inserted {
-		return out, nil
-	}
-
-	for _, provider := range providers {
-		delivery, err := s.Queries.UpsertMemoryProviderDelivery(ctx, db.UpsertMemoryProviderDeliveryParams{
-			WorkspaceID:   req.Scope.WorkspaceID,
-			MemoryEventID: eventRow.ID,
-			Provider:      provider,
-			NextAttemptAt: pgtype.Timestamptz{Time: now, Valid: true},
+	var out MemoryRetainResult
+	if err := s.runInTx(ctx, func(q *db.Queries) error {
+		eventRow, err := q.UpsertMemoryEvent(ctx, db.UpsertMemoryEventParams{
+			WorkspaceID:    req.Scope.WorkspaceID,
+			ProjectID:      req.Scope.ProjectID,
+			AgentID:        req.Scope.AgentID,
+			IssueID:        req.Scope.IssueID,
+			TaskID:         req.Scope.TaskID,
+			ActorType:      normalizeMemoryActorType(req.Actor.Type),
+			ActorID:        req.Actor.ID,
+			EventType:      req.EventType,
+			IdempotencyKey: key,
+			Envelope:       raw,
+			AvailableAt:    pgtype.Timestamptz{Time: now, Valid: true},
 		})
 		if err != nil {
-			return MemoryRetainResult{}, err
+			return err
 		}
-		out.Deliveries = append(out.Deliveries, memoryDeliveryFromUpsertRow(delivery))
+
+		out = MemoryRetainResult{
+			Event:        memoryEventFromUpsertRow(eventRow),
+			Inserted:     eventRow.Inserted,
+			Envelope:     envelope,
+			EnvelopeJSON: raw,
+		}
+		for _, provider := range providers {
+			delivery, err := q.UpsertMemoryProviderDelivery(ctx, db.UpsertMemoryProviderDeliveryParams{
+				WorkspaceID:   req.Scope.WorkspaceID,
+				MemoryEventID: eventRow.ID,
+				Provider:      provider,
+				NextAttemptAt: pgtype.Timestamptz{Time: now, Valid: true},
+			})
+			if err != nil {
+				return err
+			}
+			out.Deliveries = append(out.Deliveries, memoryDeliveryFromUpsertRow(delivery))
+		}
+		return nil
+	}); err != nil {
+		return MemoryRetainResult{}, err
 	}
 	return out, nil
+}
+
+func (s *MemoryService) runInTx(ctx context.Context, fn func(*db.Queries) error) error {
+	if s.TxStarter == nil {
+		return fn(s.Queries)
+	}
+	tx, err := s.TxStarter.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := fn(s.Queries.WithTx(tx)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *MemoryService) RecordRecallSample(ctx context.Context, req MemoryRecallRequest, result MemoryRecallResult) (db.MemoryRecallSample, error) {
