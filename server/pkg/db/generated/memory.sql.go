@@ -11,28 +11,148 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimDueMemoryProviderDeliveries = `-- name: ClaimDueMemoryProviderDeliveries :many
+WITH due AS (
+    SELECT memory_provider_delivery.id, memory_provider_delivery.workspace_id
+    FROM memory_provider_delivery
+    WHERE memory_provider_delivery.workspace_id = $1
+      AND (
+        (memory_provider_delivery.status IN ('queued', 'retry') AND memory_provider_delivery.next_attempt_at <= $2)
+        OR (memory_provider_delivery.status = 'delivering' AND memory_provider_delivery.updated_at <= $3)
+      )
+    ORDER BY memory_provider_delivery.next_attempt_at ASC, memory_provider_delivery.created_at ASC
+    FOR UPDATE SKIP LOCKED
+    LIMIT $4
+), claimed AS (
+    UPDATE memory_provider_delivery
+    SET status = 'delivering', updated_at = now()
+    FROM due
+    WHERE memory_provider_delivery.id = due.id
+      AND memory_provider_delivery.workspace_id = due.workspace_id
+    RETURNING memory_provider_delivery.id, memory_provider_delivery.workspace_id, memory_provider_delivery.memory_event_id, memory_provider_delivery.provider, memory_provider_delivery.status, memory_provider_delivery.attempt_count, memory_provider_delivery.next_attempt_at, memory_provider_delivery.last_attempt_at, memory_provider_delivery.terminal_at, memory_provider_delivery.provider_memory_id, memory_provider_delivery.response, memory_provider_delivery.error, memory_provider_delivery.created_at, memory_provider_delivery.updated_at, memory_provider_delivery.delivery_lag_ms
+)
+SELECT
+    claimed.id,
+    claimed.workspace_id,
+    claimed.memory_event_id,
+    claimed.provider,
+    claimed.status,
+    claimed.attempt_count,
+    claimed.next_attempt_at,
+    claimed.last_attempt_at,
+    claimed.terminal_at,
+    claimed.provider_memory_id,
+    claimed.response,
+    claimed.error,
+    claimed.created_at,
+    claimed.updated_at,
+    claimed.delivery_lag_ms,
+    memory_event.envelope,
+    memory_event.event_type,
+    memory_event.created_at AS event_created_at
+FROM claimed
+JOIN memory_event
+  ON memory_event.id = claimed.memory_event_id
+ AND memory_event.workspace_id = claimed.workspace_id
+ORDER BY claimed.next_attempt_at ASC, claimed.created_at ASC
+`
+
+type ClaimDueMemoryProviderDeliveriesParams struct {
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Limit         int32              `json:"limit"`
+}
+
+type ClaimDueMemoryProviderDeliveriesRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MemoryEventID    pgtype.UUID        `json:"memory_event_id"`
+	Provider         string             `json:"provider"`
+	Status           string             `json:"status"`
+	AttemptCount     int32              `json:"attempt_count"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastAttemptAt    pgtype.Timestamptz `json:"last_attempt_at"`
+	TerminalAt       pgtype.Timestamptz `json:"terminal_at"`
+	ProviderMemoryID pgtype.Text        `json:"provider_memory_id"`
+	Response         []byte             `json:"response"`
+	Error            pgtype.Text        `json:"error"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeliveryLagMs    int64              `json:"delivery_lag_ms"`
+	Envelope         []byte             `json:"envelope"`
+	EventType        string             `json:"event_type"`
+	EventCreatedAt   pgtype.Timestamptz `json:"event_created_at"`
+}
+
+func (q *Queries) ClaimDueMemoryProviderDeliveries(ctx context.Context, arg ClaimDueMemoryProviderDeliveriesParams) ([]ClaimDueMemoryProviderDeliveriesRow, error) {
+	rows, err := q.db.Query(ctx, claimDueMemoryProviderDeliveries,
+		arg.WorkspaceID,
+		arg.NextAttemptAt,
+		arg.UpdatedAt,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimDueMemoryProviderDeliveriesRow{}
+	for rows.Next() {
+		var i ClaimDueMemoryProviderDeliveriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MemoryEventID,
+			&i.Provider,
+			&i.Status,
+			&i.AttemptCount,
+			&i.NextAttemptAt,
+			&i.LastAttemptAt,
+			&i.TerminalAt,
+			&i.ProviderMemoryID,
+			&i.Response,
+			&i.Error,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeliveryLagMs,
+			&i.Envelope,
+			&i.EventType,
+			&i.EventCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createMemoryRecallSample = `-- name: CreateMemoryRecallSample :one
 INSERT INTO memory_recall_sample (
     workspace_id, project_id, agent_id, issue_id, task_id, provider,
-    query, results, provenance, sampled_at
+    query, results, provenance, sampled_at, recall_correlation_id, read_mode
 ) VALUES (
-    $1, $7, $8, $9,
-    $10, $2, $3, $4, $5, $6
+    $1, $9, $10, $11,
+    $12, $2, $3, $4, $5, $6, $7, $8
 )
-RETURNING id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at
+RETURNING id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at, recall_correlation_id, read_mode
 `
 
 type CreateMemoryRecallSampleParams struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Provider    string             `json:"provider"`
-	Query       string             `json:"query"`
-	Results     []byte             `json:"results"`
-	Provenance  []byte             `json:"provenance"`
-	SampledAt   pgtype.Timestamptz `json:"sampled_at"`
-	ProjectID   pgtype.UUID        `json:"project_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	IssueID     pgtype.UUID        `json:"issue_id"`
-	TaskID      pgtype.UUID        `json:"task_id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	Provider            string             `json:"provider"`
+	Query               string             `json:"query"`
+	Results             []byte             `json:"results"`
+	Provenance          []byte             `json:"provenance"`
+	SampledAt           pgtype.Timestamptz `json:"sampled_at"`
+	RecallCorrelationID string             `json:"recall_correlation_id"`
+	ReadMode            string             `json:"read_mode"`
+	ProjectID           pgtype.UUID        `json:"project_id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	IssueID             pgtype.UUID        `json:"issue_id"`
+	TaskID              pgtype.UUID        `json:"task_id"`
 }
 
 func (q *Queries) CreateMemoryRecallSample(ctx context.Context, arg CreateMemoryRecallSampleParams) (MemoryRecallSample, error) {
@@ -43,6 +163,8 @@ func (q *Queries) CreateMemoryRecallSample(ctx context.Context, arg CreateMemory
 		arg.Results,
 		arg.Provenance,
 		arg.SampledAt,
+		arg.RecallCorrelationID,
+		arg.ReadMode,
 		arg.ProjectID,
 		arg.AgentID,
 		arg.IssueID,
@@ -62,6 +184,8 @@ func (q *Queries) CreateMemoryRecallSample(ctx context.Context, arg CreateMemory
 		&i.Provenance,
 		&i.SampledAt,
 		&i.CreatedAt,
+		&i.RecallCorrelationID,
+		&i.ReadMode,
 	)
 	return i, err
 }
@@ -99,6 +223,58 @@ func (q *Queries) GetMemoryEventInWorkspace(ctx context.Context, arg GetMemoryEv
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getMemoryProviderDeliveryForDispatch = `-- name: GetMemoryProviderDeliveryForDispatch :one
+SELECT
+    memory_provider_delivery.id, memory_provider_delivery.workspace_id, memory_provider_delivery.memory_event_id, memory_provider_delivery.provider, memory_provider_delivery.status, memory_provider_delivery.attempt_count, memory_provider_delivery.next_attempt_at, memory_provider_delivery.last_attempt_at, memory_provider_delivery.terminal_at, memory_provider_delivery.provider_memory_id, memory_provider_delivery.response, memory_provider_delivery.error, memory_provider_delivery.created_at, memory_provider_delivery.updated_at, memory_provider_delivery.delivery_lag_ms,
+    memory_event.envelope,
+    memory_event.event_type,
+    memory_event.created_at AS event_created_at
+FROM memory_provider_delivery
+JOIN memory_event
+  ON memory_event.id = memory_provider_delivery.memory_event_id
+ AND memory_event.workspace_id = memory_provider_delivery.workspace_id
+WHERE memory_provider_delivery.id = $1
+  AND memory_provider_delivery.workspace_id = $2
+`
+
+type GetMemoryProviderDeliveryForDispatchParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+type GetMemoryProviderDeliveryForDispatchRow struct {
+	MemoryProviderDelivery MemoryProviderDelivery `json:"memory_provider_delivery"`
+	Envelope               []byte                 `json:"envelope"`
+	EventType              string                 `json:"event_type"`
+	EventCreatedAt         pgtype.Timestamptz     `json:"event_created_at"`
+}
+
+func (q *Queries) GetMemoryProviderDeliveryForDispatch(ctx context.Context, arg GetMemoryProviderDeliveryForDispatchParams) (GetMemoryProviderDeliveryForDispatchRow, error) {
+	row := q.db.QueryRow(ctx, getMemoryProviderDeliveryForDispatch, arg.ID, arg.WorkspaceID)
+	var i GetMemoryProviderDeliveryForDispatchRow
+	err := row.Scan(
+		&i.MemoryProviderDelivery.ID,
+		&i.MemoryProviderDelivery.WorkspaceID,
+		&i.MemoryProviderDelivery.MemoryEventID,
+		&i.MemoryProviderDelivery.Provider,
+		&i.MemoryProviderDelivery.Status,
+		&i.MemoryProviderDelivery.AttemptCount,
+		&i.MemoryProviderDelivery.NextAttemptAt,
+		&i.MemoryProviderDelivery.LastAttemptAt,
+		&i.MemoryProviderDelivery.TerminalAt,
+		&i.MemoryProviderDelivery.ProviderMemoryID,
+		&i.MemoryProviderDelivery.Response,
+		&i.MemoryProviderDelivery.Error,
+		&i.MemoryProviderDelivery.CreatedAt,
+		&i.MemoryProviderDelivery.UpdatedAt,
+		&i.MemoryProviderDelivery.DeliveryLagMs,
+		&i.Envelope,
+		&i.EventType,
+		&i.EventCreatedAt,
 	)
 	return i, err
 }
@@ -183,7 +359,7 @@ func (q *Queries) ListMemoryEventsByWorkspace(ctx context.Context, arg ListMemor
 }
 
 const listMemoryRecallSamplesByWorkspace = `-- name: ListMemoryRecallSamplesByWorkspace :many
-SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at FROM memory_recall_sample
+SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at, recall_correlation_id, read_mode FROM memory_recall_sample
 WHERE workspace_id = $1
 ORDER BY sampled_at DESC
 LIMIT $2 OFFSET $3
@@ -217,6 +393,8 @@ func (q *Queries) ListMemoryRecallSamplesByWorkspace(ctx context.Context, arg Li
 			&i.Provenance,
 			&i.SampledAt,
 			&i.CreatedAt,
+			&i.RecallCorrelationID,
+			&i.ReadMode,
 		); err != nil {
 			return nil, err
 		}
@@ -230,42 +408,47 @@ func (q *Queries) ListMemoryRecallSamplesByWorkspace(ctx context.Context, arg Li
 
 const updateMemoryProviderDeliveryResult = `-- name: UpdateMemoryProviderDeliveryResult :one
 UPDATE memory_provider_delivery
-SET status = $3,
-    attempt_count = $4,
-    next_attempt_at = $5,
-    last_attempt_at = now(),
-    terminal_at = $7,
-    provider_memory_id = $8,
-    response = $6,
-    error = $9,
+SET status = $1,
+    attempt_count = $2,
+    next_attempt_at = $3,
+    last_attempt_at = $4,
+    terminal_at = $5,
+    provider_memory_id = $6,
+    response = $7,
+    error = $8,
+    delivery_lag_ms = $9,
     updated_at = now()
-WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at
+WHERE id = $10 AND workspace_id = $11
+RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at, delivery_lag_ms
 `
 
 type UpdateMemoryProviderDeliveryResultParams struct {
-	ID               pgtype.UUID        `json:"id"`
-	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
 	Status           string             `json:"status"`
 	AttemptCount     int32              `json:"attempt_count"`
 	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
-	Response         []byte             `json:"response"`
+	LastAttemptAt    pgtype.Timestamptz `json:"last_attempt_at"`
 	TerminalAt       pgtype.Timestamptz `json:"terminal_at"`
 	ProviderMemoryID pgtype.Text        `json:"provider_memory_id"`
+	Response         []byte             `json:"response"`
 	Error            pgtype.Text        `json:"error"`
+	DeliveryLagMs    int64              `json:"delivery_lag_ms"`
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
 }
 
 func (q *Queries) UpdateMemoryProviderDeliveryResult(ctx context.Context, arg UpdateMemoryProviderDeliveryResultParams) (MemoryProviderDelivery, error) {
 	row := q.db.QueryRow(ctx, updateMemoryProviderDeliveryResult,
-		arg.ID,
-		arg.WorkspaceID,
 		arg.Status,
 		arg.AttemptCount,
 		arg.NextAttemptAt,
-		arg.Response,
+		arg.LastAttemptAt,
 		arg.TerminalAt,
 		arg.ProviderMemoryID,
+		arg.Response,
 		arg.Error,
+		arg.DeliveryLagMs,
+		arg.ID,
+		arg.WorkspaceID,
 	)
 	var i MemoryProviderDelivery
 	err := row.Scan(
@@ -283,6 +466,7 @@ func (q *Queries) UpdateMemoryProviderDeliveryResult(ctx context.Context, arg Up
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeliveryLagMs,
 	)
 	return i, err
 }
@@ -385,7 +569,7 @@ INSERT INTO memory_provider_delivery (
 )
 ON CONFLICT (memory_event_id, provider) DO UPDATE SET
     updated_at = memory_provider_delivery.updated_at
-RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at, (xmax = 0) AS inserted
+RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at, delivery_lag_ms, (xmax = 0) AS inserted
 `
 
 type UpsertMemoryProviderDeliveryParams struct {
@@ -410,6 +594,7 @@ type UpsertMemoryProviderDeliveryRow struct {
 	Error            pgtype.Text        `json:"error"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeliveryLagMs    int64              `json:"delivery_lag_ms"`
 	Inserted         bool               `json:"inserted"`
 }
 
@@ -436,6 +621,7 @@ func (q *Queries) UpsertMemoryProviderDelivery(ctx context.Context, arg UpsertMe
 		&i.Error,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeliveryLagMs,
 		&i.Inserted,
 	)
 	return i, err

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -119,6 +120,15 @@ type Config struct {
 	LLMAPIKey       string
 	LLMBaseURL      string
 	LLMDefaultModel string
+
+	// Memory provider endpoints are backend-only deployment configuration.
+	// Workspace memory config selects providers and stores provider settings,
+	// but provider credentials and base URLs are never accepted from or echoed
+	// to the frontend memory config API.
+	MemoryHindsightBaseURL string
+	MemoryHindsightAPIKey  string
+	MemoryMem0BaseURL      string
+	MemoryMem0APIKey       string
 	// ServerVersion is the build version of the running API binary (the same
 	// value main.go stamps via -X main.version and reports on /metrics).
 	// Surfaced through /api/config so self-hosted operators can confirm which
@@ -175,6 +185,7 @@ type Handler struct {
 	WebhookIPRateLimiter         WebhookRateLimiter
 	WebhookAbsoluteIPRateLimiter WebhookRateLimiter
 	WebhookDeliveryWorker        *WebhookDeliveryWorker
+	MemoryDeliveryWorker         *MemoryDeliveryWorker
 	CloudRuntime                 cloudRuntimeProxy
 	// Lark integration. All three are nil when the Lark master key
 	// (MULTICA_LARK_SECRET_KEY) is unset; the corresponding HTTP
@@ -263,6 +274,39 @@ type Handler struct {
 	cfg       Config
 }
 
+func registerMemoryProviders(memorySvc *service.MemoryService, cfg Config) {
+	if memorySvc == nil {
+		return
+	}
+	if memorySvc.Providers == nil {
+		memorySvc.Providers = map[string]service.MemoryProvider{}
+	}
+	if baseURL := strings.TrimSpace(cfg.MemoryHindsightBaseURL); baseURL != "" {
+		provider, err := service.NewHindsightProvider(service.HindsightConfig{
+			BaseURL: baseURL,
+			APIKey:  strings.TrimSpace(cfg.MemoryHindsightAPIKey),
+		})
+		if err != nil {
+			slog.Warn("memory provider disabled", "provider", "hindsight", "error", err)
+		} else {
+			memorySvc.Providers[provider.Name()] = provider
+		}
+	}
+	mem0BaseURL := strings.TrimSpace(cfg.MemoryMem0BaseURL)
+	mem0APIKey := strings.TrimSpace(cfg.MemoryMem0APIKey)
+	if mem0BaseURL != "" || mem0APIKey != "" {
+		provider, err := service.NewMem0Provider(service.Mem0ProviderConfig{
+			BaseURL: mem0BaseURL,
+			APIKey:  mem0APIKey,
+		})
+		if err != nil {
+			slog.Warn("memory provider disabled", "provider", service.Mem0ProviderName, "error", err)
+		} else {
+			memorySvc.Providers[provider.Name()] = provider
+		}
+	}
+}
+
 func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
 	var executor dbExecutor
 	if candidate, ok := txStarter.(dbExecutor); ok {
@@ -333,6 +377,8 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		cfg: cfg,
 	}
 	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
+	registerMemoryProviders(h.MemoryService, cfg)
+	h.MemoryDeliveryWorker = NewMemoryDeliveryWorker(h)
 
 	// GitHub API snapshot pipeline for PR cards (MUL-5265). Built
 	// unconditionally but inert (every trigger no-ops) when the App private key
