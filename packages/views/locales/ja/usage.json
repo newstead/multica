@@ -83,7 +83,9 @@
       "title": "モデル構成",
       "subtitle": "トークン量上位の provider/model です。",
       "other": "その他",
-      "no_data": "この期間のモデル使用量はありません。"
+      "no_data": "この期間のモデル使用量はありません。",
+      "unknown_provider": "不明な provider",
+      "unknown_model": "不明なモデル"
     },
     "sessions": {
       "title": "セッション",
@@ -93,7 +95,8 @@
     "failures": {
       "title": "失敗理由",
       "subtitle": "最も多い終端 task の失敗です。",
-      "no_data": "この期間の失敗はありません。"
+      "no_data": "この期間の失敗はありません。",
+      "unknown_reason": "不明な理由"
     },
     "code": {
       "title": "コード変更",
@@ -121,6 +124,13 @@
     "empty": {
       "title": "エージェント使用量はまだありません",
       "body": "このワークスペースでエージェントが task を完了すると、効率指標がここに表示されます。"
+    },
+    "chart": {
+      "tokens": "トークン",
+      "queue_p50": "待機 p50",
+      "queue_p95": "待機 p95",
+      "run_p50": "実行 p50",
+      "run_p95": "実行 p95"
     }
   }
 }

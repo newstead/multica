@@ -83,7 +83,9 @@
       "title": "Model mix",
       "subtitle": "Top provider/model pairs by token volume.",
       "other": "Other",
-      "no_data": "No model usage in this window."
+      "no_data": "No model usage in this window.",
+      "unknown_provider": "Unknown provider",
+      "unknown_model": "Unknown model"
     },
     "sessions": {
       "title": "Sessions",
@@ -93,7 +95,8 @@
     "failures": {
       "title": "Failure reasons",
       "subtitle": "Most frequent terminal task failures.",
-      "no_data": "No failures in this window."
+      "no_data": "No failures in this window.",
+      "unknown_reason": "Unknown reason"
     },
     "code": {
       "title": "Code changes",
@@ -121,6 +124,13 @@
     "empty": {
       "title": "No agent usage yet",
       "body": "Once agents complete tasks in this workspace, their efficiency metrics will appear here."
+    },
+    "chart": {
+      "tokens": "Tokens",
+      "queue_p50": "Queue p50",
+      "queue_p95": "Queue p95",
+      "run_p50": "Run p50",
+      "run_p95": "Run p95"
     }
   }
 }

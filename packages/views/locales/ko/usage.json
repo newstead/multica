@@ -83,7 +83,9 @@
       "title": "모델 구성",
       "subtitle": "토큰 사용량 상위 provider/model입니다.",
       "other": "기타",
-      "no_data": "이 기간에 모델 사용량이 없습니다."
+      "no_data": "이 기간에 모델 사용량이 없습니다.",
+      "unknown_provider": "알 수 없는 provider",
+      "unknown_model": "알 수 없는 모델"
     },
     "sessions": {
       "title": "세션",
@@ -93,7 +95,8 @@
     "failures": {
       "title": "실패 원인",
       "subtitle": "가장 빈번한 종료 task 실패입니다.",
-      "no_data": "이 기간에 실패가 없습니다."
+      "no_data": "이 기간에 실패가 없습니다.",
+      "unknown_reason": "알 수 없는 원인"
     },
     "code": {
       "title": "코드 변경",
@@ -121,6 +124,13 @@
     "empty": {
       "title": "아직 에이전트 사용량이 없습니다",
       "body": "이 워크스페이스에서 에이전트가 task를 완료하면 효율 지표가 여기에 표시됩니다."
+    },
+    "chart": {
+      "tokens": "토큰",
+      "queue_p50": "대기 p50",
+      "queue_p95": "대기 p95",
+      "run_p50": "실행 p50",
+      "run_p95": "실행 p95"
     }
   }
 }

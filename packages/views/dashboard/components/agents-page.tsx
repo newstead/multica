@@ -76,17 +76,6 @@ const EMPTY_AGENTS: Agent[] = [];
 
 const RANGE_OPTIONS = TIME_RANGES.map((r) => ({ label: r.label, value: r.days }));
 
-const modelMixConfig = {
-  tokens: { label: "Tokens", color: "var(--chart-1)" },
-} satisfies ChartConfig;
-
-const sessionsConfig = {
-  queueP50: { label: "Queue p50", color: "var(--chart-3)" },
-  queueP95: { label: "Queue p95", color: "var(--chart-2)" },
-  runP50: { label: "Run p50", color: "var(--chart-4)" },
-  runP95: { label: "Run p95", color: "var(--chart-1)" },
-} satisfies ChartConfig;
-
 const PIE_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",
@@ -172,9 +161,43 @@ export function AgentsUsagePage() {
   const tokensPerLoc = codeTotals.locChanged > 0
     ? (totals.input + totals.output + totals.cacheRead) / codeTotals.locChanged
     : 0;
+  const chartConfig = useMemo(
+    () => ({
+      modelMix: {
+        tokens: {
+          label: t(($) => $.agents.chart.tokens),
+          color: "var(--chart-1)",
+        },
+      } satisfies ChartConfig,
+      sessions: {
+        queueP50: {
+          label: t(($) => $.agents.chart.queue_p50),
+          color: "var(--chart-3)",
+        },
+        queueP95: {
+          label: t(($) => $.agents.chart.queue_p95),
+          color: "var(--chart-2)",
+        },
+        runP50: {
+          label: t(($) => $.agents.chart.run_p50),
+          color: "var(--chart-4)",
+        },
+        runP95: {
+          label: t(($) => $.agents.chart.run_p95),
+          color: "var(--chart-1)",
+        },
+      } satisfies ChartConfig,
+    }),
+    [t],
+  );
 
   const modelMix = useMemo(
-    () => buildModelMix(byAgentUsage, t(($) => $.agents.model_mix.other)),
+    () =>
+      buildModelMix(byAgentUsage, {
+        other: t(($) => $.agents.model_mix.other),
+        unknownProvider: t(($) => $.agents.model_mix.unknown_provider),
+        unknownModel: t(($) => $.agents.model_mix.unknown_model),
+      }),
     [byAgentUsage, t],
   );
   const sessionChartRows = useMemo(
@@ -182,8 +205,13 @@ export function AgentsUsagePage() {
     [sessions, lookup],
   );
   const failures = useMemo(
-    () => buildFailureRows(sessions, lookup.nameForAgent),
-    [sessions, lookup],
+    () =>
+      buildFailureRows(
+        sessions,
+        lookup.nameForAgent,
+        t(($) => $.agents.failures.unknown_reason),
+      ),
+    [sessions, lookup, t],
   );
   const codeTableRows = useMemo(
     () => buildCodeTableRows(codeRows, lookup),
@@ -296,7 +324,7 @@ export function AgentsUsagePage() {
                     title={t(($) => $.agents.model_mix.title)}
                     subtitle={t(($) => $.agents.model_mix.subtitle)}
                   />
-                  <ModelMixChart data={modelMix} />
+                  <ModelMixChart data={modelMix} config={chartConfig.modelMix} />
                 </section>
               </div>
 
@@ -308,6 +336,7 @@ export function AgentsUsagePage() {
                   />
                   <SessionsChart
                     data={sessionChartRows}
+                    config={chartConfig.sessions}
                     lessThanMinuteLabel={t(($) => $.duration.less_than_minute)}
                   />
                 </section>
@@ -362,13 +391,19 @@ function SectionEmpty({ children }: { children: ReactNode }) {
   );
 }
 
-function ModelMixChart({ data }: { data: ModelMixRow[] }) {
+function ModelMixChart({
+  data,
+  config,
+}: {
+  data: ModelMixRow[];
+  config: ChartConfig;
+}) {
   const { t } = useT("usage");
   if (data.length === 0) return <SectionEmpty>{t(($) => $.agents.model_mix.no_data)}</SectionEmpty>;
 
   return (
     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(160px,0.8fr)]">
-      <ChartContainer config={modelMixConfig} className="aspect-square min-h-56 w-full">
+      <ChartContainer config={config} className="aspect-square min-h-56 w-full">
         <PieChart>
           <ChartTooltip
             content={
@@ -417,16 +452,18 @@ function ModelMixChart({ data }: { data: ModelMixRow[] }) {
 
 function SessionsChart({
   data,
+  config,
   lessThanMinuteLabel,
 }: {
   data: SessionChartRow[];
+  config: ChartConfig;
   lessThanMinuteLabel: string;
 }) {
   const { t } = useT("usage");
   if (data.length === 0) return <SectionEmpty>{t(($) => $.agents.sessions.no_data)}</SectionEmpty>;
 
   return (
-    <ChartContainer config={sessionsConfig} className="aspect-[3/1] min-h-64 w-full">
+    <ChartContainer config={config} className="aspect-[3/1] min-h-64 w-full">
       <BarChart data={data} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="agentName" tickLine={false} axisLine={false} tickMargin={8} interval="preserveStartEnd" />
@@ -666,11 +703,14 @@ function computeCacheHitRatio(cacheRead: number, input: number) {
   return denom > 0 ? cacheRead / denom : 0;
 }
 
-function buildModelMix(rows: DashboardUsageByAgent[], otherLabel: string): ModelMixRow[] {
+function buildModelMix(
+  rows: DashboardUsageByAgent[],
+  labels: { other: string; unknownProvider: string; unknownModel: string },
+): ModelMixRow[] {
   const grouped = new Map<string, number>();
   for (const row of rows) {
-    const provider = row.provider || "unknown";
-    const model = row.model || "unknown";
+    const provider = row.provider || labels.unknownProvider;
+    const model = row.model || labels.unknownModel;
     const key = `${provider}/${model}`;
     grouped.set(
       key,
@@ -687,7 +727,7 @@ function buildModelMix(rows: DashboardUsageByAgent[], otherLabel: string): Model
     .toSorted((a, b) => b.tokens - a.tokens);
   const top = sorted.slice(0, 10);
   const other = sorted.slice(10).reduce((sum, row) => sum + row.tokens, 0);
-  return other > 0 ? [...top, { label: otherLabel, tokens: other }] : top;
+  return other > 0 ? [...top, { label: labels.other, tokens: other }] : top;
 }
 
 function buildSessionChartRows(rows: DashboardAgentSessions[], nameForAgent: (agentId: string) => string): SessionChartRow[] {
@@ -704,12 +744,16 @@ function buildSessionChartRows(rows: DashboardAgentSessions[], nameForAgent: (ag
     .slice(0, 12);
 }
 
-function buildFailureRows(rows: DashboardAgentSessions[], nameForAgent: (agentId: string) => string): FailureRow[] {
+function buildFailureRows(
+  rows: DashboardAgentSessions[],
+  nameForAgent: (agentId: string) => string,
+  unknownReasonLabel: string,
+): FailureRow[] {
   return rows.flatMap((row) =>
     row.failure_reasons.map((reason) => ({
       agentId: row.agent_id,
       agentName: nameForAgent(row.agent_id),
-      reason: reason.failure_reason || "unknown",
+      reason: reason.failure_reason || unknownReasonLabel,
       count: reason.count,
     })),
   ).toSorted((a, b) => b.count - a.count);

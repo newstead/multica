@@ -83,7 +83,9 @@
       "title": "模型占比",
       "subtitle": "按 token 量排序的前几个 provider/model。",
       "other": "其他",
-      "no_data": "此时间窗内没有模型用量。"
+      "no_data": "此时间窗内没有模型用量。",
+      "unknown_provider": "未知 provider",
+      "unknown_model": "未知模型"
     },
     "sessions": {
       "title": "Sessions",
@@ -93,7 +95,8 @@
     "failures": {
       "title": "失败原因",
       "subtitle": "最常见的终态 task 失败。",
-      "no_data": "此时间窗内没有失败。"
+      "no_data": "此时间窗内没有失败。",
+      "unknown_reason": "未知原因"
     },
     "code": {
       "title": "代码变更",
@@ -121,6 +124,13 @@
     "empty": {
       "title": "还没有智能体用量",
       "body": "当智能体在此工作区完成 task 后，它们的效率指标会显示在这里。"
+    },
+    "chart": {
+      "tokens": "Token",
+      "queue_p50": "排队 p50",
+      "queue_p95": "排队 p95",
+      "run_p50": "运行 p50",
+      "run_p95": "运行 p95"
     }
   }
 }
