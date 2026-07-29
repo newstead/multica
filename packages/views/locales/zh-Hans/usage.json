@@ -56,5 +56,71 @@
   },
   "duration": {
     "less_than_minute": "<1分钟"
+  },
+  "tabs": {
+    "overview": "概览",
+    "agents": "智能体"
+  },
+  "agents": {
+    "subtitle": "按智能体查看效率、模型占比、session、代码变更和瓶颈。",
+    "unknown_agent": "未知智能体",
+    "kpi": {
+      "completed_label": "已完成 · {{days}}D",
+      "failed_label": "失败 · {{days}}D",
+      "failed_hint": "失败率 {{rate}}",
+      "cost_label": "成本 · {{days}}D",
+      "cache_label": "缓存命中 · {{days}}D",
+      "cache_hint": "{{tokens}} 缓存读取",
+      "tokens_loc_label": "Tokens / LOC · {{days}}D",
+      "loc_label": "变更 LOC · {{days}}D",
+      "loc_hint": "{{additions}} / {{deletions}}"
+    },
+    "tokens": {
+      "title": "Token 趋势",
+      "subtitle": "按天查看输入、输出、缓存读取和缓存写入 token。"
+    },
+    "model_mix": {
+      "title": "模型占比",
+      "subtitle": "按 token 量排序的前几个 provider/model。",
+      "other": "其他",
+      "no_data": "此时间窗内没有模型用量。"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "subtitle": "按智能体查看排队等待和运行时长分位数。",
+      "no_data": "此时间窗内没有已完成 session。"
+    },
+    "failures": {
+      "title": "失败原因",
+      "subtitle": "最常见的终态 task 失败。",
+      "no_data": "此时间窗内没有失败。"
+    },
+    "code": {
+      "title": "代码变更",
+      "subtitle": "task 级 diff 统计与关联 PR 快照。",
+      "header_agent": "智能体",
+      "header_task_diff": "Task +/-",
+      "header_files": "文件",
+      "header_tasks": "Tasks",
+      "header_pr_diff": "PR +/-",
+      "header_pr_files": "PR 文件",
+      "header_prs": "PR",
+      "no_data": "此时间窗内没有代码变更。"
+    },
+    "bottlenecks": {
+      "title": "瓶颈",
+      "subtitle": "客户端标记排队等待、运行时长、失败率和 token 效率问题。",
+      "score": "分数 {{score}}",
+      "no_data": "此时间窗内没有明显瓶颈。",
+      "reason_high_queue": "排队等待高",
+      "reason_long_runtime": "运行时间长",
+      "reason_high_failure": "失败率高",
+      "reason_high_tokens_loc": "每 LOC token 高",
+      "tokens_per_loc": "{{tokens}}/LOC"
+    },
+    "empty": {
+      "title": "还没有智能体用量",
+      "body": "当智能体在此工作区完成 task 后，它们的效率指标会显示在这里。"
+    }
   }
 }

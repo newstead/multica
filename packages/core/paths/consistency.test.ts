@@ -18,6 +18,7 @@ describe("paths.workspace() shape", () => {
       new Set([
         "root",
         "usage",
+        "usageAgents",
         "issues",
         "projects",
         "autopilots",
