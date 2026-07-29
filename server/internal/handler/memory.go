@@ -37,6 +37,8 @@ type UpdateMemoryConfigRequest struct {
 type MemoryRetainEventRequest struct {
 	EventType      string          `json:"event_type"`
 	IdempotencyKey string          `json:"idempotency_key"`
+	CorrelationID  string          `json:"correlation_id"`
+	SourceID       string          `json:"source_id"`
 	ProjectID      string          `json:"project_id"`
 	AgentID        string          `json:"agent_id"`
 	IssueID        string          `json:"issue_id"`
@@ -70,21 +72,24 @@ type MemoryDeliveryResponse struct {
 	Provider      string `json:"provider"`
 	Status        string `json:"status"`
 	AttemptCount  int32  `json:"attempt_count"`
+	DeliveryLagMs int64  `json:"delivery_lag_ms"`
 	NextAttemptAt string `json:"next_attempt_at,omitempty"`
 }
 
 type MemoryRecallSampleResponse struct {
-	ID          string         `json:"id"`
-	WorkspaceID string         `json:"workspace_id"`
-	ProjectID   *string        `json:"project_id,omitempty"`
-	AgentID     *string        `json:"agent_id,omitempty"`
-	IssueID     *string        `json:"issue_id,omitempty"`
-	TaskID      *string        `json:"task_id,omitempty"`
-	Provider    string         `json:"provider"`
-	Query       string         `json:"query"`
-	Results     []any          `json:"results"`
-	Provenance  map[string]any `json:"provenance"`
-	SampledAt   string         `json:"sampled_at"`
+	ID                  string         `json:"id"`
+	WorkspaceID         string         `json:"workspace_id"`
+	ProjectID           *string        `json:"project_id,omitempty"`
+	AgentID             *string        `json:"agent_id,omitempty"`
+	IssueID             *string        `json:"issue_id,omitempty"`
+	TaskID              *string        `json:"task_id,omitempty"`
+	Provider            string         `json:"provider"`
+	ReadMode            string         `json:"read_mode"`
+	RecallCorrelationID string         `json:"recall_correlation_id"`
+	Query               string         `json:"query"`
+	Results             []any          `json:"results"`
+	Provenance          map[string]any `json:"provenance"`
+	SampledAt           string         `json:"sampled_at"`
 }
 
 func (h *Handler) memoryGatewayEnabled(r *http.Request) bool {
@@ -195,6 +200,8 @@ func (h *Handler) CreateMemoryRetainEvent(w http.ResponseWriter, r *http.Request
 		Actor:          service.MemoryActor{Type: req.ActorType, ID: actorID},
 		EventType:      strings.TrimSpace(req.EventType),
 		IdempotencyKey: strings.TrimSpace(req.IdempotencyKey),
+		CorrelationID:  strings.TrimSpace(req.CorrelationID),
+		SourceID:       strings.TrimSpace(req.SourceID),
 		Content:        req.Content,
 		Metadata:       req.Metadata,
 	})
@@ -351,6 +358,7 @@ func memoryDeliveryToResponse(delivery db.MemoryProviderDelivery) MemoryDelivery
 		Provider:      delivery.Provider,
 		Status:        delivery.Status,
 		AttemptCount:  delivery.AttemptCount,
+		DeliveryLagMs: delivery.DeliveryLagMs,
 		NextAttemptAt: timestampToString(delivery.NextAttemptAt),
 	}
 }
@@ -371,16 +379,18 @@ func memoryRecallSampleToResponse(sample db.MemoryRecallSample) MemoryRecallSamp
 		provenance = map[string]any{}
 	}
 	return MemoryRecallSampleResponse{
-		ID:          uuidToString(sample.ID),
-		WorkspaceID: uuidToString(sample.WorkspaceID),
-		ProjectID:   uuidToPtr(sample.ProjectID),
-		AgentID:     uuidToPtr(sample.AgentID),
-		IssueID:     uuidToPtr(sample.IssueID),
-		TaskID:      uuidToPtr(sample.TaskID),
-		Provider:    sample.Provider,
-		Query:       sample.Query,
-		Results:     results,
-		Provenance:  provenance,
-		SampledAt:   timestampToString(sample.SampledAt),
+		ID:                  uuidToString(sample.ID),
+		WorkspaceID:         uuidToString(sample.WorkspaceID),
+		ProjectID:           uuidToPtr(sample.ProjectID),
+		AgentID:             uuidToPtr(sample.AgentID),
+		IssueID:             uuidToPtr(sample.IssueID),
+		TaskID:              uuidToPtr(sample.TaskID),
+		Provider:            sample.Provider,
+		ReadMode:            sample.ReadMode,
+		RecallCorrelationID: sample.RecallCorrelationID,
+		Query:               sample.Query,
+		Results:             results,
+		Provenance:          provenance,
+		SampledAt:           timestampToString(sample.SampledAt),
 	}
 }
