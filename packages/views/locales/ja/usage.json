@@ -65,14 +65,14 @@
     "subtitle": "エージェント別の効率、モデル構成、セッション、コード変更、ボトルネックを表示します。",
     "unknown_agent": "不明なエージェント",
     "kpi": {
-      "completed_label": "完了 · {{days}}D",
-      "failed_label": "失敗 · {{days}}D",
+      "completed_label": "完了 · {{days}}日",
+      "failed_label": "失敗 · {{days}}日",
       "failed_hint": "失敗率 {{rate}}",
-      "cost_label": "コスト · {{days}}D",
-      "cache_label": "キャッシュヒット · {{days}}D",
+      "cost_label": "コスト · {{days}}日",
+      "cache_label": "キャッシュヒット · {{days}}日",
       "cache_hint": "キャッシュ読み取り {{tokens}}",
-      "tokens_loc_label": "Tokens / LOC · {{days}}D",
-      "loc_label": "変更 LOC · {{days}}D",
+      "tokens_loc_label": "Tokens / LOC · {{days}}日",
+      "loc_label": "変更 LOC · {{days}}日",
       "loc_hint": "{{additions}} / {{deletions}}"
     },
     "tokens": {

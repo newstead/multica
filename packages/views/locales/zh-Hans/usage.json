@@ -65,14 +65,14 @@
     "subtitle": "按智能体查看效率、模型占比、session、代码变更和瓶颈。",
     "unknown_agent": "未知智能体",
     "kpi": {
-      "completed_label": "已完成 · {{days}}D",
-      "failed_label": "失败 · {{days}}D",
+      "completed_label": "已完成 · {{days}}天",
+      "failed_label": "失败 · {{days}}天",
       "failed_hint": "失败率 {{rate}}",
-      "cost_label": "成本 · {{days}}D",
-      "cache_label": "缓存命中 · {{days}}D",
+      "cost_label": "成本 · {{days}}天",
+      "cache_label": "缓存命中 · {{days}}天",
       "cache_hint": "{{tokens}} 缓存读取",
-      "tokens_loc_label": "Tokens / LOC · {{days}}D",
-      "loc_label": "变更 LOC · {{days}}D",
+      "tokens_loc_label": "Tokens / LOC · {{days}}天",
+      "loc_label": "变更 LOC · {{days}}天",
       "loc_hint": "{{additions}} / {{deletions}}"
     },
     "tokens": {
