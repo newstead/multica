@@ -176,9 +176,17 @@ vi.mock("@multica/core/api", () => ({
 }));
 
 vi.mock("@multica/core/paths", () => ({
+  useWorkspaceSlug: () => null,
   useWorkspacePaths: () => ({
     agentDetail: (id: string) => `/acme/agents/${id}`,
   }),
+  paths: {
+    workspace: () => ({
+      usage: () => "/acme/usage",
+      usageAgents: () => "/acme/usage/agents",
+      usageHindsight: () => "/acme/usage/hindsight",
+    }),
+  },
 }));
 
 const tzRef = vi.hoisted(() => ({ current: "UTC" as string | null }));

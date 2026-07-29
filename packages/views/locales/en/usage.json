@@ -98,7 +98,8 @@
   },
   "tabs": {
     "overview": "Overview",
-    "agents": "Agents"
+    "agents": "Agents",
+    "hindsight": "Hindsight"
   },
   "agents": {
     "subtitle": "Agent-level efficiency, model mix, sessions, code changes, and bottlenecks.",
@@ -170,6 +171,59 @@
       "queue_p95": "Queue p95",
       "run_p50": "Run p50",
       "run_p95": "Run p95"
+    }
+  },
+  "hindsight": {
+    "title": "Hindsight memory",
+    "subtitle": "Recall quality, provider health, and auditable memory samples for the Hindsight bank.",
+    "filters": {
+      "all_agents": "All agents"
+    },
+    "badges": {
+      "live": "Live samples",
+      "seeded": "Seeded baseline"
+    },
+    "error": {
+      "title": "Memory board unavailable",
+      "body": "The Hindsight board could not load. Existing workspace permissions still apply; raw memory contents are not rendered here."
+    },
+    "empty": {
+      "title": "No live Hindsight samples yet",
+      "body": "Showing the seeded board baseline until recall samples are captured for this workspace."
+    },
+    "kpi": {
+      "quality": "Recall quality",
+      "samples": "{{count}} samples",
+      "latency": "Recall latency",
+      "p95": "p95 {{value}}",
+      "tokens_cost": "Tokens / cost",
+      "errors": "Errors"
+    },
+    "health": {
+      "healthy": "Bank healthy",
+      "degraded": "Bank degraded",
+      "offline": "Bank offline"
+    },
+    "growth": {
+      "title": "Storage growth",
+      "subtitle": "Facts, observations, and bank size over the sampled window.",
+      "facts": "Facts",
+      "observations": "Observations",
+      "storage": "Storage MB"
+    },
+    "mix": {
+      "facts_observations": "Facts / observations",
+      "consolidation_ops": "Consolidation / ops",
+      "mental_models": "Mental models",
+      "storage": "Storage"
+    },
+    "samples": {
+      "title": "Recall quality samples",
+      "subtitle": "Auditable sample metadata with result counts, scores, and provenance keys.",
+      "results": "results",
+      "no_provenance": "No provenance",
+      "issue_link": "Issue",
+      "latency": "{{value}}ms"
     }
   }
 }
