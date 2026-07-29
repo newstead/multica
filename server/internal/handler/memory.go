@@ -49,6 +49,18 @@ type MemoryRetainEventRequest struct {
 	Metadata       map[string]any  `json:"metadata"`
 }
 
+type MemoryRecallRequestBody struct {
+	Provider      string `json:"provider"`
+	ReadMode      string `json:"read_mode"`
+	CorrelationID string `json:"correlation_id"`
+	ProjectID     string `json:"project_id"`
+	AgentID       string `json:"agent_id"`
+	IssueID       string `json:"issue_id"`
+	TaskID        string `json:"task_id"`
+	Query         string `json:"query"`
+	Limit         int32  `json:"limit"`
+}
+
 type MemoryEventResponse struct {
 	ID             string         `json:"id"`
 	WorkspaceID    string         `json:"workspace_id"`
@@ -90,6 +102,21 @@ type MemoryRecallSampleResponse struct {
 	Results             []any          `json:"results"`
 	Provenance          map[string]any `json:"provenance"`
 	SampledAt           string         `json:"sampled_at"`
+}
+
+type MemoryRecallProviderResponse struct {
+	Provider   string                     `json:"provider"`
+	Results    []any                      `json:"results"`
+	Provenance map[string]any             `json:"provenance"`
+	Sample     MemoryRecallSampleResponse `json:"sample"`
+}
+
+type MemoryRecallResponse struct {
+	Mode                string                        `json:"mode"`
+	RecallCorrelationID string                        `json:"recall_correlation_id"`
+	Primary             *MemoryRecallProviderResponse `json:"primary,omitempty"`
+	Shadow              *MemoryRecallProviderResponse `json:"shadow,omitempty"`
+	Errors              map[string]string             `json:"errors,omitempty"`
 }
 
 func (h *Handler) memoryGatewayEnabled(r *http.Request) bool {
@@ -232,6 +259,54 @@ func (h *Handler) CreateMemoryRetainEvent(w http.ResponseWriter, r *http.Request
 	})
 }
 
+func (h *Handler) CreateMemoryRecall(w http.ResponseWriter, r *http.Request) {
+	if !h.memoryGatewayEnabled(r) {
+		writeError(w, http.StatusNotFound, "memory gateway not found")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	var req MemoryRecallRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	scope, ok := memoryScopeFromRecallRequest(w, wsUUID, req)
+	if !ok {
+		return
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	res, err := h.MemoryService.Recall(r.Context(), service.MemoryRecallRequest{
+		Scope:         scope,
+		Provider:      strings.TrimSpace(req.Provider),
+		ReadMode:      strings.TrimSpace(req.ReadMode),
+		CorrelationID: strings.TrimSpace(req.CorrelationID),
+		Query:         strings.TrimSpace(req.Query),
+		Limit:         limit,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrMemoryDisabled) {
+			writeError(w, http.StatusConflict, "memory gateway is disabled for this workspace")
+			return
+		}
+		if errors.Is(err, service.ErrMemoryConfig) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to recall memory")
+		return
+	}
+	writeJSON(w, http.StatusOK, memoryRecallToResponse(res))
+}
+
 func (h *Handler) ListMemoryRecallSamples(w http.ResponseWriter, r *http.Request) {
 	if !h.memoryGatewayEnabled(r) {
 		writeError(w, http.StatusNotFound, "memory gateway not found")
@@ -256,6 +331,26 @@ func (h *Handler) ListMemoryRecallSamples(w http.ResponseWriter, r *http.Request
 		out = append(out, memoryRecallSampleToResponse(row))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"samples": out})
+}
+
+func memoryScopeFromRecallRequest(w http.ResponseWriter, workspaceID pgtype.UUID, req MemoryRecallRequestBody) (service.MemoryScope, bool) {
+	projectID, ok := optionalUUIDOrBadRequest(w, req.ProjectID, "project_id")
+	if !ok {
+		return service.MemoryScope{}, false
+	}
+	agentID, ok := optionalUUIDOrBadRequest(w, req.AgentID, "agent_id")
+	if !ok {
+		return service.MemoryScope{}, false
+	}
+	issueID, ok := optionalUUIDOrBadRequest(w, req.IssueID, "issue_id")
+	if !ok {
+		return service.MemoryScope{}, false
+	}
+	taskID, ok := optionalUUIDOrBadRequest(w, req.TaskID, "task_id")
+	if !ok {
+		return service.MemoryScope{}, false
+	}
+	return service.MemoryScope{WorkspaceID: workspaceID, ProjectID: projectID, AgentID: agentID, IssueID: issueID, TaskID: taskID}, true
 }
 
 func memoryScopeFromRequest(w http.ResponseWriter, workspaceID pgtype.UUID, req MemoryRetainEventRequest) (service.MemoryScope, bool) {
@@ -303,6 +398,50 @@ func parseMemoryLimitOffset(r *http.Request, defaultLimit, maxLimit int) (int, i
 		}
 	}
 	return limit, offset
+}
+
+func memoryRecallToResponse(result service.MemoryRecallReadResult) MemoryRecallResponse {
+	return MemoryRecallResponse{
+		Mode:                result.Mode,
+		RecallCorrelationID: result.CorrelationID,
+		Primary:             memoryProviderRecallToResponse(result.Primary),
+		Shadow:              memoryProviderRecallToResponse(result.Shadow),
+		Errors:              result.Errors,
+	}
+}
+
+func memoryProviderRecallToResponse(recall *service.MemoryProviderRecall) *MemoryRecallProviderResponse {
+	if recall == nil {
+		return nil
+	}
+	return &MemoryRecallProviderResponse{
+		Provider:   recall.Provider,
+		Results:    parseMemoryResults(recall.Result.Results),
+		Provenance: parseMemoryProvenance(recall.Result.Provenance),
+		Sample:     memoryRecallSampleToResponse(recall.Sample),
+	}
+}
+
+func parseMemoryResults(raw json.RawMessage) []any {
+	var results []any
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &results)
+	}
+	if results == nil {
+		results = []any{}
+	}
+	return results
+}
+
+func parseMemoryProvenance(raw json.RawMessage) map[string]any {
+	var provenance map[string]any
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &provenance)
+	}
+	if provenance == nil {
+		provenance = map[string]any{}
+	}
+	return provenance
 }
 
 func memoryConfigToResponse(cfg db.MemoryWorkspaceConfig) MemoryConfigResponse {

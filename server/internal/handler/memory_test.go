@@ -144,6 +144,124 @@ func TestCreateMemoryRetainEventIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCreateMemoryRecallEndpointKeepsDualResultsSeparate(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	_, err := testHandler.Queries.UpsertMemoryWorkspaceConfig(context.Background(), db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  parseUUID(testWorkspaceID),
+		Enabled:                      true,
+		PrimaryProvider:              "hindsight",
+		ShadowProvider:               pgtype.Text{String: "mem0", Valid: true},
+		ReadMode:                     "dual",
+		ProviderSettings:             []byte(`{"capture":"test"}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{
+		"hindsight": &memoryHandlerFakeProvider{name: "hindsight", recallResults: json.RawMessage(`[{"id":"primary-only"}]`)},
+		"mem0":      &memoryHandlerFakeProvider{name: "mem0", recallResults: json.RawMessage(`[{"id":"shadow-only"}]`)},
+	}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	w := httptest.NewRecorder()
+	testHandler.CreateMemoryRecall(w, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
+		"read_mode":      "dual",
+		"correlation_id": "handler-pair-1",
+		"query":          "compare scoped memory",
+		"limit":          5,
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("CreateMemoryRecall: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var res MemoryRecallResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if res.Mode != "dual" || res.RecallCorrelationID != "handler-pair-1" {
+		t.Fatalf("mode/correlation = %q/%q, want dual/handler-pair-1", res.Mode, res.RecallCorrelationID)
+	}
+	if res.Primary == nil || res.Shadow == nil {
+		t.Fatalf("primary/shadow response = %#v/%#v, want both", res.Primary, res.Shadow)
+	}
+	if res.Primary.Results[0].(map[string]any)["id"] != "primary-only" || res.Shadow.Results[0].(map[string]any)["id"] != "shadow-only" {
+		t.Fatalf("provider results were not separate: primary=%#v shadow=%#v", res.Primary.Results, res.Shadow.Results)
+	}
+
+	var sampleCount int
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT count(*)
+		FROM memory_recall_sample
+		WHERE workspace_id = $1 AND recall_correlation_id = 'handler-pair-1' AND read_mode = 'dual'
+	`, testWorkspaceID).Scan(&sampleCount); err != nil {
+		t.Fatalf("count recall samples: %v", err)
+	}
+	if sampleCount != 2 {
+		t.Fatalf("paired recall samples = %d, want 2", sampleCount)
+	}
+}
+
+func TestCreateMemoryRecallHonorsReleaseFlagRollback(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	w := httptest.NewRecorder()
+	testHandler.CreateMemoryRecall(w, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
+		"read_mode": "primary",
+		"query":     "should not run",
+	}))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("CreateMemoryRecall flag off: expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+	var sampleCount int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM memory_recall_sample WHERE workspace_id = $1`, testWorkspaceID).Scan(&sampleCount); err != nil {
+		t.Fatalf("count recall samples: %v", err)
+	}
+	if sampleCount != 0 {
+		t.Fatalf("recall samples with flag off = %d, want 0", sampleCount)
+	}
+}
+
+type memoryHandlerFakeProvider struct {
+	name          string
+	recallResults json.RawMessage
+}
+
+func (p *memoryHandlerFakeProvider) Name() string { return p.name }
+
+func (p *memoryHandlerFakeProvider) Retain(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	return service.MemoryProviderResult{}, nil
+}
+
+func (p *memoryHandlerFakeProvider) Recall(_ context.Context, req service.MemoryRecallRequest) (service.MemoryRecallResult, error) {
+	return service.MemoryRecallResult{Provider: req.Provider, Results: p.recallResults, Provenance: json.RawMessage(`{"handler":"test"}`)}, nil
+}
+
+func (p *memoryHandlerFakeProvider) Update(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	return service.MemoryProviderResult{}, nil
+}
+
+func (p *memoryHandlerFakeProvider) Invalidate(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	return service.MemoryProviderResult{}, nil
+}
+
+func (p *memoryHandlerFakeProvider) Delete(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	return service.MemoryProviderResult{}, nil
+}
+
+func (p *memoryHandlerFakeProvider) Health(context.Context) (service.MemoryProviderHealth, error) {
+	return service.MemoryProviderHealth{Provider: p.name, OK: true}, nil
+}
+
 func TestMemoryEventReadIsWorkspaceScoped(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")

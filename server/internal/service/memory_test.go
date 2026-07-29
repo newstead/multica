@@ -277,6 +277,201 @@ func TestMemoryDispatchDueDeliveriesIsPerProvider(t *testing.T) {
 	}
 }
 
+func TestMemoryDispatchDueDeliveriesRecoversRetriedProvider(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	cleanupMemoryServiceRows(t, pool, workspaceID)
+
+	if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  workspaceID,
+		Enabled:                      true,
+		PrimaryProvider:              "mem0",
+		ReadMode:                     "primary",
+		ProviderSettings:             []byte(`{}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("seed memory config: %v", err)
+	}
+
+	now := time.Now().UTC().Add(5 * time.Minute)
+	mem0 := &fakeMemoryProvider{name: "mem0", retainErrs: []error{errors.New("mem0 temporary outage")}}
+	svc := NewMemoryService(queries, pool)
+	svc.Clock = func() time.Time { return now }
+	svc.MaxDeliveryAttempts = 2
+	svc.BaseBackoff = time.Minute
+	svc.Providers = map[string]MemoryProvider{"mem0": mem0}
+
+	retain, err := svc.Retain(ctx, MemoryRetainRequest{
+		Scope:          MemoryScope{WorkspaceID: workspaceID},
+		Actor:          MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "retry-key-" + uuid.NewString(),
+		Content:        json.RawMessage(`{"text":"retry this"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+
+	if _, err := svc.DispatchDueMemoryProviderDeliveries(ctx, workspaceID, 10); err != nil {
+		t.Fatalf("first dispatch: %v", err)
+	}
+	var status string
+	var attempts int32
+	if err := pool.QueryRow(ctx, `
+		SELECT status, attempt_count
+		FROM memory_provider_delivery
+		WHERE workspace_id = $1 AND memory_event_id = $2 AND provider = 'mem0'
+	`, workspaceID, retain.Event.ID).Scan(&status, &attempts); err != nil {
+		t.Fatalf("read retry delivery: %v", err)
+	}
+	if status != "retry" || attempts != 1 {
+		t.Fatalf("after first dispatch status/attempts = %q/%d, want retry/1", status, attempts)
+	}
+
+	now = now.Add(2 * time.Minute)
+	if _, err := svc.DispatchDueMemoryProviderDeliveries(ctx, workspaceID, 10); err != nil {
+		t.Fatalf("second dispatch: %v", err)
+	}
+	var providerErr pgtype.Text
+	if err := pool.QueryRow(ctx, `
+		SELECT status, attempt_count, error
+		FROM memory_provider_delivery
+		WHERE workspace_id = $1 AND memory_event_id = $2 AND provider = 'mem0'
+	`, workspaceID, retain.Event.ID).Scan(&status, &attempts, &providerErr); err != nil {
+		t.Fatalf("read recovered delivery: %v", err)
+	}
+	if status != "delivered" || attempts != 2 || providerErr.Valid {
+		t.Fatalf("after recovery status/attempts/error = %q/%d/%v, want delivered/2/no error", status, attempts, providerErr)
+	}
+}
+
+func TestMemoryDispatchDueDeliveriesOrdersByNextAttempt(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	cleanupMemoryServiceRows(t, pool, workspaceID)
+
+	if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  workspaceID,
+		Enabled:                      true,
+		PrimaryProvider:              "hindsight",
+		ReadMode:                     "primary",
+		ProviderSettings:             []byte(`{}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("seed memory config: %v", err)
+	}
+
+	now := time.Now().UTC().Add(5 * time.Minute)
+	provider := &fakeMemoryProvider{name: "hindsight"}
+	svc := NewMemoryService(queries, pool)
+	svc.Clock = func() time.Time { return now }
+	svc.Providers = map[string]MemoryProvider{"hindsight": provider}
+
+	first, err := svc.Retain(ctx, MemoryRetainRequest{
+		Scope:          MemoryScope{WorkspaceID: workspaceID},
+		Actor:          MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "order-first-" + uuid.NewString(),
+		SourceID:       "first",
+		Content:        json.RawMessage(`{"text":"first"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain first: %v", err)
+	}
+	second, err := svc.Retain(ctx, MemoryRetainRequest{
+		Scope:          MemoryScope{WorkspaceID: workspaceID},
+		Actor:          MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "order-second-" + uuid.NewString(),
+		SourceID:       "second",
+		Content:        json.RawMessage(`{"text":"second"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain second: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		UPDATE memory_provider_delivery
+		SET next_attempt_at = CASE memory_event_id WHEN $2 THEN $4 ELSE $3 END
+		WHERE workspace_id = $1 AND memory_event_id IN ($2, $5)
+	`, workspaceID, first.Event.ID, now.Add(time.Minute), now.Add(2*time.Minute), second.Event.ID); err != nil {
+		t.Fatalf("adjust delivery order fixture: %v", err)
+	}
+
+	now = now.Add(3 * time.Minute)
+	if _, err := svc.DispatchDueMemoryProviderDeliveries(ctx, workspaceID, 10); err != nil {
+		t.Fatalf("dispatch ordered deliveries: %v", err)
+	}
+	if got, want := len(provider.retained), 2; got != want {
+		t.Fatalf("retained calls = %d, want %d", got, want)
+	}
+	if provider.retained[0].SourceID != "second" || provider.retained[1].SourceID != "first" {
+		t.Fatalf("dispatch source order = %q then %q, want second then first", provider.retained[0].SourceID, provider.retained[1].SourceID)
+	}
+}
+
+func TestMemoryDispatchDeleteEventUsesProviderDelete(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	cleanupMemoryServiceRows(t, pool, workspaceID)
+
+	if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  workspaceID,
+		Enabled:                      true,
+		PrimaryProvider:              "hindsight",
+		ReadMode:                     "primary",
+		ProviderSettings:             []byte(`{}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("seed memory config: %v", err)
+	}
+
+	provider := &fakeMemoryProvider{name: "hindsight"}
+	svc := NewMemoryService(queries, pool)
+	svc.Clock = func() time.Time { return time.Now().UTC().Add(5 * time.Minute) }
+	svc.Providers = map[string]MemoryProvider{"hindsight": provider}
+
+	retain, err := svc.Retain(ctx, MemoryRetainRequest{
+		Scope:          MemoryScope{WorkspaceID: workspaceID},
+		Actor:          MemoryActor{Type: "system"},
+		EventType:      "delete",
+		IdempotencyKey: "delete-key-" + uuid.NewString(),
+		Content:        json.RawMessage(`{"memory_id":"provider-record-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("queue delete: %v", err)
+	}
+	if _, err := svc.DispatchDueMemoryProviderDeliveries(ctx, workspaceID, 10); err != nil {
+		t.Fatalf("dispatch delete: %v", err)
+	}
+	if len(provider.deleted) != 1 || len(provider.retained) != 0 {
+		t.Fatalf("provider retained/deleted calls = %d/%d, want 0/1", len(provider.retained), len(provider.deleted))
+	}
+	var status string
+	if err := pool.QueryRow(ctx, `
+		SELECT status
+		FROM memory_provider_delivery
+		WHERE workspace_id = $1 AND memory_event_id = $2 AND provider = 'hindsight'
+	`, workspaceID, retain.Event.ID).Scan(&status); err != nil {
+		t.Fatalf("read delete delivery: %v", err)
+	}
+	if status != "delivered" {
+		t.Fatalf("delete delivery status = %q, want delivered", status)
+	}
+}
+
 func TestMemoryRecallDualRecordsPairedSamples(t *testing.T) {
 	pool := newMemoryServiceIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -368,15 +563,26 @@ type fakeMemoryProvider struct {
 	name             string
 	providerMemoryID string
 	retainErr        error
+	retainErrs       []error
 	recallErr        error
 	recallResults    json.RawMessage
 	retained         []MemoryEventEnvelope
+	updated          []MemoryEventEnvelope
+	invalidated      []MemoryEventEnvelope
+	deleted          []MemoryEventEnvelope
 }
 
 func (p *fakeMemoryProvider) Name() string { return p.name }
 
 func (p *fakeMemoryProvider) Retain(_ context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
 	p.retained = append(p.retained, event)
+	if len(p.retainErrs) > 0 {
+		err := p.retainErrs[0]
+		p.retainErrs = p.retainErrs[1:]
+		if err != nil {
+			return MemoryProviderResult{}, err
+		}
+	}
 	if p.retainErr != nil {
 		return MemoryProviderResult{}, p.retainErr
 	}
@@ -394,16 +600,19 @@ func (p *fakeMemoryProvider) Recall(_ context.Context, req MemoryRecallRequest) 
 	return MemoryRecallResult{Provider: req.Provider, Results: results, Provenance: json.RawMessage(`{"source":"test"}`)}, nil
 }
 
-func (p *fakeMemoryProvider) Update(ctx context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
-	return p.Retain(ctx, event)
+func (p *fakeMemoryProvider) Update(_ context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
+	p.updated = append(p.updated, event)
+	return MemoryProviderResult{ProviderMemoryID: p.providerMemoryID, Response: json.RawMessage(`{"ok":true}`)}, nil
 }
 
-func (p *fakeMemoryProvider) Invalidate(ctx context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
-	return p.Retain(ctx, event)
+func (p *fakeMemoryProvider) Invalidate(_ context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
+	p.invalidated = append(p.invalidated, event)
+	return MemoryProviderResult{ProviderMemoryID: p.providerMemoryID, Response: json.RawMessage(`{"ok":true}`)}, nil
 }
 
-func (p *fakeMemoryProvider) Delete(ctx context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
-	return p.Retain(ctx, event)
+func (p *fakeMemoryProvider) Delete(_ context.Context, event MemoryEventEnvelope) (MemoryProviderResult, error) {
+	p.deleted = append(p.deleted, event)
+	return MemoryProviderResult{ProviderMemoryID: p.providerMemoryID, Response: json.RawMessage(`{"ok":true}`)}, nil
 }
 
 func (p *fakeMemoryProvider) Health(context.Context) (MemoryProviderHealth, error) {
