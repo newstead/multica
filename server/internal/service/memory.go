@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -145,6 +144,7 @@ var approvedMemorySources = map[string]bool{
 	MemorySourceIssueDescription:    true,
 	MemorySourceHumanComment:        true,
 	MemorySourceAgentOutcomeSummary: true,
+	MemorySourceExplicitFeedback:    true,
 	MemorySourceMergedPRVerdict:     true,
 }
 
@@ -340,13 +340,27 @@ func containsMemoryDeniedContent(text string) bool {
 }
 
 func looksLikeRawExecutionLog(lower string) bool {
-	markers := 0
+	multicaMarkers := 0
 	for _, needle := range []string{"chunk id:", "process exited with code", "original token count:", "output:\n", "wall time:"} {
 		if strings.Contains(lower, needle) {
-			markers++
+			multicaMarkers++
 		}
 	}
-	return markers >= 2
+	if multicaMarkers >= 2 {
+		return true
+	}
+
+	genericMarkers := 0
+	for _, needle := range []string{
+		"go test ", "=== run", "--- fail:", "\nfail", "exit status ",
+		"stack trace", "traceback (most recent call last):", "panic:", "goroutine ",
+		"npm err!", "error: process completed with exit code",
+	} {
+		if strings.Contains(lower, needle) {
+			genericMarkers++
+		}
+	}
+	return genericMarkers >= 2
 }
 
 func (s *MemoryService) RecallForTask(ctx context.Context, req MemoryRecallForTaskRequest) ([]protocol.MemoryRecallData, error) {
@@ -404,19 +418,13 @@ func (s *MemoryService) RecallForTask(ctx context.Context, req MemoryRecallForTa
 	})
 
 	out := make([]protocol.MemoryRecallData, 0, minInt(len(items), int(limit)))
-	used := 0
 	for _, item := range items {
 		item.Text = truncateApproxTokens(item.Text, maxMemoryRecallTextTokens)
-		cost := approxTokenCount(item.Text) + 24
-		if cost > tokenBudget {
-			item.Text = truncateApproxTokens(item.Text, maxInt(tokenBudget-24, 0))
-			cost = approxTokenCount(item.Text) + 24
-		}
-		if strings.TrimSpace(item.Text) == "" || used+cost > tokenBudget {
+		trimmed, ok := fitMemoryRecallItemWithinBudget(out, item, tokenBudget)
+		if !ok {
 			continue
 		}
-		out = append(out, item)
-		used += cost
+		out = append(out, trimmed)
 		if len(out) >= int(limit) {
 			break
 		}
@@ -685,14 +693,47 @@ func memoryScopeSpecificity(scope protocol.MemoryRecallScope) int {
 	return score
 }
 
-func approxTokenCount(text string) int {
-	count := 0
-	for _, r := range text {
-		if !unicode.IsSpace(r) {
-			count++
+func fitMemoryRecallItemWithinBudget(existing []protocol.MemoryRecallData, item protocol.MemoryRecallData, budget int) (protocol.MemoryRecallData, bool) {
+	if budget <= 0 || strings.TrimSpace(item.Text) == "" {
+		return protocol.MemoryRecallData{}, false
+	}
+	if memoryRecallBlockByteLenWith(existing, item) <= budget {
+		return item, true
+	}
+
+	low, high := 0, approxTokenCount(item.Text)
+	best := item
+	best.Text = ""
+	for low <= high {
+		mid := (low + high) / 2
+		candidate := item
+		candidate.Text = truncateApproxTokens(item.Text, mid)
+		if strings.TrimSpace(candidate.Text) == "" {
+			low = mid + 1
+			continue
+		}
+		if memoryRecallBlockByteLenWith(existing, candidate) <= budget {
+			best = candidate
+			low = mid + 1
+		} else {
+			high = mid - 1
 		}
 	}
-	return count
+	if strings.TrimSpace(best.Text) == "" {
+		return protocol.MemoryRecallData{}, false
+	}
+	return best, true
+}
+
+func memoryRecallBlockByteLenWith(existing []protocol.MemoryRecallData, item protocol.MemoryRecallData) int {
+	items := make([]protocol.MemoryRecallData, 0, len(existing)+1)
+	items = append(items, existing...)
+	items = append(items, item)
+	return protocol.MemoryRecallBlockByteLen(items)
+}
+
+func approxTokenCount(text string) int {
+	return len([]byte(strings.TrimSpace(text)))
 }
 
 func truncateApproxTokens(text string, maxTokens int) string {
@@ -706,13 +747,12 @@ func truncateApproxTokens(text string, maxTokens int) string {
 	var b strings.Builder
 	used := 0
 	for _, r := range text {
-		if !unicode.IsSpace(r) {
-			if used >= maxTokens {
-				return strings.TrimSpace(b.String())
-			}
-			used++
+		size := len(string(r))
+		if used+size > maxTokens {
+			return strings.TrimSpace(b.String())
 		}
 		b.WriteRune(r)
+		used += size
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -726,13 +766,6 @@ func timestamptzString(ts pgtype.Timestamptz) string {
 
 func minInt(a, b int) int {
 	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
 		return a
 	}
 	return b

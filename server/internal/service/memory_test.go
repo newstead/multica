@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func TestMemoryEventEnvelopeIdempotencyIsStable(t *testing.T) {
@@ -235,6 +236,11 @@ func TestMemoryCapturePolicyAllowsOnlyApprovedVisibleSources(t *testing.T) {
 	if _, ok := BuildApprovedMemoryRetainRequest(base); ok {
 		t.Fatal("secret-like content must not pass capture policy")
 	}
+	base.SourceType = MemorySourceExplicitFeedback
+	base.Text = "remember this explicit memory feedback"
+	if _, ok := BuildApprovedMemoryRetainRequest(base); !ok {
+		t.Fatal("explicit memory feedback should pass capture policy through the user-visible memory endpoint")
+	}
 }
 
 func TestMemoryCapturePolicyUsesContentRevisionInKey(t *testing.T) {
@@ -291,15 +297,20 @@ func TestMemoryCaptureRedactsSecretsAndRejectsRawExecutionLogs(t *testing.T) {
 		t.Fatalf("retained text did not use canonical redaction markers: %s", text)
 	}
 
-	_, ok = BuildApprovedMemoryRetainRequest(MemoryCaptureSource{
-		SourceType: MemorySourceHumanComment,
-		SourceID:   commentID,
-		Scope:      MemoryScope{WorkspaceID: workspaceID},
-		Actor:      MemoryActor{Type: "member"},
-		Text:       "Chunk ID: abc123\nWall time: 0.1s\nProcess exited with code 0\nOutput:\nsecret-ish log",
-	})
-	if ok {
-		t.Fatal("raw execution logs must not pass memory capture policy")
+	for name, text := range map[string]string{
+		"multica wrapper log": "Chunk ID: abc123\nWall time: 0.1s\nProcess exited with code 0\nOutput:\nsecret-ish log",
+		"pasted go test log":  "go test ./...\n--- FAIL: TestThing (0.01s)\nstack trace follows\nFAIL",
+	} {
+		_, ok = BuildApprovedMemoryRetainRequest(MemoryCaptureSource{
+			SourceType: MemorySourceHumanComment,
+			SourceID:   commentID,
+			Scope:      MemoryScope{WorkspaceID: workspaceID},
+			Actor:      MemoryActor{Type: "member"},
+			Text:       text,
+		})
+		if ok {
+			t.Fatalf("%s must not pass memory capture policy", name)
+		}
 	}
 }
 
@@ -312,6 +323,36 @@ func TestMemoryTokenBudgetTruncatesCJKAndUnbrokenText(t *testing.T) {
 		if tokens := approxTokenCount(got); tokens > 16 {
 			t.Fatalf("truncated token count = %d, want <= 16 for %q", tokens, got)
 		}
+	}
+}
+
+func TestMemoryRecallBudgetIncludesRenderedCitations(t *testing.T) {
+	const budget = 600
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	projectID := "22222222-2222-2222-2222-222222222222"
+	agentID := "33333333-3333-3333-3333-333333333333"
+	issueID := "44444444-4444-4444-4444-444444444444"
+	taskID := "55555555-5555-5555-5555-555555555555"
+
+	out := make([]protocol.MemoryRecallData, 0, 8)
+	for i := 0; i < 8; i++ {
+		item := protocol.MemoryRecallData{
+			MemoryID:   uuid.NewString(),
+			Provider:   memoryAuditLogFallbackProvider,
+			Scope:      protocol.MemoryRecallScope{WorkspaceID: workspaceID, ProjectID: projectID, AgentID: agentID, IssueID: issueID, TaskID: taskID},
+			SourceType: MemorySourceHumanComment,
+			SourceID:   uuid.NewString(),
+			Text:       strings.Repeat("记", 200) + strings.Repeat("a", 200),
+			CapturedAt: "2026-07-29T12:00:00Z",
+		}
+		item.Text = truncateApproxTokens(item.Text, maxMemoryRecallTextTokens)
+		trimmed, ok := fitMemoryRecallItemWithinBudget(out, item, budget)
+		if ok {
+			out = append(out, trimmed)
+		}
+	}
+	if got := protocol.MemoryRecallBlockByteLen(out); got > budget {
+		t.Fatalf("rendered recall block length = %d bytes, want <= %d\n%s", got, budget, protocol.RenderMemoryRecallBlock(out))
 	}
 }
 

@@ -43,6 +43,9 @@ type MemoryRetainEventRequest struct {
 	TaskID         string          `json:"task_id"`
 	ActorType      string          `json:"actor_type"`
 	ActorID        string          `json:"actor_id"`
+	SourceType     string          `json:"source_type"`
+	SourceID       string          `json:"source_id"`
+	Text           string          `json:"text"`
 	Content        json.RawMessage `json:"content"`
 	Metadata       map[string]any  `json:"metadata"`
 }
@@ -190,6 +193,26 @@ func (h *Handler) CreateMemoryRetainEvent(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	if strings.TrimSpace(req.SourceType) != "" {
+		sourceID, ok := optionalUUIDOrBadRequest(w, req.SourceID, "source_id")
+		if !ok {
+			return
+		}
+		res, attempted, err := h.MemoryService.RetainApprovedSource(r.Context(), service.MemoryCaptureSource{
+			SourceType: req.SourceType,
+			SourceID:   sourceID,
+			Scope:      scope,
+			Actor:      service.MemoryActor{Type: req.ActorType, ID: actorID},
+			Text:       req.Text,
+			Metadata:   req.Metadata,
+		})
+		if !attempted {
+			writeError(w, http.StatusBadRequest, "memory source is not approved for capture")
+			return
+		}
+		writeMemoryRetainResponse(w, res, err)
+		return
+	}
 	res, err := h.MemoryService.Retain(r.Context(), service.MemoryRetainRequest{
 		Scope:          scope,
 		Actor:          service.MemoryActor{Type: req.ActorType, ID: actorID},
@@ -198,6 +221,10 @@ func (h *Handler) CreateMemoryRetainEvent(w http.ResponseWriter, r *http.Request
 		Content:        req.Content,
 		Metadata:       req.Metadata,
 	})
+	writeMemoryRetainResponse(w, res, err)
+}
+
+func writeMemoryRetainResponse(w http.ResponseWriter, res service.MemoryRetainResult, err error) {
 	if err != nil {
 		if errors.Is(err, service.ErrMemoryDisabled) {
 			writeError(w, http.StatusConflict, "memory gateway is disabled for this workspace")

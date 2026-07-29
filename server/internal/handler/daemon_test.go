@@ -18,8 +18,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/multica-ai/multica/server/internal/auth"
 	"github.com/multica-ai/multica/server/internal/daemonws"
+	"github.com/multica-ai/multica/server/internal/featureflags"
 	"github.com/multica-ai/multica/server/internal/middleware"
 	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -2446,6 +2448,80 @@ func TestClaimTask_ProjectGithubReposOverrideWorkspaceRepos(t *testing.T) {
 	}
 	if len(resp.Task.ProjectResources) != 1 {
 		t.Errorf("expected 1 project_resources entry, got %d", len(resp.Task.ProjectResources))
+	}
+}
+
+func TestClaimTaskMemoryProviderDownFallsBackToLocalAuditLog(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "hindsight", "")
+
+	runtimeID := createClaimReclaimRuntime(t, ctx, "memory provider down runtime")
+	agentID, issueID := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "memory provider down")
+	commentID := util.MustParseUUID(uuid.NewString())
+	retainReq, ok := service.BuildApprovedMemoryRetainRequest(service.MemoryCaptureSource{
+		SourceType: service.MemorySourceHumanComment,
+		SourceID:   commentID,
+		Scope: service.MemoryScope{
+			WorkspaceID: parseUUID(testWorkspaceID),
+			AgentID:     parseUUID(agentID),
+			IssueID:     parseUUID(issueID),
+		},
+		Actor: service.MemoryActor{Type: "member", ID: parseUUID(testUserID)},
+		Text:  "remember provider down fallback context",
+	})
+	if !ok {
+		t.Fatal("memory source did not pass capture policy")
+	}
+	retained, err := testHandler.MemoryService.Retain(ctx, retainReq)
+	if err != nil {
+		t.Fatalf("retain memory fixture: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		UPDATE memory_provider_delivery
+		SET status = 'terminal_failed', attempt_count = 5, terminal_at = now(), error = 'provider unavailable'
+		WHERE workspace_id = $1 AND memory_event_id = $2
+	`, testWorkspaceID, retained.Event.ID); err != nil {
+		t.Fatalf("mark provider delivery failed: %v", err)
+	}
+
+	var taskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority)
+		VALUES ($1, $2, $3, 'queued', 0)
+		RETURNING id
+	`, agentID, runtimeID, issueID).Scan(&taskID); err != nil {
+		t.Fatalf("create queued task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
+
+	w := httptest.NewRecorder()
+	req := newDaemonTokenRequest("POST", "/api/daemon/runtimes/"+runtimeID+"/claim", nil, testWorkspaceID, "memory-provider-down-claim")
+	req = withURLParam(req, "runtimeId", runtimeID)
+	testHandler.ClaimTaskByRuntime(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("ClaimTaskByRuntime: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Task *AgentTaskResponse `json:"task"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode claim response: %v", err)
+	}
+	if resp.Task == nil || resp.Task.ID != taskID {
+		t.Fatalf("claimed task = %#v, want %s", resp.Task, taskID)
+	}
+	if len(resp.Task.MemoryRecall) != 1 {
+		t.Fatalf("memory_recall = %#v, want one local fallback item", resp.Task.MemoryRecall)
+	}
+	item := resp.Task.MemoryRecall[0]
+	if item.Provider != "local_audit_log" || item.MemoryID != uuidToString(retained.Event.ID) {
+		t.Fatalf("memory recall provenance = %#v, want retained event as local_audit_log", item)
 	}
 }
 
