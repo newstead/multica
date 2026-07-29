@@ -166,6 +166,8 @@ import type {
   CreateBillingCheckoutSessionResponse,
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
+  MemoryConfigResponse,
+  MemoryRecallSamplesResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type { CreateFeedbackResponse, FeedbackKind } from "../feedback/types";
@@ -299,6 +301,10 @@ import {
   EMPTY_GITHUB_CONNECT_RESPONSE,
   EMPTY_LIST_GITHUB_INSTALLATIONS_RESPONSE,
   EMPTY_LIST_GITHUB_REPOSITORIES_RESPONSE,
+  MemoryConfigResponseSchema,
+  MemoryRecallSamplesResponseSchema,
+  EMPTY_MEMORY_CONFIG_RESPONSE,
+  EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1564,6 +1570,37 @@ export class ApiClient {
   // Cost is computed client-side from the model pricing table (same contract
   // as the per-runtime endpoints above).
   // ---------------------------------------------------------------------------
+
+  async getMemoryConfig(workspaceId: string): Promise<MemoryConfigResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/memory/config`,
+    );
+    return parseWithFallback<MemoryConfigResponse>(
+      raw,
+      MemoryConfigResponseSchema,
+      EMPTY_MEMORY_CONFIG_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/memory/config" },
+    );
+  }
+
+  async listMemoryRecallSamples(
+    workspaceId: string,
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<MemoryRecallSamplesResponse> {
+    const search = new URLSearchParams();
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.offset) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/memory/recall-samples${qs ? `?${qs}` : ""}`,
+    );
+    return parseWithFallback<MemoryRecallSamplesResponse>(
+      raw,
+      MemoryRecallSamplesResponseSchema,
+      EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/memory/recall-samples" },
+    );
+  }
 
   async getDashboardUsageDaily(
     params: { days?: number; project_id?: string | null; tz?: string },

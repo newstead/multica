@@ -95,7 +95,7 @@ export function Segmented<T extends string | number>({
   );
 }
 
-export function UsagePageTabs({ value }: { value: "overview" | "agents" }) {
+export function UsagePageTabs({ value }: { value: "overview" | "agents" | "mem0" }) {
   const slug = useWorkspaceSlug();
   if (!slug) return <UsageTabsView value={value} onChange={() => {}} />;
   return <UsagePageTabsWithNavigation value={value} slug={slug} />;
@@ -105,7 +105,7 @@ function UsagePageTabsWithNavigation({
   value,
   slug,
 }: {
-  value: "overview" | "agents";
+  value: "overview" | "agents" | "mem0";
   slug: string;
 }) {
   const navigation = useNavigation();
@@ -115,7 +115,11 @@ function UsagePageTabsWithNavigation({
       value={value}
       onChange={(next) => {
         navigation.push(
-          next === "agents" ? workspacePaths.usageAgents() : workspacePaths.usage(),
+          next === "agents"
+            ? workspacePaths.usageAgents()
+            : next === "mem0"
+              ? workspacePaths.usageMem0()
+              : workspacePaths.usage(),
         );
       }}
     />
@@ -126,7 +130,7 @@ function UsageTabsView({
   value,
   onChange,
 }: {
-  value: "overview" | "agents";
+  value: "overview" | "agents" | "mem0";
   onChange: (next: string) => void;
 }) {
   const { t } = useT("usage");
@@ -138,6 +142,9 @@ function UsageTabsView({
         </TabsTrigger>
         <TabsTrigger value="agents" className="px-2.5 text-xs">
           {t(($) => $.tabs.agents)}
+        </TabsTrigger>
+        <TabsTrigger value="mem0" className="px-2.5 text-xs">
+          {t(($) => $.tabs.mem0)}
         </TabsTrigger>
       </TabsList>
     </Tabs>

@@ -98,7 +98,8 @@
   },
   "tabs": {
     "overview": "개요",
-    "agents": "에이전트"
+    "agents": "에이전트",
+    "mem0": "mem0"
   },
   "agents": {
     "subtitle": "에이전트별 효율, 모델 구성, 세션, 코드 변경, 병목을 확인합니다.",
@@ -170,6 +171,81 @@
       "queue_p95": "대기 p95",
       "run_p50": "실행 p50",
       "run_p95": "실행 p95"
+    }
+  },
+  "memory": {
+    "mem0": {
+      "title": "mem0 메모리",
+      "subtitle": "선택한 범위의 mem0 품질, 감사, 스토리지, 비용 신호를 확인합니다.",
+      "search_placeholder": "Filter query, correlation, or id",
+      "error_title": "Memory data did not load",
+      "error_body": "The memory gateway may be disabled or unreachable for this workspace.",
+      "unknown": "알 수 없음",
+      "yes": "예",
+      "no": "아니요",
+      "empty_window": "No mem0 samples in this window.",
+      "kpi": {
+        "search_latency": "Search latency",
+        "add_latency": "Add latency",
+        "tokens_cost": "Tokens / cost",
+        "health": "Service health",
+        "searches": "{{count}} searches",
+        "adds": "{{count}} adds",
+        "errors": "{{count}} errors"
+      },
+      "health": {
+        "healthy": "Healthy",
+        "degraded": "Degraded",
+        "unknown": "Unknown",
+        "disabled": "Disabled"
+      },
+      "activity_title": "Request activity",
+      "activity_subtitle": "Add, search, and error volume using the same period and project filters as usage.",
+      "config_title": "Provider scope",
+      "config_admin": "You can manage workspace memory settings.",
+      "config_readonly": "Read-only view. Workspace admins manage memory settings.",
+      "config": {
+        "enabled": "Enabled",
+        "primary": "Primary",
+        "shadow": "Shadow",
+        "read_mode": "Read mode",
+        "memories": "Memories",
+        "entities": "Entities"
+      },
+      "latency_title": "Latency",
+      "latency_subtitle": "Average add/search latency reported by provider provenance.",
+      "storage_title": "Storage growth",
+      "storage_subtitle": "Latest observed storage {{size}}.",
+      "no_storage": "No storage sample reported by mem0 yet.",
+      "outcomes_title": "History and mutation outcomes",
+      "outcomes_subtitle": "Search, add, update, delete, and history results derived from audit provenance.",
+      "no_outcomes": "No outcome provenance in this window.",
+      "outcome_counts": "{{ok}} ok · {{error}} error",
+      "operation": {
+        "add": "Add",
+        "search": "Search",
+        "update": "Update",
+        "delete": "Delete",
+        "history": "History",
+        "unknown": "Unknown"
+      },
+      "audit_title": "Request audit",
+      "audit_subtitle": "Recent mem0 recall samples with correlation, status, latency, tokens, and result counts.",
+      "no_audit": "No mem0 audit rows in this window.",
+      "audit": {
+        "time": "Time",
+        "query": "Query",
+        "results": "Results",
+        "latency": "Latency",
+        "tokens": "Tokens",
+        "status": "Status",
+        "correlation": "Correlation"
+      },
+      "status": {
+        "ok": "OK",
+        "error": "Error",
+        "unknown": "Unknown"
+      }
     }
   }
 }

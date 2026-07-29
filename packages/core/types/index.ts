@@ -232,3 +232,10 @@ export type {
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
 } from "./billing";
+export type {
+  MemoryConfigResponse,
+  MemoryProvider,
+  MemoryReadMode,
+  MemoryRecallSample,
+  MemoryRecallSamplesResponse,
+} from "./memory";
