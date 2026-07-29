@@ -320,6 +320,7 @@ func TestMem0ProviderTimeoutRetryUsesIdempotencyPreflight(t *testing.T) {
 	provider := newMem0TestProvider(t, server.URL, Mem0ProviderConfig{
 		RequestTimeout: 10 * time.Millisecond,
 		MaxAttempts:    2,
+		Sleep:          sleepContext,
 	})
 	result, err := provider.Retain(context.Background(), mem0TestEnvelope("retain", `{"text":"Durably stored before timeout"}`))
 	if err != nil {
@@ -417,7 +418,9 @@ func newMem0TestProvider(t *testing.T, baseURL string, overrides Mem0ProviderCon
 	t.Helper()
 	overrides.BaseURL = baseURL
 	overrides.APIKey = "m0sk-test"
-	overrides.Sleep = func(context.Context, time.Duration) error { return nil }
+	if overrides.Sleep == nil {
+		overrides.Sleep = func(context.Context, time.Duration) error { return nil }
+	}
 	provider, err := NewMem0Provider(overrides)
 	if err != nil {
 		t.Fatalf("NewMem0Provider: %v", err)
