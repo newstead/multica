@@ -838,21 +838,24 @@ type MemoryProviderDelivery struct {
 	Error            pgtype.Text        `json:"error"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	DeliveryLagMs    int64              `json:"delivery_lag_ms"`
 }
 
 type MemoryRecallSample struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	ProjectID   pgtype.UUID        `json:"project_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	IssueID     pgtype.UUID        `json:"issue_id"`
-	TaskID      pgtype.UUID        `json:"task_id"`
-	Provider    string             `json:"provider"`
-	Query       string             `json:"query"`
-	Results     []byte             `json:"results"`
-	Provenance  []byte             `json:"provenance"`
-	SampledAt   pgtype.Timestamptz `json:"sampled_at"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
+	ProjectID           pgtype.UUID        `json:"project_id"`
+	AgentID             pgtype.UUID        `json:"agent_id"`
+	IssueID             pgtype.UUID        `json:"issue_id"`
+	TaskID              pgtype.UUID        `json:"task_id"`
+	Provider            string             `json:"provider"`
+	Query               string             `json:"query"`
+	Results             []byte             `json:"results"`
+	Provenance          []byte             `json:"provenance"`
+	SampledAt           pgtype.Timestamptz `json:"sampled_at"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	RecallCorrelationID string             `json:"recall_correlation_id"`
+	ReadMode            string             `json:"read_mode"`
 }
 
 type MemoryWorkspaceConfig struct {
