@@ -1,0 +1,111 @@
+{
+  "page": {
+    "title": "Memory",
+    "eyebrow": "Long-term memory",
+    "heading": "Dual-head comparison board",
+    "description": "Compare Hindsight and mem0 on paired recall samples only. Metrics are descriptive until sample size, confidence, and coverage are sufficient."
+  },
+  "status": {
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
+  "config": {
+    "primary": "Primary",
+    "shadow": "Shadow",
+    "read_mode": "Read mode"
+  },
+  "common": {
+    "unknown": "Unknown",
+    "none": "None"
+  },
+  "tabs": {
+    "label": "Memory board tabs",
+    "comparison": "Comparison",
+    "hindsight": "Hindsight",
+    "mem0": "mem0"
+  },
+  "coverage": {
+    "fixture_title": "Deterministic paired fixture mode",
+    "fixture_body": "No live paired deliveries are available yet, so the board is showing {{count}} deterministic paired fixtures for UI and benchmark validation.",
+    "live_title": "Live paired samples",
+    "live_body": "Using {{paired}} paired samples from {{live}} live recall samples. {{unpaired}} live samples are mismatched or missing their paired delivery. Coverage: {{coverage}}."
+  },
+  "summary": {
+    "sample_size": "Sample size",
+    "paired_only": "Paired samples only",
+    "overlap": "Recall overlap",
+    "mean_jaccard": "Mean Jaccard overlap",
+    "hindsight_correctness": "Hindsight correctness",
+    "mem0_correctness": "mem0 correctness"
+  },
+  "write": {
+    "title": "Write success matrix",
+    "description": "Success, retry/backlog, missing delivery, and replication lag by provider.",
+    "success": "Success",
+    "retry_backlog": "Retry/backlog",
+    "missing": "Missing/failed",
+    "p50_lag": "p50 lag",
+    "p95_lag": "p95 lag"
+  },
+  "recall": {
+    "title": "Recall, correctness, latency, and cost",
+    "description": "Side-by-side read metrics with confidence intervals and coverage implied by known correctness samples.",
+    "correctness": "Correctness",
+    "confidence": "Confidence",
+    "p50_latency": "p50 latency",
+    "p95_latency": "p95 latency",
+    "tokens": "Tokens",
+    "cost": "Cost",
+    "storage": "Storage"
+  },
+  "lifecycle": {
+    "title": "Stale, correction, and deletion checks",
+    "description": "Lifecycle outcomes are counted only when provenance includes the relevant evidence flag.",
+    "stale": "Stale filtered",
+    "correction": "Correction applied",
+    "deletion": "Deletion respected"
+  },
+  "chart": {
+    "title": "Delivery status distribution",
+    "description": "Stacked counts per provider for paired samples."
+  },
+  "provenance": {
+    "title": "Redacted provenance drill-down",
+    "description": "Inspect the provenance payload used for each paired sample. Sensitive-looking fields are redacted in the UI."
+  },
+  "provider": {
+    "samples": "Samples",
+    "correctness": "Correctness",
+    "latency": "Latency",
+    "cost_storage": "Cost and storage",
+    "p95_detail": "p95 read latency",
+    "deliveries_title": "Provider sample details",
+    "deliveries_description": "Per-query status, rank, correctness, latency, lag, and result count."
+  },
+  "table": {
+    "provider": "Provider",
+    "query": "Query",
+    "write_status": "Write status",
+    "rank": "Rank",
+    "correctness": "Correctness",
+    "latency": "Latency",
+    "lag": "Lag",
+    "results": "Results"
+  },
+  "states": {
+    "write": {
+      "success": "Success",
+      "retry": "Retry",
+      "backlog": "Backlog",
+      "failed": "Failed",
+      "missing": "Missing",
+      "unknown": "Unknown"
+    },
+    "correctness": {
+      "correct": "Correct",
+      "partial": "Partial",
+      "incorrect": "Incorrect",
+      "unknown": "Unknown"
+    }
+  }
+}

@@ -170,6 +170,16 @@ import type {
 import type { OnboardingCompletionPath } from "../onboarding/types";
 import type { CreateFeedbackResponse, FeedbackKind } from "../feedback/types";
 import type {
+  ListMemoryRecallSamplesResponse,
+  MemoryConfig,
+} from "../memory/types";
+import {
+  EMPTY_LIST_MEMORY_RECALL_SAMPLES_RESPONSE,
+  EMPTY_MEMORY_CONFIG,
+  ListMemoryRecallSamplesResponseSchema,
+  MemoryConfigSchema,
+} from "../memory/schemas";
+import type {
   CloudRuntimeNode,
   CreateCloudRuntimeNodeRequest,
   ListCloudRuntimeNodesParams,
@@ -2879,6 +2889,33 @@ export class ApiClient {
       WebhookDeliveryResponseSchema,
       { ...EMPTY_WEBHOOK_DELIVERY, autopilot_id: autopilotId },
       { endpoint: "POST /api/autopilots/:id/deliveries/:deliveryId/replay" },
+    );
+  }
+
+  // Memory gateway
+  async getMemoryConfig(workspaceId: string): Promise<MemoryConfig> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/memory/config`);
+    return parseWithFallback(raw, MemoryConfigSchema, EMPTY_MEMORY_CONFIG, {
+      endpoint: "GET /api/workspaces/:id/memory/config",
+    });
+  }
+
+  async listMemoryRecallSamples(
+    workspaceId: string,
+    params?: { limit?: number; offset?: number },
+  ): Promise<ListMemoryRecallSamplesResponse> {
+    const search = new URLSearchParams();
+    if (params?.limit) search.set("limit", params.limit.toString());
+    if (params?.offset) search.set("offset", params.offset.toString());
+    const suffix = search.size > 0 ? `?${search.toString()}` : "";
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/memory/recall-samples${suffix}`,
+    );
+    return parseWithFallback(
+      raw,
+      ListMemoryRecallSamplesResponseSchema,
+      EMPTY_LIST_MEMORY_RECALL_SAMPLES_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/memory/recall-samples" },
     );
   }
 
