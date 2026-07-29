@@ -1,22 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, EyeOff, FolderKanban, Trash2 } from "lucide-react";
+import { BarChart3, EyeOff, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import {
   CompactNumberFlow,
   CurrencyNumberFlow,
   NumberFlow,
-  NumberFlowGroup,
 } from "@multica/ui/components/ui/number-flow";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@multica/ui/components/ui/select";
 import { useWorkspaceId } from "@multica/core/hooks";
 import type { Agent } from "@multica/core/types";
 import { agentListOptions } from "@multica/core/workspace/queries";
@@ -50,7 +42,6 @@ import {
   FAILURE_CLASS_COLOR,
   formatRate,
 } from "../../runtimes/components/charts";
-import { ProjectIcon } from "../../projects/components/project-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import {
@@ -60,7 +51,17 @@ import {
   todayIso,
 } from "../../runtimes/utils";
 import { useT } from "../../i18n";
-import { UsagePageTabs } from "./usage-controls";
+import {
+  ALL_PROJECTS,
+  DEFAULT_DAYS_BY_DIM,
+  DurationNumberFlow,
+  ProjectFilter,
+  Segmented,
+  UsagePageTabs,
+  rangesForDim,
+  type Dim,
+  type TimeRange,
+} from "./usage-controls";
 import {
   aggregateAgentFailures,
   aggregateAgentTokens,
@@ -95,40 +96,6 @@ import {
   type OffenderSort,
 } from "../utils";
 
-// Period selector — mirrors the runtime detail page so users see the same
-// option set across both dashboards. `dims` declares which dimensions each
-// range is allowed in: 1d / 7d at the weekly grain collapse to a single bar,
-// 180d at the daily grain is 180 unreadable bars, so each end of the range
-// belongs to a single dimension. Switching dimensions resets `days` if the
-// current value isn't in the new dimension's allowed set (see
-// `handleDimChange` below).
-//
-// 1d semantic: "today" (the natural calendar day from 00:00 in the viewer's
-// timezone), not "the last 24 hours". The client-side `dailyCutoffIso` filter
-// below enforces this even at the midnight edge.
-const TIME_RANGES = [
-  { label: "1d", days: 1, dims: ["daily"] as const },
-  { label: "7d", days: 7, dims: ["daily"] as const },
-  { label: "30d", days: 30, dims: ["daily", "weekly"] as const },
-  { label: "90d", days: 90, dims: ["daily", "weekly"] as const },
-  { label: "180d", days: 180, dims: ["weekly"] as const },
-] as const;
-type TimeRange = (typeof TIME_RANGES)[number]["days"];
-type Dim = "daily" | "weekly";
-
-const DEFAULT_DAYS_BY_DIM: Record<Dim, TimeRange> = {
-  daily: 30,
-  weekly: 90,
-};
-
-function rangesForDim(dim: Dim) {
-  return TIME_RANGES.filter((r) => (r.dims as readonly string[]).includes(dim));
-}
-
-// Sentinel for "no project filter" — kept distinct from the empty string
-// so it survives a refactor that ever lets a project be slug-keyed.
-const ALL_PROJECTS = "__all__";
-
 // Stable references — `data ?? []` would create a new empty array on
 // every render while the query is loading, which breaks useMemo's
 // reference-equality dep check and trips the exhaustive-deps lint rule.
@@ -140,90 +107,6 @@ const EMPTY_FAILURE_DAILY: import("@multica/core/types").DashboardFailureDaily[]
 const EMPTY_FAILURE_BY_AGENT: import("@multica/core/types").DashboardFailureByAgent[] =
   [];
 const EMPTY_AGENTS: Agent[] = [];
-
-// Local segmented control — same visual language the runtime usage section
-// uses for its period / tab toggles. shadcn's Tabs is wired for full tab
-// pages with ARIA semantics the compact toolbar pill doesn't need.
-//
-// Which option is active was expressed only as a colour swap, which no screen
-// reader can see, so `aria-pressed` carries it too. `label` is required rather
-// than optional because a naked group of toggle buttons is announced without
-// saying WHAT it toggles — "Rate, pressed" is useless until you know the group
-// is the offender ranking. Toggle buttons rather than a radiogroup: a
-// radiogroup owes the user arrow-key roving focus, and these are tab stops
-// wherever they appear in the page.
-function Segmented<T extends string | number>({
-  value,
-  onChange,
-  options,
-  label,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: readonly { label: string; value: T }[];
-  label: string;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={label}
-      className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5"
-    >
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          type="button"
-          aria-pressed={o.value === value}
-          onClick={() => onChange(o.value)}
-          className={`rounded-sm px-2.5 py-1 text-xs font-medium transition-colors ${
-            o.value === value
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function DurationNumberFlow({
-  seconds,
-  lessThanMinuteLabel,
-  locales,
-}: {
-  seconds: number;
-  lessThanMinuteLabel: string;
-  locales?: Intl.LocalesArgument;
-}) {
-  const label = formatDuration(seconds, lessThanMinuteLabel);
-  const parts = Array.from(label.matchAll(/(\d+)([a-z]+)/gi), (match) => ({
-    value: Number(match[1]),
-    unit: match[2] ?? "",
-  }));
-
-  if (parts.length === 0) return label;
-
-  return (
-    <>
-      <span className="sr-only">{label}</span>
-      <NumberFlowGroup>
-        <span aria-hidden className="inline-flex items-baseline gap-1">
-          {parts.map((part) => (
-            <NumberFlow
-              key={part.unit}
-              value={part.value}
-              locales={locales}
-              suffix={part.unit}
-              format={{ maximumFractionDigits: 0, useGrouping: false }}
-            />
-          ))}
-        </span>
-      </NumberFlowGroup>
-    </>
-  );
-}
 
 /**
  * Workspace + project token / run-time dashboard.
@@ -652,68 +535,6 @@ export function DashboardPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-function ProjectFilter({
-  projects,
-  value,
-  onChange,
-}: {
-  projects: { id: string; title: string; icon: string | null }[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const { t } = useT("usage");
-  const allLabel = t(($) => $.filter.all_projects);
-  const selected = projects.find((p) => p.id === value);
-  const selectedTitle =
-    value === ALL_PROJECTS ? allLabel : selected?.title ?? allLabel;
-  const projectItems = [
-    { value: ALL_PROJECTS, label: allLabel },
-    ...projects.map((project) => ({ value: project.id, label: project.title })),
-  ];
-
-  return (
-    <Select
-      items={projectItems}
-      value={value}
-      onValueChange={(v) => onChange(v ?? ALL_PROJECTS)}
-    >
-      <SelectTrigger size="sm" className="min-w-[180px]">
-        <SelectValue>
-          {() => (
-            <>
-              {selected ? (
-                <ProjectIcon project={selected} size="sm" />
-              ) : (
-                <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              )}
-              <span className="truncate">{selectedTitle}</span>
-            </>
-          )}
-        </SelectValue>
-      </SelectTrigger>
-      {/* alignItemWithTrigger=false: the default aligns the *selected* item
-          to the trigger, which pushes "All projects" above the trigger and
-          clips it off-screen when the usage header sits at the top of the
-          viewport. Anchor the dropdown to the bottom of the trigger so
-          every entry stays reachable.
-          max-h-72: cap the dropdown so a long project list scrolls instead
-          of stretching to the bottom of the window. */}
-      <SelectContent align="start" alignItemWithTrigger={false} className="max-h-72">
-        <SelectItem value={ALL_PROJECTS}>
-          <FolderKanban className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">{allLabel}</span>
-        </SelectItem>
-        {projects.map((p) => (
-          <SelectItem key={p.id} value={p.id}>
-            <ProjectIcon project={p} size="sm" />
-            <span className="truncate">{p.title}</span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 

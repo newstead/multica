@@ -47,21 +47,40 @@ export function rangesForDim(dim: Dim) {
 // so it survives a refactor that ever lets a project be slug-keyed.
 export const ALL_PROJECTS = "__all__";
 
+// Shared segmented control — same visual language the runtime usage section
+// uses for its period / tab toggles. shadcn's Tabs is wired for full tab
+// pages with ARIA semantics the compact toolbar pill doesn't need.
+//
+// Which option is active was expressed only as a colour swap, which no screen
+// reader can see, so `aria-pressed` carries it too. Pass `label` whenever the
+// group's purpose is not obvious from the surrounding context: a naked group
+// of toggle buttons is announced without saying WHAT it toggles — "Rate,
+// pressed" is useless until you know the group is the offender ranking.
+// Toggle buttons rather than a radiogroup: a radiogroup owes the user
+// arrow-key roving focus, and these are tab stops wherever they appear in the
+// page.
 export function Segmented<T extends string | number>({
   value,
   onChange,
   options,
+  label,
 }: {
   value: T;
   onChange: (v: T) => void;
   options: readonly { label: string; value: T }[];
+  label?: string;
 }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5"
+    >
       {options.map((o) => (
         <button
           key={String(o.value)}
           type="button"
+          aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
           className={`rounded-sm px-2.5 py-1 text-xs font-medium transition-colors ${
             o.value === value
