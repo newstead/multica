@@ -344,7 +344,7 @@ func (s *MemoryService) recordMemoryDeliverySuccess(ctx context.Context, deliver
 		WorkspaceID:      delivery.WorkspaceID,
 		Status:           "delivered",
 		AttemptCount:     delivery.AttemptCount + 1,
-		NextAttemptAt:    pgtype.Timestamptz{},
+		NextAttemptAt:    pgtype.Timestamptz{Time: now, Valid: true},
 		Response:         []byte(response),
 		LastAttemptAt:    pgtype.Timestamptz{Time: now, Valid: true},
 		TerminalAt:       pgtype.Timestamptz{},
@@ -359,6 +359,9 @@ func (s *MemoryService) recordMemoryDeliveryFailure(ctx context.Context, deliver
 	attemptCount := delivery.AttemptCount + 1
 	status, nextAttemptAt, terminalAt := s.DeliveryFailureState(attemptCount)
 	now := s.now()
+	if !nextAttemptAt.Valid {
+		nextAttemptAt = pgtype.Timestamptz{Time: now, Valid: true}
+	}
 	updated, err := s.Queries.UpdateMemoryProviderDeliveryResult(ctx, db.UpdateMemoryProviderDeliveryResultParams{
 		ID:               delivery.ID,
 		WorkspaceID:      delivery.WorkspaceID,

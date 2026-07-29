@@ -400,7 +400,7 @@ func TestMemoryDispatchDueDeliveriesOrdersByNextAttempt(t *testing.T) {
 
 	if _, err := pool.Exec(ctx, `
 		UPDATE memory_provider_delivery
-		SET next_attempt_at = CASE memory_event_id WHEN $2 THEN $4 ELSE $3 END
+		SET next_attempt_at = CASE memory_event_id WHEN $2::uuid THEN $4::timestamptz ELSE $3::timestamptz END
 		WHERE workspace_id = $1 AND memory_event_id IN ($2, $5)
 	`, workspaceID, first.Event.ID, now.Add(time.Minute), now.Add(2*time.Minute), second.Event.ID); err != nil {
 		t.Fatalf("adjust delivery order fixture: %v", err)
