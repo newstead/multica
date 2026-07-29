@@ -8,11 +8,76 @@ package db
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func scanMemoryEvent(row pgx.Row) (MemoryEvent, error) {
+const createMemoryRecallSample = `-- name: CreateMemoryRecallSample :one
+INSERT INTO memory_recall_sample (
+    workspace_id, project_id, agent_id, issue_id, task_id, provider,
+    query, results, provenance, sampled_at
+) VALUES (
+    $1, $7, $8, $9,
+    $10, $2, $3, $4, $5, $6
+)
+RETURNING id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at
+`
+
+type CreateMemoryRecallSampleParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Provider    string             `json:"provider"`
+	Query       string             `json:"query"`
+	Results     []byte             `json:"results"`
+	Provenance  []byte             `json:"provenance"`
+	SampledAt   pgtype.Timestamptz `json:"sampled_at"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+}
+
+func (q *Queries) CreateMemoryRecallSample(ctx context.Context, arg CreateMemoryRecallSampleParams) (MemoryRecallSample, error) {
+	row := q.db.QueryRow(ctx, createMemoryRecallSample,
+		arg.WorkspaceID,
+		arg.Provider,
+		arg.Query,
+		arg.Results,
+		arg.Provenance,
+		arg.SampledAt,
+		arg.ProjectID,
+		arg.AgentID,
+		arg.IssueID,
+		arg.TaskID,
+	)
+	var i MemoryRecallSample
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.TaskID,
+		&i.Provider,
+		&i.Query,
+		&i.Results,
+		&i.Provenance,
+		&i.SampledAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getMemoryEventInWorkspace = `-- name: GetMemoryEventInWorkspace :one
+SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, actor_type, actor_id, event_type, idempotency_key, envelope, status, attempt_count, available_at, last_attempt_at, terminal_at, error, created_at, updated_at FROM memory_event
+WHERE id = $1 AND workspace_id = $2
+`
+
+type GetMemoryEventInWorkspaceParams struct {
+	ID          pgtype.UUID `json:"id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+func (q *Queries) GetMemoryEventInWorkspace(ctx context.Context, arg GetMemoryEventInWorkspaceParams) (MemoryEvent, error) {
+	row := q.db.QueryRow(ctx, getMemoryEventInWorkspace, arg.ID, arg.WorkspaceID)
 	var i MemoryEvent
 	err := row.Scan(
 		&i.ID,
@@ -38,47 +103,17 @@ func scanMemoryEvent(row pgx.Row) (MemoryEvent, error) {
 	return i, err
 }
 
-func scanMemoryProviderDelivery(row pgx.Row) (MemoryProviderDelivery, error) {
-	var i MemoryProviderDelivery
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.MemoryEventID,
-		&i.Provider,
-		&i.Status,
-		&i.AttemptCount,
-		&i.NextAttemptAt,
-		&i.LastAttemptAt,
-		&i.TerminalAt,
-		&i.ProviderMemoryID,
-		&i.Response,
-		&i.Error,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
+const getMemoryWorkspaceConfig = `-- name: GetMemoryWorkspaceConfig :one
 
-func scanMemoryRecallSample(row pgx.Row) (MemoryRecallSample, error) {
-	var i MemoryRecallSample
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.ProjectID,
-		&i.AgentID,
-		&i.IssueID,
-		&i.TaskID,
-		&i.Provider,
-		&i.Query,
-		&i.Results,
-		&i.Provenance,
-		&i.SampledAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
+SELECT workspace_id, enabled, primary_provider, shadow_provider, read_mode, provider_settings, provider_credentials_encrypted, created_at, updated_at FROM memory_workspace_config
+WHERE workspace_id = $1
+`
 
-func scanMemoryWorkspaceConfig(row pgx.Row) (MemoryWorkspaceConfig, error) {
+// =====================
+// Memory Gateway
+// =====================
+func (q *Queries) GetMemoryWorkspaceConfig(ctx context.Context, workspaceID pgtype.UUID) (MemoryWorkspaceConfig, error) {
+	row := q.db.QueryRow(ctx, getMemoryWorkspaceConfig, workspaceID)
 	var i MemoryWorkspaceConfig
 	err := row.Scan(
 		&i.WorkspaceID,
@@ -92,143 +127,6 @@ func scanMemoryWorkspaceConfig(row pgx.Row) (MemoryWorkspaceConfig, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const getMemoryWorkspaceConfig = `-- name: GetMemoryWorkspaceConfig :one
-SELECT workspace_id, enabled, primary_provider, shadow_provider, read_mode, provider_settings, provider_credentials_encrypted, created_at, updated_at FROM memory_workspace_config
-WHERE workspace_id = $1
-`
-
-func (q *Queries) GetMemoryWorkspaceConfig(ctx context.Context, workspaceID pgtype.UUID) (MemoryWorkspaceConfig, error) {
-	row := q.db.QueryRow(ctx, getMemoryWorkspaceConfig, workspaceID)
-	return scanMemoryWorkspaceConfig(row)
-}
-
-const upsertMemoryWorkspaceConfig = `-- name: UpsertMemoryWorkspaceConfig :one
-INSERT INTO memory_workspace_config (
-    workspace_id, enabled, primary_provider, shadow_provider, read_mode,
-    provider_settings, provider_credentials_encrypted
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
-)
-ON CONFLICT (workspace_id) DO UPDATE SET
-    enabled                        = EXCLUDED.enabled,
-    primary_provider               = EXCLUDED.primary_provider,
-    shadow_provider                = EXCLUDED.shadow_provider,
-    read_mode                      = EXCLUDED.read_mode,
-    provider_settings              = EXCLUDED.provider_settings,
-    provider_credentials_encrypted = EXCLUDED.provider_credentials_encrypted,
-    updated_at                     = now()
-RETURNING workspace_id, enabled, primary_provider, shadow_provider, read_mode, provider_settings, provider_credentials_encrypted, created_at, updated_at
-`
-
-type UpsertMemoryWorkspaceConfigParams struct {
-	WorkspaceID                  pgtype.UUID `json:"workspace_id"`
-	Enabled                      bool        `json:"enabled"`
-	PrimaryProvider              string      `json:"primary_provider"`
-	ShadowProvider               pgtype.Text `json:"shadow_provider"`
-	ReadMode                     string      `json:"read_mode"`
-	ProviderSettings             []byte      `json:"provider_settings"`
-	ProviderCredentialsEncrypted []byte      `json:"provider_credentials_encrypted"`
-}
-
-func (q *Queries) UpsertMemoryWorkspaceConfig(ctx context.Context, arg UpsertMemoryWorkspaceConfigParams) (MemoryWorkspaceConfig, error) {
-	row := q.db.QueryRow(ctx, upsertMemoryWorkspaceConfig,
-		arg.WorkspaceID,
-		arg.Enabled,
-		arg.PrimaryProvider,
-		arg.ShadowProvider,
-		arg.ReadMode,
-		arg.ProviderSettings,
-		arg.ProviderCredentialsEncrypted,
-	)
-	return scanMemoryWorkspaceConfig(row)
-}
-
-const upsertMemoryEvent = `-- name: UpsertMemoryEvent :one
-INSERT INTO memory_event (
-    workspace_id, project_id, agent_id, issue_id, task_id, actor_type, actor_id,
-    event_type, idempotency_key, envelope, status, available_at
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'queued', $11
-)
-ON CONFLICT (workspace_id, idempotency_key) DO UPDATE SET
-    updated_at = memory_event.updated_at
-RETURNING id, workspace_id, project_id, agent_id, issue_id, task_id, actor_type, actor_id, event_type, idempotency_key, envelope, status, attempt_count, available_at, last_attempt_at, terminal_at, error, created_at, updated_at, (xmax = 0) AS inserted
-`
-
-type UpsertMemoryEventParams struct {
-	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	ProjectID      pgtype.UUID        `json:"project_id"`
-	AgentID        pgtype.UUID        `json:"agent_id"`
-	IssueID        pgtype.UUID        `json:"issue_id"`
-	TaskID         pgtype.UUID        `json:"task_id"`
-	ActorType      string             `json:"actor_type"`
-	ActorID        pgtype.UUID        `json:"actor_id"`
-	EventType      string             `json:"event_type"`
-	IdempotencyKey string             `json:"idempotency_key"`
-	Envelope       []byte             `json:"envelope"`
-	AvailableAt    pgtype.Timestamptz `json:"available_at"`
-}
-
-type UpsertMemoryEventRow struct {
-	MemoryEvent
-	Inserted bool `json:"inserted"`
-}
-
-func (q *Queries) UpsertMemoryEvent(ctx context.Context, arg UpsertMemoryEventParams) (UpsertMemoryEventRow, error) {
-	row := q.db.QueryRow(ctx, upsertMemoryEvent,
-		arg.WorkspaceID,
-		arg.ProjectID,
-		arg.AgentID,
-		arg.IssueID,
-		arg.TaskID,
-		arg.ActorType,
-		arg.ActorID,
-		arg.EventType,
-		arg.IdempotencyKey,
-		arg.Envelope,
-		arg.AvailableAt,
-	)
-	var i UpsertMemoryEventRow
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.ProjectID,
-		&i.AgentID,
-		&i.IssueID,
-		&i.TaskID,
-		&i.ActorType,
-		&i.ActorID,
-		&i.EventType,
-		&i.IdempotencyKey,
-		&i.Envelope,
-		&i.Status,
-		&i.AttemptCount,
-		&i.AvailableAt,
-		&i.LastAttemptAt,
-		&i.TerminalAt,
-		&i.Error,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Inserted,
-	)
-	return i, err
-}
-
-const getMemoryEventInWorkspace = `-- name: GetMemoryEventInWorkspace :one
-SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, actor_type, actor_id, event_type, idempotency_key, envelope, status, attempt_count, available_at, last_attempt_at, terminal_at, error, created_at, updated_at FROM memory_event
-WHERE id = $1 AND workspace_id = $2
-`
-
-type GetMemoryEventInWorkspaceParams struct {
-	ID          pgtype.UUID `json:"id"`
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-}
-
-func (q *Queries) GetMemoryEventInWorkspace(ctx context.Context, arg GetMemoryEventInWorkspaceParams) (MemoryEvent, error) {
-	row := q.db.QueryRow(ctx, getMemoryEventInWorkspace, arg.ID, arg.WorkspaceID)
-	return scanMemoryEvent(row)
 }
 
 const listMemoryEventsByWorkspace = `-- name: ListMemoryEventsByWorkspace :many
@@ -284,133 +182,6 @@ func (q *Queries) ListMemoryEventsByWorkspace(ctx context.Context, arg ListMemor
 	return items, nil
 }
 
-const upsertMemoryProviderDelivery = `-- name: UpsertMemoryProviderDelivery :one
-INSERT INTO memory_provider_delivery (
-    workspace_id, memory_event_id, provider, status, next_attempt_at
-) VALUES (
-    $1, $2, $3, 'queued', $4
-)
-ON CONFLICT (memory_event_id, provider) DO UPDATE SET
-    updated_at = memory_provider_delivery.updated_at
-RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at, (xmax = 0) AS inserted
-`
-
-type UpsertMemoryProviderDeliveryParams struct {
-	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
-	MemoryEventID pgtype.UUID        `json:"memory_event_id"`
-	Provider      string             `json:"provider"`
-	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
-}
-
-type UpsertMemoryProviderDeliveryRow struct {
-	MemoryProviderDelivery
-	Inserted bool `json:"inserted"`
-}
-
-func (q *Queries) UpsertMemoryProviderDelivery(ctx context.Context, arg UpsertMemoryProviderDeliveryParams) (UpsertMemoryProviderDeliveryRow, error) {
-	row := q.db.QueryRow(ctx, upsertMemoryProviderDelivery, arg.WorkspaceID, arg.MemoryEventID, arg.Provider, arg.NextAttemptAt)
-	var i UpsertMemoryProviderDeliveryRow
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.MemoryEventID,
-		&i.Provider,
-		&i.Status,
-		&i.AttemptCount,
-		&i.NextAttemptAt,
-		&i.LastAttemptAt,
-		&i.TerminalAt,
-		&i.ProviderMemoryID,
-		&i.Response,
-		&i.Error,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Inserted,
-	)
-	return i, err
-}
-
-const updateMemoryProviderDeliveryResult = `-- name: UpdateMemoryProviderDeliveryResult :one
-UPDATE memory_provider_delivery
-SET status = $3,
-    attempt_count = $4,
-    next_attempt_at = $5,
-    last_attempt_at = now(),
-    terminal_at = $6,
-    provider_memory_id = $7,
-    response = $8,
-    error = $9,
-    updated_at = now()
-WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at
-`
-
-type UpdateMemoryProviderDeliveryResultParams struct {
-	ID               pgtype.UUID        `json:"id"`
-	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
-	Status           string             `json:"status"`
-	AttemptCount     int32              `json:"attempt_count"`
-	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
-	TerminalAt       pgtype.Timestamptz `json:"terminal_at"`
-	ProviderMemoryID pgtype.Text        `json:"provider_memory_id"`
-	Response         []byte             `json:"response"`
-	Error            pgtype.Text        `json:"error"`
-}
-
-func (q *Queries) UpdateMemoryProviderDeliveryResult(ctx context.Context, arg UpdateMemoryProviderDeliveryResultParams) (MemoryProviderDelivery, error) {
-	row := q.db.QueryRow(ctx, updateMemoryProviderDeliveryResult,
-		arg.ID,
-		arg.WorkspaceID,
-		arg.Status,
-		arg.AttemptCount,
-		arg.NextAttemptAt,
-		arg.TerminalAt,
-		arg.ProviderMemoryID,
-		arg.Response,
-		arg.Error,
-	)
-	return scanMemoryProviderDelivery(row)
-}
-
-const createMemoryRecallSample = `-- name: CreateMemoryRecallSample :one
-INSERT INTO memory_recall_sample (
-    workspace_id, project_id, agent_id, issue_id, task_id, provider,
-    query, results, provenance, sampled_at
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-)
-RETURNING id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at
-`
-
-type CreateMemoryRecallSampleParams struct {
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	ProjectID   pgtype.UUID        `json:"project_id"`
-	AgentID     pgtype.UUID        `json:"agent_id"`
-	IssueID     pgtype.UUID        `json:"issue_id"`
-	TaskID      pgtype.UUID        `json:"task_id"`
-	Provider    string             `json:"provider"`
-	Query       string             `json:"query"`
-	Results     []byte             `json:"results"`
-	Provenance  []byte             `json:"provenance"`
-	SampledAt   pgtype.Timestamptz `json:"sampled_at"`
-}
-
-func (q *Queries) CreateMemoryRecallSample(ctx context.Context, arg CreateMemoryRecallSampleParams) (MemoryRecallSample, error) {
-	row := q.db.QueryRow(ctx, createMemoryRecallSample,
-		arg.WorkspaceID,
-		arg.ProjectID,
-		arg.AgentID,
-		arg.IssueID,
-		arg.TaskID,
-		arg.Provider,
-		arg.Query,
-		arg.Results,
-		arg.Provenance,
-		arg.SampledAt,
-	)
-	return scanMemoryRecallSample(row)
-}
-
 const listMemoryRecallSamplesByWorkspace = `-- name: ListMemoryRecallSamplesByWorkspace :many
 SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at FROM memory_recall_sample
 WHERE workspace_id = $1
@@ -455,4 +226,270 @@ func (q *Queries) ListMemoryRecallSamplesByWorkspace(ctx context.Context, arg Li
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateMemoryProviderDeliveryResult = `-- name: UpdateMemoryProviderDeliveryResult :one
+UPDATE memory_provider_delivery
+SET status = $3,
+    attempt_count = $4,
+    next_attempt_at = $5,
+    last_attempt_at = now(),
+    terminal_at = $7,
+    provider_memory_id = $8,
+    response = $6,
+    error = $9,
+    updated_at = now()
+WHERE id = $1 AND workspace_id = $2
+RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at
+`
+
+type UpdateMemoryProviderDeliveryResultParams struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	Status           string             `json:"status"`
+	AttemptCount     int32              `json:"attempt_count"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	Response         []byte             `json:"response"`
+	TerminalAt       pgtype.Timestamptz `json:"terminal_at"`
+	ProviderMemoryID pgtype.Text        `json:"provider_memory_id"`
+	Error            pgtype.Text        `json:"error"`
+}
+
+func (q *Queries) UpdateMemoryProviderDeliveryResult(ctx context.Context, arg UpdateMemoryProviderDeliveryResultParams) (MemoryProviderDelivery, error) {
+	row := q.db.QueryRow(ctx, updateMemoryProviderDeliveryResult,
+		arg.ID,
+		arg.WorkspaceID,
+		arg.Status,
+		arg.AttemptCount,
+		arg.NextAttemptAt,
+		arg.Response,
+		arg.TerminalAt,
+		arg.ProviderMemoryID,
+		arg.Error,
+	)
+	var i MemoryProviderDelivery
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MemoryEventID,
+		&i.Provider,
+		&i.Status,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastAttemptAt,
+		&i.TerminalAt,
+		&i.ProviderMemoryID,
+		&i.Response,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertMemoryEvent = `-- name: UpsertMemoryEvent :one
+INSERT INTO memory_event (
+    workspace_id, project_id, agent_id, issue_id, task_id, actor_type, actor_id,
+    event_type, idempotency_key, envelope, status, available_at
+) VALUES (
+    $1, $7, $8, $9,
+    $10, $2, $11, $3, $4, $5, 'queued', $6
+)
+ON CONFLICT (workspace_id, idempotency_key) DO UPDATE SET
+    updated_at = memory_event.updated_at
+RETURNING id, workspace_id, project_id, agent_id, issue_id, task_id, actor_type, actor_id, event_type, idempotency_key, envelope, status, attempt_count, available_at, last_attempt_at, terminal_at, error, created_at, updated_at, (xmax = 0) AS inserted
+`
+
+type UpsertMemoryEventParams struct {
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ActorType      string             `json:"actor_type"`
+	EventType      string             `json:"event_type"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Envelope       []byte             `json:"envelope"`
+	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	ActorID        pgtype.UUID        `json:"actor_id"`
+}
+
+type UpsertMemoryEventRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	ActorType      string             `json:"actor_type"`
+	ActorID        pgtype.UUID        `json:"actor_id"`
+	EventType      string             `json:"event_type"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Envelope       []byte             `json:"envelope"`
+	Status         string             `json:"status"`
+	AttemptCount   int32              `json:"attempt_count"`
+	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	LastAttemptAt  pgtype.Timestamptz `json:"last_attempt_at"`
+	TerminalAt     pgtype.Timestamptz `json:"terminal_at"`
+	Error          pgtype.Text        `json:"error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	Inserted       bool               `json:"inserted"`
+}
+
+func (q *Queries) UpsertMemoryEvent(ctx context.Context, arg UpsertMemoryEventParams) (UpsertMemoryEventRow, error) {
+	row := q.db.QueryRow(ctx, upsertMemoryEvent,
+		arg.WorkspaceID,
+		arg.ActorType,
+		arg.EventType,
+		arg.IdempotencyKey,
+		arg.Envelope,
+		arg.AvailableAt,
+		arg.ProjectID,
+		arg.AgentID,
+		arg.IssueID,
+		arg.TaskID,
+		arg.ActorID,
+	)
+	var i UpsertMemoryEventRow
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.ProjectID,
+		&i.AgentID,
+		&i.IssueID,
+		&i.TaskID,
+		&i.ActorType,
+		&i.ActorID,
+		&i.EventType,
+		&i.IdempotencyKey,
+		&i.Envelope,
+		&i.Status,
+		&i.AttemptCount,
+		&i.AvailableAt,
+		&i.LastAttemptAt,
+		&i.TerminalAt,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Inserted,
+	)
+	return i, err
+}
+
+const upsertMemoryProviderDelivery = `-- name: UpsertMemoryProviderDelivery :one
+INSERT INTO memory_provider_delivery (
+    workspace_id, memory_event_id, provider, status, next_attempt_at
+) VALUES (
+    $1, $2, $3, 'queued', $4
+)
+ON CONFLICT (memory_event_id, provider) DO UPDATE SET
+    updated_at = memory_provider_delivery.updated_at
+RETURNING id, workspace_id, memory_event_id, provider, status, attempt_count, next_attempt_at, last_attempt_at, terminal_at, provider_memory_id, response, error, created_at, updated_at, (xmax = 0) AS inserted
+`
+
+type UpsertMemoryProviderDeliveryParams struct {
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	MemoryEventID pgtype.UUID        `json:"memory_event_id"`
+	Provider      string             `json:"provider"`
+	NextAttemptAt pgtype.Timestamptz `json:"next_attempt_at"`
+}
+
+type UpsertMemoryProviderDeliveryRow struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MemoryEventID    pgtype.UUID        `json:"memory_event_id"`
+	Provider         string             `json:"provider"`
+	Status           string             `json:"status"`
+	AttemptCount     int32              `json:"attempt_count"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastAttemptAt    pgtype.Timestamptz `json:"last_attempt_at"`
+	TerminalAt       pgtype.Timestamptz `json:"terminal_at"`
+	ProviderMemoryID pgtype.Text        `json:"provider_memory_id"`
+	Response         []byte             `json:"response"`
+	Error            pgtype.Text        `json:"error"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Inserted         bool               `json:"inserted"`
+}
+
+func (q *Queries) UpsertMemoryProviderDelivery(ctx context.Context, arg UpsertMemoryProviderDeliveryParams) (UpsertMemoryProviderDeliveryRow, error) {
+	row := q.db.QueryRow(ctx, upsertMemoryProviderDelivery,
+		arg.WorkspaceID,
+		arg.MemoryEventID,
+		arg.Provider,
+		arg.NextAttemptAt,
+	)
+	var i UpsertMemoryProviderDeliveryRow
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.MemoryEventID,
+		&i.Provider,
+		&i.Status,
+		&i.AttemptCount,
+		&i.NextAttemptAt,
+		&i.LastAttemptAt,
+		&i.TerminalAt,
+		&i.ProviderMemoryID,
+		&i.Response,
+		&i.Error,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Inserted,
+	)
+	return i, err
+}
+
+const upsertMemoryWorkspaceConfig = `-- name: UpsertMemoryWorkspaceConfig :one
+INSERT INTO memory_workspace_config (
+    workspace_id, enabled, primary_provider, shadow_provider, read_mode,
+    provider_settings, provider_credentials_encrypted
+) VALUES (
+    $1, $2, $3, $7, $4, $5, $6
+)
+ON CONFLICT (workspace_id) DO UPDATE SET
+    enabled                        = EXCLUDED.enabled,
+    primary_provider               = EXCLUDED.primary_provider,
+    shadow_provider                = EXCLUDED.shadow_provider,
+    read_mode                      = EXCLUDED.read_mode,
+    provider_settings              = EXCLUDED.provider_settings,
+    provider_credentials_encrypted = EXCLUDED.provider_credentials_encrypted,
+    updated_at                     = now()
+RETURNING workspace_id, enabled, primary_provider, shadow_provider, read_mode, provider_settings, provider_credentials_encrypted, created_at, updated_at
+`
+
+type UpsertMemoryWorkspaceConfigParams struct {
+	WorkspaceID                  pgtype.UUID `json:"workspace_id"`
+	Enabled                      bool        `json:"enabled"`
+	PrimaryProvider              string      `json:"primary_provider"`
+	ReadMode                     string      `json:"read_mode"`
+	ProviderSettings             []byte      `json:"provider_settings"`
+	ProviderCredentialsEncrypted []byte      `json:"provider_credentials_encrypted"`
+	ShadowProvider               pgtype.Text `json:"shadow_provider"`
+}
+
+func (q *Queries) UpsertMemoryWorkspaceConfig(ctx context.Context, arg UpsertMemoryWorkspaceConfigParams) (MemoryWorkspaceConfig, error) {
+	row := q.db.QueryRow(ctx, upsertMemoryWorkspaceConfig,
+		arg.WorkspaceID,
+		arg.Enabled,
+		arg.PrimaryProvider,
+		arg.ReadMode,
+		arg.ProviderSettings,
+		arg.ProviderCredentialsEncrypted,
+		arg.ShadowProvider,
+	)
+	var i MemoryWorkspaceConfig
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Enabled,
+		&i.PrimaryProvider,
+		&i.ShadowProvider,
+		&i.ReadMode,
+		&i.ProviderSettings,
+		&i.ProviderCredentialsEncrypted,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

@@ -151,6 +151,7 @@ type Handler struct {
 	TaskService            *service.TaskService
 	IssueService           *service.IssueService
 	AutopilotService       *service.AutopilotService
+	MemoryService          *service.MemoryService
 	EmailService           *service.EmailService
 	UpdateStore            UpdateStore
 	ModelListStore         ModelListStore
