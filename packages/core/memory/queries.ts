@@ -6,8 +6,15 @@ export const memoryKeys = {
   config: (wsId: string) => [...memoryKeys.all(wsId), "config"] as const,
   recallSamples: (wsId: string, limit: number, offset: number) =>
     [...memoryKeys.all(wsId), "recall-samples", limit, offset] as const,
-  mem0Board: (wsId: string, limit: number, offset: number) =>
-    [...memoryKeys.all(wsId), "mem0-board", limit, offset] as const,
+  mem0Board: (
+    wsId: string,
+    limit: number,
+    offset: number,
+    projectId: string | null,
+    agentId: string | null,
+    issueId: string | null,
+    taskId: string | null,
+  ) => [...memoryKeys.all(wsId), "mem0-board", limit, offset, projectId, agentId, issueId, taskId] as const,
 };
 
 const STALE_TIME = 60 * 1000;
@@ -24,13 +31,31 @@ export function memoryConfigOptions(wsId: string) {
 
 export function memoryMem0BoardOptions(
   wsId: string,
-  params: { limit?: number; offset?: number } = {},
+  params: {
+    limit?: number;
+    offset?: number;
+    project_id?: string | null;
+    agent_id?: string | null;
+    issue_id?: string | null;
+    task_id?: string | null;
+  } = {},
 ) {
   const limit = params.limit ?? 500;
   const offset = params.offset ?? 0;
+  const projectId = params.project_id ?? null;
+  const agentId = params.agent_id ?? null;
+  const issueId = params.issue_id ?? null;
+  const taskId = params.task_id ?? null;
   return queryOptions({
-    queryKey: memoryKeys.mem0Board(wsId, limit, offset),
-    queryFn: () => api.getMemoryMem0Board(wsId, { limit, offset }),
+    queryKey: memoryKeys.mem0Board(wsId, limit, offset, projectId, agentId, issueId, taskId),
+    queryFn: () => api.getMemoryMem0Board(wsId, {
+      limit,
+      offset,
+      project_id: projectId,
+      agent_id: agentId,
+      issue_id: issueId,
+      task_id: taskId,
+    }),
     enabled: !!wsId,
     staleTime: STALE_TIME,
     placeholderData: keepPreviousData,

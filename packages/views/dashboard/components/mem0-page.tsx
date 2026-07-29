@@ -59,7 +59,6 @@ export function Mem0UsagePage() {
   const canManageMemory = role === "owner" || role === "admin";
   const { data: projects = [] } = useQuery(projectListOptions(wsId));
   const configQuery = useQuery(memoryConfigOptions(wsId));
-  const boardQuery = useQuery(memoryMem0BoardOptions(wsId, { limit: 500 }));
 
   const allowedRanges = rangesForDim(dim);
   const handleDimChange = (next: Dim) => {
@@ -72,6 +71,7 @@ export function Mem0UsagePage() {
     if (projectValue === ALL_PROJECTS) return null;
     return projects.some((project) => project.id === projectValue) ? projectValue : null;
   }, [projectValue, projects]);
+  const boardQuery = useQuery(memoryMem0BoardOptions(wsId, { limit: 500, project_id: projectId }));
 
   const filteredBoard = useMemo(
     () =>

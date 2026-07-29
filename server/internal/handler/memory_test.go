@@ -292,8 +292,10 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"mem0": provider}
 	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
 
+	projectID := "11111111-2222-3333-4444-555555555555"
+	otherProjectID := "22222222-3333-4444-5555-666666666666"
 	retain, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
-		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
 		Actor:          service.MemoryActor{Type: "system"},
 		EventType:      "retain",
 		IdempotencyKey: "board-retain",
@@ -301,6 +303,15 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("retain: %v", err)
+	}
+	if _, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(otherProjectID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "board-retain-other-project",
+		Content:        json.RawMessage(`{"text":"do not leak me"}`),
+	}); err != nil {
+		t.Fatalf("retain other project: %v", err)
 	}
 	worker := NewMemoryDeliveryWorker(testHandler)
 	worked, err := worker.ProcessNext(context.Background())
@@ -310,21 +321,43 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 	if !worked {
 		t.Fatal("worker did not dispatch due delivery")
 	}
+	worked, err = worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext other project: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch other project delivery")
+	}
 
 	recall := httptest.NewRecorder()
 	testHandler.CreateMemoryRecall(recall, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
 		"provider":       "mem0",
+		"project_id":     projectID,
 		"correlation_id": "board-recall",
 		"query":          "remember",
 	}))
 	if recall.Code != http.StatusOK {
 		t.Fatalf("CreateMemoryRecall: expected 200, got %d: %s", recall.Code, recall.Body.String())
 	}
+	foreignRecall := httptest.NewRecorder()
+	testHandler.CreateMemoryRecall(foreignRecall, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
+		"provider":       "mem0",
+		"project_id":     otherProjectID,
+		"correlation_id": "board-recall-other-project",
+		"query":          "remember",
+	}))
+	if foreignRecall.Code != http.StatusOK {
+		t.Fatalf("CreateMemoryRecall other project: expected 200, got %d: %s", foreignRecall.Code, foreignRecall.Body.String())
+	}
 
 	w := httptest.NewRecorder()
-	testHandler.GetMemoryMem0Board(w, memoryHandlerRequest(http.MethodGet, "/api/workspaces/"+testWorkspaceID+"/memory/mem0-board", nil))
+	testHandler.GetMemoryMem0Board(w, memoryHandlerRequest(http.MethodGet, "/api/workspaces/"+testWorkspaceID+"/memory/mem0-board?project_id="+projectID, nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("GetMemoryMem0Board: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "provider_memory_id") || strings.Contains(body, "response") || strings.Contains(body, "handler-memory-1") || strings.Contains(body, "do not leak me") {
+		t.Fatalf("GetMemoryMem0Board leaked provider/raw data: %s", body)
 	}
 	var res MemoryMem0BoardResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {

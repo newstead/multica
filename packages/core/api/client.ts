@@ -1589,11 +1589,22 @@ export class ApiClient {
 
   async getMemoryMem0Board(
     workspaceId: string,
-    params: { limit?: number; offset?: number } = {},
+    params: {
+      limit?: number;
+      offset?: number;
+      project_id?: string | null;
+      agent_id?: string | null;
+      issue_id?: string | null;
+      task_id?: string | null;
+    } = {},
   ): Promise<MemoryMem0BoardResponse> {
     const search = new URLSearchParams();
     if (params.limit) search.set("limit", String(params.limit));
     if (params.offset) search.set("offset", String(params.offset));
+    if (params.project_id) search.set("project_id", params.project_id);
+    if (params.agent_id) search.set("agent_id", params.agent_id);
+    if (params.issue_id) search.set("issue_id", params.issue_id);
+    if (params.task_id) search.set("task_id", params.task_id);
     const qs = search.toString();
     const raw = await this.fetch<unknown>(
       `/api/workspaces/${encodeURIComponent(workspaceId)}/memory/mem0-board${qs ? `?${qs}` : ""}`,

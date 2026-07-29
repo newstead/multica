@@ -143,9 +143,6 @@ SELECT
     d.status,
     d.attempt_count,
     d.delivery_lag_ms,
-    d.provider_memory_id,
-    d.response,
-    d.error,
     e.created_at AS event_created_at,
     d.created_at AS delivery_created_at,
     d.last_attempt_at,
@@ -157,6 +154,10 @@ JOIN memory_event e
  AND e.workspace_id = d.workspace_id
 WHERE d.workspace_id = $1
   AND lower(d.provider) = 'mem0'
+  AND ($4::uuid IS NULL OR e.project_id = $4)
+  AND ($5::uuid IS NULL OR e.agent_id = $5)
+  AND ($6::uuid IS NULL OR e.issue_id = $6)
+  AND ($7::uuid IS NULL OR e.task_id = $7)
 ORDER BY COALESCE(d.last_attempt_at, d.updated_at, d.created_at) DESC
 LIMIT $2 OFFSET $3
 `
@@ -165,6 +166,10 @@ type ListMemoryMem0DeliveriesByWorkspaceParams struct {
 	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	Limit       int32       `json:"limit"`
 	Offset      int32       `json:"offset"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	AgentID     pgtype.UUID `json:"agent_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
 }
 
 type ListMemoryMem0DeliveriesByWorkspaceRow struct {
@@ -180,9 +185,6 @@ type ListMemoryMem0DeliveriesByWorkspaceRow struct {
 	Status            string             `json:"status"`
 	AttemptCount      int32              `json:"attempt_count"`
 	DeliveryLagMs     int64              `json:"delivery_lag_ms"`
-	ProviderMemoryID  pgtype.Text        `json:"provider_memory_id"`
-	Response          []byte             `json:"response"`
-	Error             pgtype.Text        `json:"error"`
 	EventCreatedAt    pgtype.Timestamptz `json:"event_created_at"`
 	DeliveryCreatedAt pgtype.Timestamptz `json:"delivery_created_at"`
 	LastAttemptAt     pgtype.Timestamptz `json:"last_attempt_at"`
@@ -191,7 +193,15 @@ type ListMemoryMem0DeliveriesByWorkspaceRow struct {
 }
 
 func (q *Queries) ListMemoryMem0DeliveriesByWorkspace(ctx context.Context, arg ListMemoryMem0DeliveriesByWorkspaceParams) ([]ListMemoryMem0DeliveriesByWorkspaceRow, error) {
-	rows, err := q.db.Query(ctx, listMemoryMem0DeliveriesByWorkspace, arg.WorkspaceID, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listMemoryMem0DeliveriesByWorkspace,
+		arg.WorkspaceID,
+		arg.Limit,
+		arg.Offset,
+		arg.ProjectID,
+		arg.AgentID,
+		arg.IssueID,
+		arg.TaskID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -212,14 +222,78 @@ func (q *Queries) ListMemoryMem0DeliveriesByWorkspace(ctx context.Context, arg L
 			&i.Status,
 			&i.AttemptCount,
 			&i.DeliveryLagMs,
-			&i.ProviderMemoryID,
-			&i.Response,
-			&i.Error,
 			&i.EventCreatedAt,
 			&i.DeliveryCreatedAt,
 			&i.LastAttemptAt,
 			&i.TerminalAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMemoryRecallSamplesByWorkspaceProviderAndScope = `-- name: ListMemoryRecallSamplesByWorkspaceProviderAndScope :many
+SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at, recall_correlation_id, read_mode FROM memory_recall_sample
+WHERE workspace_id = $1
+  AND lower(provider) = lower($2)
+  AND ($5::uuid IS NULL OR project_id = $5)
+  AND ($6::uuid IS NULL OR agent_id = $6)
+  AND ($7::uuid IS NULL OR issue_id = $7)
+  AND ($8::uuid IS NULL OR task_id = $8)
+ORDER BY sampled_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListMemoryRecallSamplesByWorkspaceProviderAndScopeParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Provider    string      `json:"provider"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	AgentID     pgtype.UUID `json:"agent_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) ListMemoryRecallSamplesByWorkspaceProviderAndScope(ctx context.Context, arg ListMemoryRecallSamplesByWorkspaceProviderAndScopeParams) ([]MemoryRecallSample, error) {
+	rows, err := q.db.Query(ctx, listMemoryRecallSamplesByWorkspaceProviderAndScope,
+		arg.WorkspaceID,
+		arg.Provider,
+		arg.Limit,
+		arg.Offset,
+		arg.ProjectID,
+		arg.AgentID,
+		arg.IssueID,
+		arg.TaskID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MemoryRecallSample{}
+	for rows.Next() {
+		var i MemoryRecallSample
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ProjectID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.TaskID,
+			&i.Provider,
+			&i.Query,
+			&i.Results,
+			&i.Provenance,
+			&i.SampledAt,
+			&i.CreatedAt,
+			&i.RecallCorrelationID,
+			&i.ReadMode,
 		); err != nil {
 			return nil, err
 		}

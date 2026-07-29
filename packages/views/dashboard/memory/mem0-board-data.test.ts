@@ -41,8 +41,6 @@ function delivery(partial: Partial<MemoryMem0BoardDelivery>): MemoryMem0BoardDel
     status: "delivered",
     attempt_count: 1,
     delivery_lag_ms: 85,
-    provider_memory_id: "memory-1",
-    response: { ok: true },
     event_created_at: "2026-07-29T09:59:58Z",
     delivery_created_at: "2026-07-29T09:59:58Z",
     last_attempt_at: "2026-07-29T10:00:00Z",
@@ -70,8 +68,6 @@ describe("mem0 board data", () => {
           id: "delete-error",
           event_type: "delete",
           status: "terminal_failed",
-          error: "not found",
-          provider_memory_id: null,
         }),
       ],
       recall_samples: [sample({ id: "search-ok" })],
@@ -104,10 +100,10 @@ describe("mem0 board data", () => {
     const old = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString();
     const filtered = filterMem0Board(board({
       deliveries: [
-        delivery({ id: "keep-delivery", project_id: "project-1", provider_memory_id: "mem0-recall", last_attempt_at: recent }),
-        delivery({ id: "wrong-provider", provider: "hindsight", project_id: "project-1", provider_memory_id: "mem0-recall", last_attempt_at: recent }),
-        delivery({ id: "wrong-project", project_id: "project-2", provider_memory_id: "mem0-recall", last_attempt_at: recent }),
-        delivery({ id: "too-old", project_id: "project-1", provider_memory_id: "mem0-recall", last_attempt_at: old }),
+        delivery({ id: "keep-recall-delivery", project_id: "project-1", last_attempt_at: recent }),
+        delivery({ id: "wrong-provider", provider: "hindsight", project_id: "project-1", last_attempt_at: recent }),
+        delivery({ id: "wrong-project", project_id: "project-2", last_attempt_at: recent }),
+        delivery({ id: "too-old", project_id: "project-1", last_attempt_at: old }),
       ],
       recall_samples: [
         sample({ id: "keep-sample", project_id: "project-1", query: "Need mem0 recall", sampled_at: recent }),
@@ -115,7 +111,7 @@ describe("mem0 board data", () => {
       ],
     }), { days: 7, projectId: "project-1", query: "recall" });
 
-    expect(filtered.deliveries.map((row) => row.id)).toEqual(["keep-delivery"]);
+    expect(filtered.deliveries.map((row) => row.id)).toEqual(["keep-recall-delivery"]);
     expect(filtered.recall_samples.map((row) => row.id)).toEqual(["keep-sample"]);
   });
 });

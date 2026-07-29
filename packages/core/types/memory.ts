@@ -32,9 +32,6 @@ export interface MemoryMem0BoardDelivery {
   status: "queued" | "delivering" | "delivered" | "retry" | "terminal_failed" | "skipped" | string;
   attempt_count: number;
   delivery_lag_ms: number;
-  provider_memory_id?: string | null;
-  response: Record<string, unknown>;
-  error?: string;
   event_created_at: string;
   delivery_created_at: string;
   last_attempt_at?: string;

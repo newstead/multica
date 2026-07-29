@@ -104,9 +104,6 @@ type MemoryMem0BoardDeliveryResponse struct {
 	Status            string         `json:"status"`
 	AttemptCount      int32          `json:"attempt_count"`
 	DeliveryLagMs     int64          `json:"delivery_lag_ms"`
-	ProviderMemoryID  *string        `json:"provider_memory_id,omitempty"`
-	Response          map[string]any `json:"response"`
-	Error             string         `json:"error,omitempty"`
 	EventCreatedAt    string         `json:"event_created_at"`
 	DeliveryCreatedAt string         `json:"delivery_created_at"`
 	LastAttemptAt     string         `json:"last_attempt_at,omitempty"`
@@ -374,19 +371,32 @@ func (h *Handler) GetMemoryMem0Board(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, offset := parseMemoryLimitOffset(r, 100, 500)
+	filters, ok := memoryScopeFiltersFromQuery(w, r)
+	if !ok {
+		return
+	}
 	deliveryRows, err := h.Queries.ListMemoryMem0DeliveriesByWorkspace(r.Context(), db.ListMemoryMem0DeliveriesByWorkspaceParams{
 		WorkspaceID: wsUUID,
 		Limit:       int32(limit),
 		Offset:      int32(offset),
+		ProjectID:   filters.ProjectID,
+		AgentID:     filters.AgentID,
+		IssueID:     filters.IssueID,
+		TaskID:      filters.TaskID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list mem0 memory deliveries")
 		return
 	}
-	recallRows, err := h.Queries.ListMemoryRecallSamplesByWorkspace(r.Context(), db.ListMemoryRecallSamplesByWorkspaceParams{
+	recallRows, err := h.Queries.ListMemoryRecallSamplesByWorkspaceProviderAndScope(r.Context(), db.ListMemoryRecallSamplesByWorkspaceProviderAndScopeParams{
 		WorkspaceID: wsUUID,
+		Provider:    service.Mem0ProviderName,
 		Limit:       int32(limit),
 		Offset:      int32(offset),
+		ProjectID:   filters.ProjectID,
+		AgentID:     filters.AgentID,
+		IssueID:     filters.IssueID,
+		TaskID:      filters.TaskID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list mem0 recall samples")
@@ -398,9 +408,7 @@ func (h *Handler) GetMemoryMem0Board(w http.ResponseWriter, r *http.Request) {
 	}
 	recallSamples := make([]MemoryRecallSampleResponse, 0, len(recallRows))
 	for _, row := range recallRows {
-		if strings.EqualFold(row.Provider, service.Mem0ProviderName) {
-			recallSamples = append(recallSamples, memoryRecallSampleToResponse(row))
-		}
+		recallSamples = append(recallSamples, memoryRecallSampleToResponse(row))
 	}
 	health, healthErr := h.memoryProviderHealth(r.Context(), service.Mem0ProviderName)
 	writeJSON(w, http.StatusOK, MemoryMem0BoardResponse{
@@ -435,6 +443,34 @@ func (h *Handler) ListMemoryRecallSamples(w http.ResponseWriter, r *http.Request
 		out = append(out, memoryRecallSampleToResponse(row))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"samples": out})
+}
+
+type memoryScopeFilters struct {
+	ProjectID pgtype.UUID
+	AgentID   pgtype.UUID
+	IssueID   pgtype.UUID
+	TaskID    pgtype.UUID
+}
+
+func memoryScopeFiltersFromQuery(w http.ResponseWriter, r *http.Request) (memoryScopeFilters, bool) {
+	query := r.URL.Query()
+	projectID, ok := optionalUUIDOrBadRequest(w, query.Get("project_id"), "project_id")
+	if !ok {
+		return memoryScopeFilters{}, false
+	}
+	agentID, ok := optionalUUIDOrBadRequest(w, query.Get("agent_id"), "agent_id")
+	if !ok {
+		return memoryScopeFilters{}, false
+	}
+	issueID, ok := optionalUUIDOrBadRequest(w, query.Get("issue_id"), "issue_id")
+	if !ok {
+		return memoryScopeFilters{}, false
+	}
+	taskID, ok := optionalUUIDOrBadRequest(w, query.Get("task_id"), "task_id")
+	if !ok {
+		return memoryScopeFilters{}, false
+	}
+	return memoryScopeFilters{ProjectID: projectID, AgentID: agentID, IssueID: issueID, TaskID: taskID}, true
 }
 
 func memoryScopeFromRecallRequest(w http.ResponseWriter, workspaceID pgtype.UUID, req MemoryRecallRequestBody) (service.MemoryScope, bool) {
@@ -614,11 +650,6 @@ func (h *Handler) memoryProviderHealth(ctx context.Context, providerName string)
 }
 
 func memoryMem0BoardDeliveryToResponse(delivery db.ListMemoryMem0DeliveriesByWorkspaceRow) MemoryMem0BoardDeliveryResponse {
-	response := parseMemoryProvenance(delivery.Response)
-	errorText := ""
-	if delivery.Error.Valid {
-		errorText = delivery.Error.String
-	}
 	return MemoryMem0BoardDeliveryResponse{
 		ID:                uuidToString(delivery.ID),
 		WorkspaceID:       uuidToString(delivery.WorkspaceID),
@@ -632,9 +663,6 @@ func memoryMem0BoardDeliveryToResponse(delivery db.ListMemoryMem0DeliveriesByWor
 		Status:            delivery.Status,
 		AttemptCount:      delivery.AttemptCount,
 		DeliveryLagMs:     delivery.DeliveryLagMs,
-		ProviderMemoryID:  textToPtr(delivery.ProviderMemoryID),
-		Response:          response,
-		Error:             errorText,
 		EventCreatedAt:    timestampToString(delivery.EventCreatedAt),
 		DeliveryCreatedAt: timestampToString(delivery.DeliveryCreatedAt),
 		LastAttemptAt:     timestampToString(delivery.LastAttemptAt),

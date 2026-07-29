@@ -79,7 +79,7 @@ function deliveryOperation(delivery: MemoryMem0BoardDelivery): MemoryOutcomeRow[
 
 function deliveryStatus(delivery: MemoryMem0BoardDelivery): MemoryAuditRow["status"] {
   if (delivery.status === "delivered") return "ok";
-  if (delivery.status === "retry" || delivery.status === "terminal_failed" || delivery.error) {
+  if (delivery.status === "retry" || delivery.status === "terminal_failed") {
     return "error";
   }
   return "unknown";
@@ -122,12 +122,12 @@ function deliveryAuditRow(delivery: MemoryMem0BoardDelivery): MemoryAuditRow {
     sampledAt: delivery.last_attempt_at || delivery.updated_at || delivery.delivery_created_at,
     query: delivery.event_type,
     readMode: "write",
-    resultCount: delivery.provider_memory_id ? 1 : 0,
+    resultCount: delivery.status === "delivered" ? 1 : 0,
     latencyMs: delivery.delivery_lag_ms > 0 ? round(delivery.delivery_lag_ms) : null,
     tokens: null,
     costUsd: null,
     status: deliveryStatus(delivery),
-    correlationId: delivery.provider_memory_id ?? delivery.memory_event_id,
+    correlationId: delivery.memory_event_id,
     issueId: delivery.issue_id ?? null,
     taskId: delivery.task_id ?? null,
   };
@@ -177,9 +177,7 @@ export function filterMem0Deliveries(
         delivery.event_type.toLowerCase().includes(query) ||
         delivery.status.toLowerCase().includes(query) ||
         delivery.id.toLowerCase().includes(query) ||
-        delivery.memory_event_id.toLowerCase().includes(query) ||
-        (delivery.provider_memory_id?.toLowerCase().includes(query) ?? false) ||
-        (delivery.error?.toLowerCase().includes(query) ?? false)
+        delivery.memory_event_id.toLowerCase().includes(query)
       );
     })
     .toSorted((a, b) => {
