@@ -167,6 +167,7 @@ import type {
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
   MemoryConfigResponse,
+  MemoryMem0BoardResponse,
   MemoryRecallSamplesResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
@@ -302,8 +303,10 @@ import {
   EMPTY_LIST_GITHUB_INSTALLATIONS_RESPONSE,
   EMPTY_LIST_GITHUB_REPOSITORIES_RESPONSE,
   MemoryConfigResponseSchema,
+  MemoryMem0BoardResponseSchema,
   MemoryRecallSamplesResponseSchema,
   EMPTY_MEMORY_CONFIG_RESPONSE,
+  EMPTY_MEMORY_MEM0_BOARD_RESPONSE,
   EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE,
 } from "./schemas";
 
@@ -1580,6 +1583,26 @@ export class ApiClient {
       MemoryConfigResponseSchema,
       EMPTY_MEMORY_CONFIG_RESPONSE,
       { endpoint: "GET /api/workspaces/:id/memory/config" },
+    );
+  }
+
+
+  async getMemoryMem0Board(
+    workspaceId: string,
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<MemoryMem0BoardResponse> {
+    const search = new URLSearchParams();
+    if (params.limit) search.set("limit", String(params.limit));
+    if (params.offset) search.set("offset", String(params.offset));
+    const qs = search.toString();
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/memory/mem0-board${qs ? `?${qs}` : ""}`,
+    );
+    return parseWithFallback<MemoryMem0BoardResponse>(
+      raw,
+      MemoryMem0BoardResponseSchema,
+      EMPTY_MEMORY_MEM0_BOARD_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/memory/mem0-board" },
     );
   }
 

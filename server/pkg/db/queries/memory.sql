@@ -128,6 +128,38 @@ SET status = @status,
 WHERE id = @id AND workspace_id = @workspace_id
 RETURNING *;
 
+
+-- name: ListMemoryMem0DeliveriesByWorkspace :many
+SELECT
+    d.id,
+    d.workspace_id,
+    d.memory_event_id,
+    e.project_id,
+    e.agent_id,
+    e.issue_id,
+    e.task_id,
+    e.event_type,
+    d.provider,
+    d.status,
+    d.attempt_count,
+    d.delivery_lag_ms,
+    d.provider_memory_id,
+    d.response,
+    d.error,
+    e.created_at AS event_created_at,
+    d.created_at AS delivery_created_at,
+    d.last_attempt_at,
+    d.terminal_at,
+    d.updated_at
+FROM memory_provider_delivery d
+JOIN memory_event e
+  ON e.id = d.memory_event_id
+ AND e.workspace_id = d.workspace_id
+WHERE d.workspace_id = $1
+  AND lower(d.provider) = 'mem0'
+ORDER BY COALESCE(d.last_attempt_at, d.updated_at, d.created_at) DESC
+LIMIT $2 OFFSET $3;
+
 -- name: CreateMemoryRecallSample :one
 INSERT INTO memory_recall_sample (
     workspace_id, project_id, agent_id, issue_id, task_id, provider,

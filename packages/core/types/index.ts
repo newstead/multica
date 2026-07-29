@@ -234,7 +234,10 @@ export type {
 } from "./billing";
 export type {
   MemoryConfigResponse,
+  MemoryMem0BoardDelivery,
+  MemoryMem0BoardResponse,
   MemoryProvider,
+  MemoryProviderHealth,
   MemoryReadMode,
   MemoryRecallSample,
   MemoryRecallSamplesResponse,

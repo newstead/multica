@@ -15,7 +15,7 @@ import {
   type ChartConfig,
 } from "@multica/ui/components/ui/chart";
 import { useWorkspaceId } from "@multica/core/hooks";
-import { memoryConfigOptions, memoryRecallSamplesOptions } from "@multica/core/memory";
+import { memoryConfigOptions, memoryMem0BoardOptions } from "@multica/core/memory";
 import { useCurrentMember } from "@multica/core/permissions";
 import { projectListOptions } from "@multica/core/projects/queries";
 import { PageHeader } from "../../layout/page-header";
@@ -30,7 +30,7 @@ import {
   type Dim,
   type TimeRange,
 } from "./usage-controls";
-import { buildMem0BoardSummary, filterMem0Samples } from "../memory/mem0-board-data";
+import { buildMem0BoardSummary, filterMem0Board } from "../memory/mem0-board-data";
 
 const activityChartConfig = {
   searchCount: { label: "Search", color: "var(--chart-1)" },
@@ -39,8 +39,7 @@ const activityChartConfig = {
 } satisfies ChartConfig;
 
 const latencyChartConfig = {
-  avgSearchLatencyMs: { label: "Search latency", color: "var(--chart-1)" },
-  avgAddLatencyMs: { label: "Add latency", color: "var(--chart-2)" },
+  avgAddLatencyMs: { label: "Write delivery lag", color: "var(--chart-2)" },
 } satisfies ChartConfig;
 
 const storageChartConfig = {
@@ -60,7 +59,7 @@ export function Mem0UsagePage() {
   const canManageMemory = role === "owner" || role === "admin";
   const { data: projects = [] } = useQuery(projectListOptions(wsId));
   const configQuery = useQuery(memoryConfigOptions(wsId));
-  const samplesQuery = useQuery(memoryRecallSamplesOptions(wsId, { limit: 500 }));
+  const boardQuery = useQuery(memoryMem0BoardOptions(wsId, { limit: 500 }));
 
   const allowedRanges = rangesForDim(dim);
   const handleDimChange = (next: Dim) => {
@@ -74,23 +73,23 @@ export function Mem0UsagePage() {
     return projects.some((project) => project.id === projectValue) ? projectValue : null;
   }, [projectValue, projects]);
 
-  const filteredSamples = useMemo(
+  const filteredBoard = useMemo(
     () =>
-      filterMem0Samples(samplesQuery.data?.samples ?? [], {
+      filterMem0Board(boardQuery.data, {
         days,
         projectId,
         query,
       }),
-    [samplesQuery.data?.samples, days, projectId, query],
+    [boardQuery.data, days, projectId, query],
   );
 
   const summary = useMemo(
-    () => buildMem0BoardSummary(configQuery.data, filteredSamples),
-    [configQuery.data, filteredSamples],
+    () => buildMem0BoardSummary(configQuery.data, filteredBoard),
+    [configQuery.data, filteredBoard],
   );
 
-  const isLoading = configQuery.isLoading || samplesQuery.isLoading || roleLoading;
-  const hasError = configQuery.isError || samplesQuery.isError;
+  const isLoading = configQuery.isLoading || boardQuery.isLoading || roleLoading;
+  const hasError = configQuery.isError || boardQuery.isError;
   const points = dim === "weekly" ? weeklyPoints(summary.points) : summary.points;
   const storagePoints = points.filter((point) => point.storageBytes != null);
 
@@ -326,7 +325,6 @@ function LatencyChart({ data }: { data: ReturnType<typeof weeklyPoints> }) {
         <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
         <YAxis tickLine={false} axisLine={false} width={44} tickFormatter={(value) => `${value}ms`} />
         <ChartTooltip content={<ChartTooltipContent />} />
-        <Line type="monotone" dataKey="avgSearchLatencyMs" stroke="var(--color-avgSearchLatencyMs)" strokeWidth={2} dot={false} />
         <Line type="monotone" dataKey="avgAddLatencyMs" stroke="var(--color-avgAddLatencyMs)" strokeWidth={2} dot={false} />
       </LineChart>
     </ChartContainer>

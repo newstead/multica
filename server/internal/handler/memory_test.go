@@ -278,6 +278,73 @@ func TestCreateMemoryRecallEndpointKeepsDualResultsSeparate(t *testing.T) {
 	}
 }
 
+func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "mem0", "")
+
+	provider := &memoryHandlerFakeProvider{name: "mem0", recallResults: json.RawMessage(`[{"id":"recall-memory"}]`)}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"mem0": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	retain, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "board-retain",
+		Content:        json.RawMessage(`{"text":"remember me"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+	worker := NewMemoryDeliveryWorker(testHandler)
+	worked, err := worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch due delivery")
+	}
+
+	recall := httptest.NewRecorder()
+	testHandler.CreateMemoryRecall(recall, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
+		"provider":       "mem0",
+		"correlation_id": "board-recall",
+		"query":          "remember",
+	}))
+	if recall.Code != http.StatusOK {
+		t.Fatalf("CreateMemoryRecall: expected 200, got %d: %s", recall.Code, recall.Body.String())
+	}
+
+	w := httptest.NewRecorder()
+	testHandler.GetMemoryMem0Board(w, memoryHandlerRequest(http.MethodGet, "/api/workspaces/"+testWorkspaceID+"/memory/mem0-board", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GetMemoryMem0Board: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var res MemoryMem0BoardResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if res.Health == nil || !res.Health.OK || res.Health.Provider != "mem0" {
+		t.Fatalf("health = %#v, want ok mem0", res.Health)
+	}
+	if len(res.Deliveries) != 1 {
+		t.Fatalf("deliveries = %#v, want one mem0 delivery", res.Deliveries)
+	}
+	delivery := res.Deliveries[0]
+	if delivery.MemoryEventID != uuidToString(retain.Event.ID) || delivery.EventType != "retain" || delivery.Status != "delivered" {
+		t.Fatalf("delivery = %#v, want delivered retain for event", delivery)
+	}
+	if len(res.RecallSamples) != 1 || res.RecallSamples[0].RecallCorrelationID != "board-recall" {
+		t.Fatalf("recall samples = %#v, want board-recall sample", res.RecallSamples)
+	}
+}
+
 func TestCreateMemoryRecallHonorsReleaseFlagRollback(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")

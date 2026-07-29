@@ -12,6 +12,43 @@ export interface MemoryConfigResponse {
   updated_at?: string;
 }
 
+
+export interface MemoryProviderHealth {
+  provider: MemoryProvider;
+  ok: boolean;
+  details?: Record<string, unknown>;
+}
+
+export interface MemoryMem0BoardDelivery {
+  id: string;
+  workspace_id: string;
+  memory_event_id: string;
+  project_id?: string | null;
+  agent_id?: string | null;
+  issue_id?: string | null;
+  task_id?: string | null;
+  event_type: "retain" | "update" | "invalidate" | "delete" | string;
+  provider: MemoryProvider;
+  status: "queued" | "delivering" | "delivered" | "retry" | "terminal_failed" | "skipped" | string;
+  attempt_count: number;
+  delivery_lag_ms: number;
+  provider_memory_id?: string | null;
+  response: Record<string, unknown>;
+  error?: string;
+  event_created_at: string;
+  delivery_created_at: string;
+  last_attempt_at?: string;
+  terminal_at?: string;
+  updated_at: string;
+}
+
+export interface MemoryMem0BoardResponse {
+  health?: MemoryProviderHealth | null;
+  health_error?: string;
+  deliveries: MemoryMem0BoardDelivery[];
+  recall_samples: MemoryRecallSample[];
+}
+
 export interface MemoryRecallSample {
   id: string;
   workspace_id: string;

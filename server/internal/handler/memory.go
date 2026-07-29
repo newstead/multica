@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -88,6 +89,36 @@ type MemoryDeliveryResponse struct {
 	AttemptCount  int32  `json:"attempt_count"`
 	DeliveryLagMs int64  `json:"delivery_lag_ms"`
 	NextAttemptAt string `json:"next_attempt_at,omitempty"`
+}
+
+type MemoryMem0BoardDeliveryResponse struct {
+	ID                string         `json:"id"`
+	WorkspaceID       string         `json:"workspace_id"`
+	MemoryEventID     string         `json:"memory_event_id"`
+	ProjectID         *string        `json:"project_id,omitempty"`
+	AgentID           *string        `json:"agent_id,omitempty"`
+	IssueID           *string        `json:"issue_id,omitempty"`
+	TaskID            *string        `json:"task_id,omitempty"`
+	EventType         string         `json:"event_type"`
+	Provider          string         `json:"provider"`
+	Status            string         `json:"status"`
+	AttemptCount      int32          `json:"attempt_count"`
+	DeliveryLagMs     int64          `json:"delivery_lag_ms"`
+	ProviderMemoryID  *string        `json:"provider_memory_id,omitempty"`
+	Response          map[string]any `json:"response"`
+	Error             string         `json:"error,omitempty"`
+	EventCreatedAt    string         `json:"event_created_at"`
+	DeliveryCreatedAt string         `json:"delivery_created_at"`
+	LastAttemptAt     string         `json:"last_attempt_at,omitempty"`
+	TerminalAt        string         `json:"terminal_at,omitempty"`
+	UpdatedAt         string         `json:"updated_at"`
+}
+
+type MemoryMem0BoardResponse struct {
+	Health        *service.MemoryProviderHealth      `json:"health,omitempty"`
+	HealthError   string                             `json:"health_error,omitempty"`
+	Deliveries    []MemoryMem0BoardDeliveryResponse `json:"deliveries"`
+	RecallSamples []MemoryRecallSampleResponse      `json:"recall_samples"`
 }
 
 type MemoryRecallSampleResponse struct {
@@ -333,6 +364,53 @@ func (h *Handler) CreateMemoryRecall(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, memoryRecallToResponse(res))
 }
 
+func (h *Handler) GetMemoryMem0Board(w http.ResponseWriter, r *http.Request) {
+	if !h.memoryGatewayEnabled(r) {
+		writeError(w, http.StatusNotFound, "memory gateway not found")
+		return
+	}
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	limit, offset := parseMemoryLimitOffset(r, 100, 500)
+	deliveryRows, err := h.Queries.ListMemoryMem0DeliveriesByWorkspace(r.Context(), db.ListMemoryMem0DeliveriesByWorkspaceParams{
+		WorkspaceID: wsUUID,
+		Limit:       int32(limit),
+		Offset:      int32(offset),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list mem0 memory deliveries")
+		return
+	}
+	recallRows, err := h.Queries.ListMemoryRecallSamplesByWorkspace(r.Context(), db.ListMemoryRecallSamplesByWorkspaceParams{
+		WorkspaceID: wsUUID,
+		Limit:       int32(limit),
+		Offset:      int32(offset),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list mem0 recall samples")
+		return
+	}
+	deliveries := make([]MemoryMem0BoardDeliveryResponse, 0, len(deliveryRows))
+	for _, row := range deliveryRows {
+		deliveries = append(deliveries, memoryMem0BoardDeliveryToResponse(row))
+	}
+	recallSamples := make([]MemoryRecallSampleResponse, 0, len(recallRows))
+	for _, row := range recallRows {
+		if strings.EqualFold(row.Provider, service.Mem0ProviderName) {
+			recallSamples = append(recallSamples, memoryRecallSampleToResponse(row))
+		}
+	}
+	health, healthErr := h.memoryProviderHealth(r.Context(), service.Mem0ProviderName)
+	writeJSON(w, http.StatusOK, MemoryMem0BoardResponse{
+		Health:        health,
+		HealthError:   healthErr,
+		Deliveries:    deliveries,
+		RecallSamples: recallSamples,
+	})
+}
+
 func (h *Handler) ListMemoryRecallSamples(w http.ResponseWriter, r *http.Request) {
 	if !h.memoryGatewayEnabled(r) {
 		writeError(w, http.StatusNotFound, "memory gateway not found")
@@ -512,6 +590,56 @@ func memoryEventToResponse(event db.MemoryEvent) MemoryEventResponse {
 		Status:         event.Status,
 		Envelope:       envelope,
 		CreatedAt:      timestampToString(event.CreatedAt),
+	}
+}
+
+func (h *Handler) memoryProviderHealth(ctx context.Context, providerName string) (*service.MemoryProviderHealth, string) {
+	if h == nil || h.MemoryService == nil {
+		return nil, "memory service not configured"
+	}
+	for name, provider := range h.MemoryService.Providers {
+		if !strings.EqualFold(name, providerName) {
+			continue
+		}
+		health, err := provider.Health(ctx)
+		if strings.TrimSpace(health.Provider) == "" {
+			health.Provider = providerName
+		}
+		if err != nil {
+			return &health, err.Error()
+		}
+		return &health, ""
+	}
+	return nil, "provider not registered"
+}
+
+func memoryMem0BoardDeliveryToResponse(delivery db.ListMemoryMem0DeliveriesByWorkspaceRow) MemoryMem0BoardDeliveryResponse {
+	response := parseMemoryProvenance(delivery.Response)
+	errorText := ""
+	if delivery.Error.Valid {
+		errorText = delivery.Error.String
+	}
+	return MemoryMem0BoardDeliveryResponse{
+		ID:                uuidToString(delivery.ID),
+		WorkspaceID:       uuidToString(delivery.WorkspaceID),
+		MemoryEventID:     uuidToString(delivery.MemoryEventID),
+		ProjectID:         uuidToPtr(delivery.ProjectID),
+		AgentID:           uuidToPtr(delivery.AgentID),
+		IssueID:           uuidToPtr(delivery.IssueID),
+		TaskID:            uuidToPtr(delivery.TaskID),
+		EventType:         delivery.EventType,
+		Provider:          delivery.Provider,
+		Status:            delivery.Status,
+		AttemptCount:      delivery.AttemptCount,
+		DeliveryLagMs:     delivery.DeliveryLagMs,
+		ProviderMemoryID:  textToPtr(delivery.ProviderMemoryID),
+		Response:          response,
+		Error:             errorText,
+		EventCreatedAt:    timestampToString(delivery.EventCreatedAt),
+		DeliveryCreatedAt: timestampToString(delivery.DeliveryCreatedAt),
+		LastAttemptAt:     timestampToString(delivery.LastAttemptAt),
+		TerminalAt:        timestampToString(delivery.TerminalAt),
+		UpdatedAt:         timestampToString(delivery.UpdatedAt),
 	}
 }
 
