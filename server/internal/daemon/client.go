@@ -370,7 +370,7 @@ func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages
 	}, nil)
 }
 
-func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, diffStats *DiffStats, sessionRolloutMissing bool) error {
+func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, sessionID, workDir string, diffStats *DiffStats, sessionRolloutMissing bool, memoryRecall []protocol.MemoryRecallProvenance) error {
 	body := map[string]any{"output": output}
 	if branchName != "" {
 		body["branch_name"] = branchName
@@ -386,6 +386,9 @@ func (c *Client) CompleteTask(ctx context.Context, taskID, output, branchName, s
 	}
 	if sessionRolloutMissing {
 		body["session_rollout_missing"] = true
+	}
+	if len(memoryRecall) > 0 {
+		body["memory_recall"] = memoryRecall
 	}
 	return c.postJSONWithRetry(ctx, fmt.Sprintf("/api/daemon/tasks/%s/complete", taskID), body, nil, defaultTerminalRetrySchedule)
 }

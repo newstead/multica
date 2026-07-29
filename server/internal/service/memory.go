@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/multica-ai/multica/server/pkg/redact"
 )
 
 var (
@@ -132,6 +135,44 @@ type MemoryDispatchResult struct {
 	Provider string
 	Delivery db.MemoryProviderDelivery
 	Error    string
+}
+
+type MemoryCaptureSource struct {
+	SourceType string
+	SourceID   pgtype.UUID
+	Scope      MemoryScope
+	Actor      MemoryActor
+	Text       string
+	Metadata   map[string]any
+}
+
+type MemoryRecallForTaskRequest struct {
+	Scope       MemoryScope
+	Query       string
+	TokenBudget int
+	Limit       int32
+}
+
+const (
+	MemorySourceIssueDescription    = "issue_description"
+	MemorySourceHumanComment        = "human_comment"
+	MemorySourceAgentOutcomeSummary = "agent_outcome_summary"
+	MemorySourceExplicitFeedback    = "explicit_feedback"
+	MemorySourceMergedPRVerdict     = "merged_pr_verdict"
+
+	defaultMemoryRecallTokenBudget = 600
+	defaultMemoryRecallLimit       = 8
+	maxMemoryRecallEventScan       = 200
+	maxMemoryRecallTextTokens      = 220
+	memoryAuditLogFallbackProvider = "local_audit_log"
+)
+
+var approvedMemorySources = map[string]bool{
+	MemorySourceIssueDescription:    true,
+	MemorySourceHumanComment:        true,
+	MemorySourceAgentOutcomeSummary: true,
+	MemorySourceExplicitFeedback:    true,
+	MemorySourceMergedPRVerdict:     true,
 }
 
 type MemoryService struct {
@@ -255,6 +296,182 @@ func (s *MemoryService) Retain(ctx context.Context, req MemoryRetainRequest) (Me
 		return nil
 	}); err != nil {
 		return MemoryRetainResult{}, err
+	}
+	return out, nil
+}
+
+func (s *MemoryService) RetainApprovedSource(ctx context.Context, src MemoryCaptureSource) (MemoryRetainResult, bool, error) {
+	req, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		return MemoryRetainResult{}, false, nil
+	}
+	res, err := s.Retain(ctx, req)
+	if errors.Is(err, ErrMemoryDisabled) {
+		return MemoryRetainResult{}, true, nil
+	}
+	return res, true, err
+}
+
+func BuildApprovedMemoryRetainRequest(src MemoryCaptureSource) (MemoryRetainRequest, bool) {
+	sourceType := strings.TrimSpace(src.SourceType)
+	rawText := strings.TrimSpace(src.Text)
+	text := strings.TrimSpace(redact.Text(rawText))
+	if !approvedMemorySources[sourceType] || rawText == "" || text == "" || containsMemoryDeniedContent(rawText) {
+		return MemoryRetainRequest{}, false
+	}
+	content, err := json.Marshal(map[string]any{
+		"source_type": sourceType,
+		"source_id":   uuidString(src.SourceID),
+		"text":        text,
+	})
+	if err != nil {
+		return MemoryRetainRequest{}, false
+	}
+	contentHash := memoryContentHash(text)
+	metadata := map[string]any{
+		"source_type":    sourceType,
+		"source_id":      uuidString(src.SourceID),
+		"content_sha256": contentHash,
+	}
+	for k, v := range src.Metadata {
+		if strings.TrimSpace(k) != "" {
+			metadata[k] = v
+		}
+	}
+	keyParts := []string{
+		sourceType,
+		uuidString(src.Scope.WorkspaceID),
+		uuidString(src.Scope.ProjectID),
+		uuidString(src.Scope.AgentID),
+		uuidString(src.Scope.IssueID),
+		uuidString(src.Scope.TaskID),
+		uuidString(src.SourceID),
+		contentHash,
+	}
+	return MemoryRetainRequest{
+		Scope:          src.Scope,
+		Actor:          src.Actor,
+		EventType:      "retain",
+		IdempotencyKey: "memory_capture:" + strings.Join(keyParts, ":"),
+		CorrelationID:  "memory_capture:" + strings.Join(keyParts, ":"),
+		SourceID:       uuidString(src.SourceID),
+		Content:        content,
+		Metadata:       metadata,
+	}, true
+}
+
+func containsMemoryDeniedContent(text string) bool {
+	lower := strings.ToLower(text)
+	denied := []string{
+		"-----begin private key-----",
+		"-----begin rsa private key-----",
+		"aws_secret_access_key",
+		"secret_access_key",
+		"password=",
+		"passwd=",
+		"api_key=",
+		"apikey=",
+		"token=",
+		"authorization: bearer",
+		"raw shell output",
+	}
+	for _, needle := range denied {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return looksLikeRawExecutionLog(lower)
+}
+
+func looksLikeRawExecutionLog(lower string) bool {
+	multicaMarkers := 0
+	for _, needle := range []string{"chunk id:", "process exited with code", "original token count:", "output:\n", "wall time:"} {
+		if strings.Contains(lower, needle) {
+			multicaMarkers++
+		}
+	}
+	if multicaMarkers >= 2 {
+		return true
+	}
+
+	genericMarkers := 0
+	for _, needle := range []string{
+		"go test ", "=== run", "--- fail:", "\nfail", "exit status ",
+		"stack trace", "traceback (most recent call last):", "panic:", "goroutine ",
+		"npm err!", "error: process completed with exit code",
+	} {
+		if strings.Contains(lower, needle) {
+			genericMarkers++
+		}
+	}
+	return genericMarkers >= 2
+}
+
+func (s *MemoryService) RecallForTask(ctx context.Context, req MemoryRecallForTaskRequest) ([]protocol.MemoryRecallData, error) {
+	if s == nil || s.Queries == nil {
+		return nil, fmt.Errorf("memory service not configured")
+	}
+	if !req.Scope.WorkspaceID.Valid {
+		return nil, fmt.Errorf("%w: workspace_id is required", ErrMemoryConfig)
+	}
+	cfg, err := s.Queries.GetMemoryWorkspaceConfig(ctx, req.Scope.WorkspaceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMemoryDisabled
+		}
+		return nil, err
+	}
+	if !cfg.Enabled {
+		return nil, ErrMemoryDisabled
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = defaultMemoryRecallLimit
+	}
+	tokenBudget := req.TokenBudget
+	if tokenBudget <= 0 {
+		tokenBudget = defaultMemoryRecallTokenBudget
+	}
+
+	rows, err := s.Queries.ListMemoryEventsByWorkspace(ctx, db.ListMemoryEventsByWorkspaceParams{
+		WorkspaceID: req.Scope.WorkspaceID,
+		Limit:       maxMemoryRecallEventScan,
+		Offset:      0,
+	})
+	if err != nil {
+		return nil, err
+	}
+	recalledAt := s.now().Format(time.RFC3339)
+	items := make([]protocol.MemoryRecallData, 0, len(rows))
+	for _, row := range rows {
+		item, ok := memoryRecallDataFromEvent(row, memoryAuditLogFallbackProvider, recalledAt)
+		if !ok || !memoryEventMatchesScope(row, req.Scope) {
+			continue
+		}
+		items = append(items, item)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if scoreA, scoreB := memoryScopeSpecificity(a.Scope), memoryScopeSpecificity(b.Scope); scoreA != scoreB {
+			return scoreA > scoreB
+		}
+		if a.CapturedAt != b.CapturedAt {
+			return a.CapturedAt > b.CapturedAt
+		}
+		return a.MemoryID < b.MemoryID
+	})
+
+	out := make([]protocol.MemoryRecallData, 0, minInt(len(items), int(limit)))
+	for _, item := range items {
+		item.Text = truncateMemoryRecallText(item.Text, maxMemoryRecallTextTokens)
+		trimmed, ok := fitMemoryRecallItemWithinBudget(out, item, tokenBudget)
+		if !ok {
+			continue
+		}
+		out = append(out, trimmed)
+		if len(out) >= int(limit) {
+			break
+		}
 	}
 	return out, nil
 }
@@ -653,6 +870,11 @@ func memoryDeliveryFromUpsertRow(row db.UpsertMemoryProviderDeliveryRow) db.Memo
 	}
 }
 
+func memoryContentHash(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
 func memoryProviderDeliveryFromClaimRow(row db.ClaimDueMemoryProviderDeliveriesRow) db.MemoryProviderDelivery {
 	return db.MemoryProviderDelivery{
 		ID:               row.ID,
@@ -671,6 +893,159 @@ func memoryProviderDeliveryFromClaimRow(row db.ClaimDueMemoryProviderDeliveriesR
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
 	}
+}
+
+type memoryEventContent struct {
+	SourceType string `json:"source_type"`
+	SourceID   string `json:"source_id"`
+	Text       string `json:"text"`
+}
+
+func memoryRecallDataFromEvent(row db.MemoryEvent, provider, recalledAt string) (protocol.MemoryRecallData, bool) {
+	if row.EventType != "retain" || row.Status == "deleted" {
+		return protocol.MemoryRecallData{}, false
+	}
+	var env MemoryEventEnvelope
+	if err := json.Unmarshal(row.Envelope, &env); err != nil {
+		return protocol.MemoryRecallData{}, false
+	}
+	var content memoryEventContent
+	if err := json.Unmarshal(env.Content, &content); err != nil {
+		return protocol.MemoryRecallData{}, false
+	}
+	if !approvedMemorySources[content.SourceType] || strings.TrimSpace(content.Text) == "" || containsMemoryDeniedContent(content.Text) {
+		return protocol.MemoryRecallData{}, false
+	}
+	return protocol.MemoryRecallData{
+		MemoryID: uuidString(row.ID),
+		Provider: provider,
+		Scope: protocol.MemoryRecallScope{
+			WorkspaceID: uuidString(row.WorkspaceID),
+			ProjectID:   uuidString(row.ProjectID),
+			AgentID:     uuidString(row.AgentID),
+			IssueID:     uuidString(row.IssueID),
+			TaskID:      uuidString(row.TaskID),
+		},
+		SourceType: content.SourceType,
+		SourceID:   content.SourceID,
+		Text:       content.Text,
+		CapturedAt: timestamptzString(row.CreatedAt),
+		RecalledAt: recalledAt,
+	}, true
+}
+
+func memoryEventMatchesScope(row db.MemoryEvent, scope MemoryScope) bool {
+	if row.WorkspaceID != scope.WorkspaceID {
+		return false
+	}
+	if row.ProjectID.Valid && (!scope.ProjectID.Valid || row.ProjectID != scope.ProjectID) {
+		return false
+	}
+	if row.AgentID.Valid && (!scope.AgentID.Valid || row.AgentID != scope.AgentID) {
+		return false
+	}
+	if row.IssueID.Valid && (!scope.IssueID.Valid || row.IssueID != scope.IssueID) {
+		return false
+	}
+	if row.TaskID.Valid && (!scope.TaskID.Valid || row.TaskID != scope.TaskID) {
+		return false
+	}
+	return true
+}
+
+func memoryScopeSpecificity(scope protocol.MemoryRecallScope) int {
+	score := 0
+	if scope.ProjectID != "" {
+		score++
+	}
+	if scope.AgentID != "" {
+		score++
+	}
+	if scope.IssueID != "" {
+		score += 2
+	}
+	if scope.TaskID != "" {
+		score++
+	}
+	return score
+}
+
+func fitMemoryRecallItemWithinBudget(existing []protocol.MemoryRecallData, item protocol.MemoryRecallData, budget int) (protocol.MemoryRecallData, bool) {
+	if budget <= 0 || strings.TrimSpace(item.Text) == "" {
+		return protocol.MemoryRecallData{}, false
+	}
+	if memoryRecallBlockByteLenWith(existing, item) <= budget {
+		return item, true
+	}
+
+	low, high := 0, memoryApproxTokenCount(item.Text)
+	best := item
+	best.Text = ""
+	for low <= high {
+		mid := (low + high) / 2
+		candidate := item
+		candidate.Text = truncateMemoryRecallText(item.Text, mid)
+		if strings.TrimSpace(candidate.Text) == "" {
+			low = mid + 1
+			continue
+		}
+		if memoryRecallBlockByteLenWith(existing, candidate) <= budget {
+			best = candidate
+			low = mid + 1
+		} else {
+			high = mid - 1
+		}
+	}
+	if strings.TrimSpace(best.Text) == "" {
+		return protocol.MemoryRecallData{}, false
+	}
+	return best, true
+}
+
+func memoryRecallBlockByteLenWith(existing []protocol.MemoryRecallData, item protocol.MemoryRecallData) int {
+	items := make([]protocol.MemoryRecallData, 0, len(existing)+1)
+	items = append(items, existing...)
+	items = append(items, item)
+	return protocol.MemoryRecallBlockByteLen(items)
+}
+
+func memoryApproxTokenCount(text string) int {
+	return len([]byte(strings.TrimSpace(text)))
+}
+
+func truncateMemoryRecallText(text string, maxTokens int) string {
+	if maxTokens <= 0 {
+		return ""
+	}
+	text = strings.TrimSpace(text)
+	if memoryApproxTokenCount(text) <= maxTokens {
+		return text
+	}
+	var b strings.Builder
+	used := 0
+	for _, r := range text {
+		size := len(string(r))
+		if used+size > maxTokens {
+			return strings.TrimSpace(b.String())
+		}
+		b.WriteRune(r)
+		used += size
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func timestamptzString(ts pgtype.Timestamptz) string {
+	if !ts.Valid {
+		return ""
+	}
+	return ts.Time.UTC().Format(time.RFC3339)
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (s *MemoryService) memoryProvider(provider string) MemoryProvider {

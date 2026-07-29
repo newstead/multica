@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // freshSessionRetryPrompt prefixes an explicit context-loss disclosure onto the
@@ -67,6 +68,12 @@ func perTurnContextBlocks(task Task) string {
 // against is not specific to any one provider or host (MUL-2904, #4182).
 func BuildPrompt(task Task, provider string) string {
 	body := buildPromptBody(task, provider)
+	if block := buildMemoryRecallBlock(task.MemoryRecall); block != "" {
+		if !strings.HasSuffix(body, "\n\n") {
+			body += "\n"
+		}
+		body += block
+	}
 	// Run-scoped context is appended, never prepended: everything ahead of it
 	// is stable across runs of a resumed session, and appending keeps it after
 	// the cached prefix (MUL-5377).
@@ -77,6 +84,10 @@ func BuildPrompt(task Task, provider string) string {
 		body += blocks
 	}
 	return body
+}
+
+func buildMemoryRecallBlock(items []protocol.MemoryRecallData) string {
+	return protocol.RenderMemoryRecallBlock(items)
 }
 
 func buildPromptBody(task Task, provider string) string {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 func TestMemoryEventEnvelopeIdempotencyIsStable(t *testing.T) {
@@ -175,6 +177,287 @@ func TestMemoryRetainDuplicateRepairsProviderDeliverySet(t *testing.T) {
 	if len(counts) != 2 || counts["hindsight"] != 1 || counts["mem0"] != 1 {
 		t.Fatalf("delivery counts = %#v, want exactly one hindsight and one mem0", counts)
 	}
+}
+
+func TestMemoryCapturePolicyAllowsOnlyApprovedVisibleSources(t *testing.T) {
+	workspaceID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
+	commentID := util.MustParseUUID("22222222-2222-2222-2222-222222222222")
+	base := MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   commentID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "remember this visible project decision",
+	}
+	if _, ok := BuildApprovedMemoryRetainRequest(base); !ok {
+		t.Fatal("approved human comment should pass capture policy")
+	}
+	base.SourceType = "arbitrary_attachment"
+	if _, ok := BuildApprovedMemoryRetainRequest(base); ok {
+		t.Fatal("arbitrary attachments must not pass capture policy")
+	}
+	base.SourceType = MemorySourceHumanComment
+	base.Text = "password=super-secret"
+	if _, ok := BuildApprovedMemoryRetainRequest(base); ok {
+		t.Fatal("secret-like content must not pass capture policy")
+	}
+	base.SourceType = MemorySourceExplicitFeedback
+	base.Text = "remember this explicit memory feedback"
+	if _, ok := BuildApprovedMemoryRetainRequest(base); !ok {
+		t.Fatal("explicit memory feedback should pass capture policy through the user-visible memory endpoint")
+	}
+}
+
+func TestMemoryCapturePolicyUsesContentRevisionInKey(t *testing.T) {
+	workspaceID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
+	issueID := util.MustParseUUID("22222222-2222-2222-2222-222222222222")
+	src := MemoryCaptureSource{
+		SourceType: MemorySourceIssueDescription,
+		SourceID:   issueID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID, IssueID: issueID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "first description",
+	}
+	first, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		t.Fatal("first issue description should pass capture policy")
+	}
+	src.Text = "second description"
+	second, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		t.Fatal("second issue description should pass capture policy")
+	}
+	if first.IdempotencyKey == second.IdempotencyKey {
+		t.Fatalf("idempotency key did not change across content revisions: %s", first.IdempotencyKey)
+	}
+	if first.Metadata["content_sha256"] == "" || first.Metadata["content_sha256"] == second.Metadata["content_sha256"] {
+		t.Fatalf("content hashes did not track revisions: first=%#v second=%#v", first.Metadata, second.Metadata)
+	}
+}
+
+func TestMemoryCaptureRedactsSecretsAndRejectsRawExecutionLogs(t *testing.T) {
+	workspaceID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
+	commentID := util.MustParseUUID("22222222-2222-2222-2222-222222222222")
+	req, ok := BuildApprovedMemoryRetainRequest(MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   commentID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "PASSWORD: hunter2 ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa sk-abcdefghijklmnopqrstuvwxyz",
+	})
+	if !ok {
+		t.Fatal("redactable visible comment should pass capture policy")
+	}
+	var content map[string]any
+	if err := json.Unmarshal(req.Content, &content); err != nil {
+		t.Fatalf("unmarshal retained content: %v", err)
+	}
+	text, _ := content["text"].(string)
+	for _, leaked := range []string{"hunter2", "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sk-abcdefghijklmnopqrstuvwxyz"} {
+		if strings.Contains(text, leaked) {
+			t.Fatalf("retained text leaked %q: %s", leaked, text)
+		}
+	}
+	if !strings.Contains(text, "[REDACTED") {
+		t.Fatalf("retained text did not use canonical redaction markers: %s", text)
+	}
+
+	for name, text := range map[string]string{
+		"multica wrapper log": "Chunk ID: abc123\nWall time: 0.1s\nProcess exited with code 0\nOutput:\nsecret-ish log",
+		"pasted go test log":  "go test ./...\n--- FAIL: TestThing (0.01s)\nstack trace follows\nFAIL",
+	} {
+		_, ok = BuildApprovedMemoryRetainRequest(MemoryCaptureSource{
+			SourceType: MemorySourceHumanComment,
+			SourceID:   commentID,
+			Scope:      MemoryScope{WorkspaceID: workspaceID},
+			Actor:      MemoryActor{Type: "member"},
+			Text:       text,
+		})
+		if ok {
+			t.Fatalf("%s must not pass memory capture policy", name)
+		}
+	}
+}
+
+func TestMemoryTokenBudgetTruncatesCJKAndUnbrokenText(t *testing.T) {
+	for _, text := range []string{strings.Repeat("记", 80), strings.Repeat("a", 80)} {
+		got := truncateMemoryRecallText(text, 16)
+		if got == text {
+			t.Fatalf("text was not truncated: %q", text[:16])
+		}
+		if tokens := memoryApproxTokenCount(got); tokens > 16 {
+			t.Fatalf("truncated token count = %d, want <= 16 for %q", tokens, got)
+		}
+	}
+}
+
+func TestMemoryRecallBudgetIncludesRenderedCitations(t *testing.T) {
+	const budget = 600
+	workspaceID := "11111111-1111-1111-1111-111111111111"
+	projectID := "22222222-2222-2222-2222-222222222222"
+	agentID := "33333333-3333-3333-3333-333333333333"
+	issueID := "44444444-4444-4444-4444-444444444444"
+	taskID := "55555555-5555-5555-5555-555555555555"
+
+	out := make([]protocol.MemoryRecallData, 0, 8)
+	for i := 0; i < 8; i++ {
+		item := protocol.MemoryRecallData{
+			MemoryID:   uuid.NewString(),
+			Provider:   memoryAuditLogFallbackProvider,
+			Scope:      protocol.MemoryRecallScope{WorkspaceID: workspaceID, ProjectID: projectID, AgentID: agentID, IssueID: issueID, TaskID: taskID},
+			SourceType: MemorySourceHumanComment,
+			SourceID:   uuid.NewString(),
+			Text:       strings.Repeat("记", 200) + strings.Repeat("a", 200),
+			CapturedAt: "2026-07-29T12:00:00Z",
+		}
+		item.Text = truncateMemoryRecallText(item.Text, maxMemoryRecallTextTokens)
+		trimmed, ok := fitMemoryRecallItemWithinBudget(out, item, budget)
+		if ok {
+			out = append(out, trimmed)
+		}
+	}
+	if got := protocol.MemoryRecallBlockByteLen(out); got > budget {
+		t.Fatalf("rendered recall block length = %d bytes, want <= %d\n%s", got, budget, protocol.RenderMemoryRecallBlock(out))
+	}
+}
+
+func TestMemoryRecallForTaskFindsDurableAgentOutcomeAcrossTasks(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	agentID := util.MustParseUUID(uuid.NewString())
+	otherAgentID := util.MustParseUUID(uuid.NewString())
+	issueID := util.MustParseUUID(uuid.NewString())
+	otherIssueID := util.MustParseUUID(uuid.NewString())
+	taskAID := util.MustParseUUID(uuid.NewString())
+	taskBID := util.MustParseUUID(uuid.NewString())
+	cleanupMemoryServiceRows(t, pool, workspaceID)
+	if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  workspaceID,
+		Enabled:                      true,
+		PrimaryProvider:              "hindsight",
+		ReadMode:                     "primary",
+		ProviderSettings:             []byte(`{}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("seed memory config: %v", err)
+	}
+
+	svc := NewMemoryService(queries, pool)
+	if _, err := svc.Retain(ctx, mustMemoryRetain(t, MemoryCaptureSource{
+		SourceType: MemorySourceAgentOutcomeSummary,
+		SourceID:   taskAID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID, AgentID: agentID, IssueID: issueID},
+		Actor:      MemoryActor{Type: "agent", ID: agentID},
+		Text:       "final outcome should be durable for the next task",
+	})); err != nil {
+		t.Fatalf("retain outcome memory: %v", err)
+	}
+
+	items, err := svc.RecallForTask(ctx, MemoryRecallForTaskRequest{
+		Scope: MemoryScope{WorkspaceID: workspaceID, AgentID: agentID, IssueID: issueID, TaskID: taskBID},
+		Limit: 4,
+	})
+	if err != nil {
+		t.Fatalf("recall same issue next task: %v", err)
+	}
+	if len(items) != 1 || items[0].SourceID != util.UUIDToString(taskAID) || items[0].Scope.TaskID != "" {
+		t.Fatalf("durable outcome recall = %#v, want task A source with no task-scoped recall", items)
+	}
+	for name, scope := range map[string]MemoryScope{
+		"other agent": {WorkspaceID: workspaceID, AgentID: otherAgentID, IssueID: issueID, TaskID: taskBID},
+		"other issue": {WorkspaceID: workspaceID, AgentID: agentID, IssueID: otherIssueID, TaskID: taskBID},
+	} {
+		items, err := svc.RecallForTask(ctx, MemoryRecallForTaskRequest{Scope: scope, Limit: 4})
+		if err != nil {
+			t.Fatalf("recall %s: %v", name, err)
+		}
+		if len(items) != 0 {
+			t.Fatalf("recall %s leaked outcome memory: %#v", name, items)
+		}
+	}
+}
+
+func TestMemoryRecallForTaskScopesAndTruncates(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	otherWorkspaceID := util.MustParseUUID(uuid.NewString())
+	issueID := util.MustParseUUID(uuid.NewString())
+	cleanupMemoryServiceRows(t, pool, workspaceID)
+	cleanupMemoryServiceRows(t, pool, otherWorkspaceID)
+	for _, ws := range []pgtype.UUID{workspaceID, otherWorkspaceID} {
+		if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+			WorkspaceID:                  ws,
+			Enabled:                      true,
+			PrimaryProvider:              "hindsight",
+			ReadMode:                     "primary",
+			ProviderSettings:             []byte(`{}`),
+			ProviderCredentialsEncrypted: []byte(`{}`),
+		}); err != nil {
+			t.Fatalf("seed memory config: %v", err)
+		}
+	}
+
+	svc := NewMemoryService(queries, pool)
+	longText := strings.Repeat("scoped ", 80)
+	if _, err := svc.Retain(ctx, mustMemoryRetain(t, MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   util.MustParseUUID(uuid.NewString()),
+		Scope:      MemoryScope{WorkspaceID: workspaceID, IssueID: issueID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       longText,
+	})); err != nil {
+		t.Fatalf("retain scoped memory: %v", err)
+	}
+	if _, err := svc.Retain(ctx, mustMemoryRetain(t, MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   util.MustParseUUID(uuid.NewString()),
+		Scope:      MemoryScope{WorkspaceID: otherWorkspaceID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "foreign workspace memory must not appear",
+	})); err != nil {
+		t.Fatalf("retain foreign memory: %v", err)
+	}
+
+	items, err := svc.RecallForTask(ctx, MemoryRecallForTaskRequest{
+		Scope:       MemoryScope{WorkspaceID: workspaceID, IssueID: issueID},
+		TokenBudget: 600,
+		Limit:       4,
+	})
+	if err != nil {
+		t.Fatalf("RecallForTask: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("recall items = %d, want 1 scoped item: %#v", len(items), items)
+	}
+	if items[0].Provider != memoryAuditLogFallbackProvider {
+		t.Fatalf("recall provider = %q, want truthful fallback provider", items[0].Provider)
+	}
+	if items[0].Scope.WorkspaceID != util.UUIDToString(workspaceID) || items[0].Scope.IssueID != util.UUIDToString(issueID) {
+		t.Fatalf("wrong recall scope: %#v", items[0].Scope)
+	}
+	if strings.Contains(items[0].Text, "foreign workspace") {
+		t.Fatal("recall leaked foreign workspace memory")
+	}
+	if got := protocol.MemoryRecallBlockByteLen(items); got > 600 {
+		t.Fatalf("rendered recall block length = %d bytes, want <= 600", got)
+	}
+}
+
+func mustMemoryRetain(t *testing.T, src MemoryCaptureSource) MemoryRetainRequest {
+	t.Helper()
+	req, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		t.Fatalf("source did not pass capture policy: %#v", src)
+	}
+	return req
 }
 
 func TestMemoryDispatchDueDeliveriesIsPerProvider(t *testing.T) {

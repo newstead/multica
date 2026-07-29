@@ -27,6 +27,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/daemon/repocache"
 	"github.com/multica-ai/multica/server/internal/selfexec"
 	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 	"github.com/multica-ai/multica/server/pkg/skillbundle"
 	"github.com/multica-ai/multica/server/pkg/taskfailure"
 )
@@ -146,6 +147,7 @@ type terminalTaskReport struct {
 	// session because its rollout was not in the store (MUL-5305). The server
 	// clears the resume pointer and flags the continuity gap for the next claim.
 	sessionRolloutMissing bool
+	memoryRecall          []protocol.MemoryRecallProvenance
 }
 
 type executionEnvironmentCommand func() ([]string, error)
@@ -3743,6 +3745,7 @@ func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result Tas
 			workDir:               result.WorkDir,
 			localDirectory:        result.LocalDirectory,
 			sessionRolloutMissing: result.SessionRolloutMissing,
+			memoryRecall:          result.MemoryRecall,
 		})
 		if err == nil {
 			return
@@ -3833,7 +3836,7 @@ func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTa
 			stats := collectTaskDiffStats(report.workDir, d.logger)
 			diffStats = &stats
 		}
-		return d.client.CompleteTask(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, diffStats, report.sessionRolloutMissing)
+		return d.client.CompleteTask(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, diffStats, report.sessionRolloutMissing, report.memoryRecall)
 	case terminalTaskReportFail:
 		return d.client.FailTask(ctx, report.taskID, report.errorMessage, report.sessionID, report.workDir, report.failureReason, report.sessionRolloutMissing)
 	default:
@@ -5139,6 +5142,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// returns (SessionID is already blanked above); reportTaskResult forwards it
 	// as session_rollout_missing on the terminal callback (MUL-5305).
 	defer func() { taskResult.SessionRolloutMissing = sessionRolloutMissing }()
+	memoryRecall := protocol.MemoryRecallProvenanceFromData(task.MemoryRecall)
 
 	switch result.Status {
 	case "completed":
@@ -5156,6 +5160,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				EnvRoot:        env.RootDir,
 				LocalDirectory: env.LocalDirectory,
 				Usage:          usageEntries,
+				MemoryRecall:   memoryRecall,
 			}, nil
 		}
 		// Detect "poisoned" terminal output: the agent didn't reach a real
@@ -5188,6 +5193,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			EnvRoot:        env.RootDir,
 			LocalDirectory: env.LocalDirectory,
 			Usage:          usageEntries,
+			MemoryRecall:   memoryRecall,
 		}, nil
 	case "timeout":
 		// Surface session_id/work_dir so the chat resume pointer is kept
@@ -5214,6 +5220,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			LocalDirectory: env.LocalDirectory,
 			FailureReason:  failureReason,
 			Usage:          usageEntries,
+			MemoryRecall:   memoryRecall,
 		}, nil
 	case "idle_watchdog":
 		// The idle watchdog force-stopped the run because the backend
@@ -5234,6 +5241,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			LocalDirectory: env.LocalDirectory,
 			FailureReason:  "idle_watchdog",
 			Usage:          usageEntries,
+			MemoryRecall:   memoryRecall,
 		}, nil
 	case "cancelled":
 		// Server cancelled the task (e.g. issue reassignment, user cancel).
@@ -5249,6 +5257,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			EnvRoot:        env.RootDir,
 			LocalDirectory: env.LocalDirectory,
 			Usage:          usageEntries,
+			MemoryRecall:   memoryRecall,
 		}, nil
 	default:
 		errMsg := result.Error

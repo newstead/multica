@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -1498,6 +1499,9 @@ func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype
 			}
 			linkedIssueIDs = append(linkedIssueIDs, uuidToString(issue.ID))
 			reevalIssues = append(reevalIssues, issue)
+			if state == "merged" && !referenceOnly {
+				h.captureMergedPRMemory(ctx, issue, pr)
+			}
 		}
 
 		// A terminal PR event (`merged` or `closed`) may be the moment the
@@ -1712,6 +1716,23 @@ func (h *Handler) lookupIssueByIdentifier(ctx context.Context, workspaceID pgtyp
 		return db.Issue{}, false
 	}
 	return issue, true
+}
+
+func (h *Handler) captureMergedPRMemory(ctx context.Context, issue db.Issue, pr db.GithubPullRequest) {
+	h.captureMemoryBestEffort(ctx, service.MemoryCaptureSource{
+		SourceType: service.MemorySourceMergedPRVerdict,
+		SourceID:   pr.ID,
+		Scope:      issueMemoryScope(issue, pgtype.UUID{}),
+		Actor:      service.MemoryActor{Type: "system"},
+		Text: fmt.Sprintf("Merged PR verdict: %s/%s#%d %s linked to issue %s",
+			pr.RepoOwner, pr.RepoName, pr.PrNumber, pr.HtmlUrl, issue.Title),
+		Metadata: map[string]any{
+			"repo_owner": pr.RepoOwner,
+			"repo_name":  pr.RepoName,
+			"pr_number":  pr.PrNumber,
+			"pr_url":     pr.HtmlUrl,
+		},
+	})
 }
 
 func (h *Handler) advanceIssueToDone(ctx context.Context, issue db.Issue, workspaceID string) {

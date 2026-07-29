@@ -2479,6 +2479,31 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		}
 	}
 
+	if h.MemoryService != nil && h.memoryGatewayEnabled(r) {
+		if recall, err := h.MemoryService.RecallForTask(r.Context(), service.MemoryRecallForTaskRequest{
+			Scope: service.MemoryScope{
+				WorkspaceID: parseUUID(resp.WorkspaceID),
+				ProjectID:   optionalUUID(resp.ProjectID),
+				AgentID:     task.AgentID,
+				IssueID:     task.IssueID,
+				TaskID:      task.ID,
+			},
+			Query:       resp.ThreadName,
+			TokenBudget: 600,
+			Limit:       8,
+		}); err != nil {
+			if !errors.Is(err, service.ErrMemoryDisabled) {
+				slog.Warn("task claim: memory recall failed; continuing without recall",
+					"task_id", uuidToString(task.ID),
+					"workspace_id", resp.WorkspaceID,
+					"error", err,
+				)
+			}
+		} else {
+			resp.MemoryRecall = recall
+		}
+	}
+
 	// Workspace-level Context (workspace.context DB column) — the per-workspace
 	// system prompt that workspace owners set in Settings → General. Inject it
 	// into the brief regardless of task kind (issue / chat / autopilot /
@@ -2918,11 +2943,12 @@ type TaskCompleteDiffStats struct {
 }
 
 type TaskCompleteRequest struct {
-	PRURL     string                 `json:"pr_url"`
-	Output    string                 `json:"output"`
-	SessionID string                 `json:"session_id"` // Claude session ID for future resumption
-	WorkDir   string                 `json:"work_dir"`   // working directory used during execution
-	DiffStats *TaskCompleteDiffStats `json:"diff_stats,omitempty"`
+	PRURL        string                            `json:"pr_url"`
+	Output       string                            `json:"output"`
+	SessionID    string                            `json:"session_id"` // Claude session ID for future resumption
+	WorkDir      string                            `json:"work_dir"`   // working directory used during execution
+	DiffStats    *TaskCompleteDiffStats            `json:"diff_stats,omitempty"`
+	MemoryRecall []protocol.MemoryRecallProvenance `json:"memory_recall,omitempty"`
 	// SessionRolloutMissing: the daemon withheld this task's Codex session
 	// because its rollout was missing (MUL-5305). Clear the resume pointer and
 	// flag the continuity gap for the next claim.
@@ -2959,6 +2985,18 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("complete task failed", "task_id", taskID, "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	if task.IssueID.Valid && strings.TrimSpace(req.Output) != "" {
+		if issue, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: parseUUID(workspaceID)}); err == nil {
+			h.captureMemoryBestEffort(r.Context(), service.MemoryCaptureSource{
+				SourceType: service.MemorySourceAgentOutcomeSummary,
+				SourceID:   task.ID,
+				Scope:      service.MemoryScope{WorkspaceID: issue.WorkspaceID, ProjectID: issue.ProjectID, AgentID: task.AgentID, IssueID: issue.ID},
+				Actor:      service.MemoryActor{Type: "agent", ID: task.AgentID},
+				Text:       req.Output,
+			})
+		}
 	}
 
 	h.emitIssueExecutedOnFirstCompletion(r, task)

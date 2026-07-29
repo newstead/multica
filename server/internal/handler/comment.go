@@ -1407,6 +1407,15 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	groupedAtt := h.groupAttachments(r, []pgtype.UUID{comment.ID})
 	resp := commentToResponse(comment, nil, groupedAtt[uuidToString(comment.ID)])
 	slog.Info("comment created", append(logger.RequestAttrs(r), "comment_id", uuidToString(comment.ID), "issue_id", issueID)...)
+	if authorType == "member" {
+		h.captureMemoryBestEffort(r.Context(), service.MemoryCaptureSource{
+			SourceType: service.MemorySourceHumanComment,
+			SourceID:   comment.ID,
+			Scope:      issueMemoryScope(issue, pgtype.UUID{}),
+			Actor:      service.MemoryActor{Type: "member", ID: comment.AuthorID},
+			Text:       comment.Content,
+		})
+	}
 	h.publish(protocol.EventCommentCreated, uuidToString(issue.WorkspaceID), authorType, authorID, map[string]any{
 		"comment":             resp,
 		"issue_title":         issue.Title,

@@ -2919,6 +2919,19 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	// Determine actor identity: agent (via X-Agent-ID header) or member.
 	actorType, actorID := h.resolveActor(r, userID, workspaceID)
+	if descriptionChanged && resp.Description != nil {
+		var scopedAgent pgtype.UUID
+		if actorType == "agent" {
+			scopedAgent = parseUUID(actorID)
+		}
+		h.captureMemoryBestEffort(r.Context(), service.MemoryCaptureSource{
+			SourceType: service.MemorySourceIssueDescription,
+			SourceID:   issue.ID,
+			Scope:      issueMemoryScope(issue, scopedAgent),
+			Actor:      service.MemoryActor{Type: actorType, ID: parseUUID(actorID)},
+			Text:       *resp.Description,
+		})
+	}
 
 	h.publish(protocol.EventIssueUpdated, workspaceID, actorType, actorID, map[string]any{
 		"issue":               resp,

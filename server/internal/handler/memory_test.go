@@ -175,6 +175,45 @@ func TestCreateMemoryRetainEventIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCreateMemoryRetainEventCapturesExplicitFeedbackSource(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "hindsight", "")
+
+	sourceID := "11111111-2222-3333-4444-555555555555"
+	body := map[string]any{
+		"source_type": "explicit_feedback",
+		"source_id":   sourceID,
+		"actor_type":  "member",
+		"actor_id":    testUserID,
+		"text":        "Please remember this explicit memory preference. PASSWORD: hunter2",
+	}
+	w := httptest.NewRecorder()
+	testHandler.CreateMemoryRetainEvent(w, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/events/retain", body))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("explicit feedback retain: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var sourceType, retainedText string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT envelope->'content'->>'source_type', envelope->'content'->>'text'
+		FROM memory_event
+		WHERE workspace_id = $1 AND envelope->'content'->>'source_id' = $2
+	`, testWorkspaceID, sourceID).Scan(&sourceType, &retainedText); err != nil {
+		t.Fatalf("query explicit feedback memory: %v", err)
+	}
+	if sourceType != "explicit_feedback" {
+		t.Fatalf("source_type = %q, want explicit_feedback", sourceType)
+	}
+	if strings.Contains(retainedText, "hunter2") || !strings.Contains(retainedText, "[REDACTED") {
+		t.Fatalf("explicit feedback text was not safely redacted: %s", retainedText)
+	}
+}
+
 func TestCreateMemoryRecallEndpointKeepsDualResultsSeparate(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
