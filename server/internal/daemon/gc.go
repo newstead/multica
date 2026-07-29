@@ -74,7 +74,7 @@ func (d *Daemon) runGC(ctx context.Context) {
 
 	stats := &gcStats{byPattern: map[string]int{}}
 	for _, wsEntry := range entries {
-		if !wsEntry.IsDir() || wsEntry.Name() == ".repos" {
+		if !wsEntry.IsDir() || isWorkspacesRootAuxDir(wsEntry.Name()) {
 			continue
 		}
 		wsDir := filepath.Join(root, wsEntry.Name())
@@ -103,6 +103,15 @@ func (d *Daemon) runGC(ctx context.Context) {
 			"bytes_reclaimed", stats.bytesReclaimed,
 			"by_pattern", stats.byPattern,
 		)
+	}
+}
+
+func isWorkspacesRootAuxDir(name string) bool {
+	switch name {
+	case ".repos", ".cache":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -612,7 +621,7 @@ func isAgentTaskTerminal(status string) bool {
 
 // cleanTaskDir removes a task directory and logs the result.
 func (d *Daemon) cleanTaskDir(taskDir string) {
-	if err := os.RemoveAll(taskDir); err != nil {
+	if err := execenv.RemoveAllWritable(taskDir); err != nil {
 		d.logger.Warn("gc: remove task dir failed", "dir", taskDir, "error", err)
 	} else {
 		d.logger.Info("gc: removed", "dir", taskDir)
@@ -680,7 +689,7 @@ func (d *Daemon) cleanTaskArtifactsMatching(taskDir string, matcher artifactMatc
 			return nil
 		}
 		size := dirSize(path)
-		if rmErr := os.RemoveAll(path); rmErr != nil {
+		if rmErr := execenv.RemoveAllWritable(path); rmErr != nil {
 			d.logger.Warn("gc: artifact remove failed", "path", path, "error", rmErr)
 			return filepath.SkipDir
 		}
