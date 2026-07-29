@@ -96,13 +96,15 @@ export function Mem0UsagePage() {
 
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-auto">
-      <PageHeader
-        icon={Database}
-        title={t(($) => $.memory.mem0.title)}
-        subtitle={t(($) => $.memory.mem0.subtitle)}
-        right={<UsagePageTabs value="mem0" />}
-      />
+      <PageHeader className="h-auto min-h-12 flex-wrap justify-between gap-y-1.5 px-5 py-1.5 sm:py-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <h1 className="truncate text-sm font-medium">{t(($) => $.memory.mem0.title)}</h1>
+        </div>
+        <UsagePageTabs value="mem0" />
+      </PageHeader>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
+        <p className="text-xs text-muted-foreground">{t(($) => $.memory.mem0.subtitle)}</p>
         <div className="flex flex-wrap items-center gap-2">
           <ProjectFilter projects={projects} value={projectValue} onChange={setProjectValue} />
           <Segmented
