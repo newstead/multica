@@ -297,6 +297,7 @@ type AgentTaskResponse struct {
 	IsLeaderTask       bool                  `json:"is_leader_task,omitempty"`
 	Agent              *TaskAgentData        `json:"agent,omitempty"`
 	ConnectedApps      []ConnectedAppData    `json:"connected_apps,omitempty"` // daemon-claim only: per-run app capabilities mounted through runtime MCP overlays
+	MemoryRecall       []protocol.MemoryRecallData `json:"memory_recall,omitempty"`
 	Repos              []RepoData            `json:"repos,omitempty"`
 	ProjectID          string                `json:"project_id,omitempty"`          // issue's project, when present
 	ProjectTitle       string                `json:"project_title,omitempty"`       // for surfacing in agent context

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,4 +211,111 @@ func newMemoryServiceIntegrationPool(t *testing.T) *pgxpool.Pool {
 
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+func TestMemoryCapturePolicyAllowsOnlyApprovedVisibleSources(t *testing.T) {
+	workspaceID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
+	commentID := util.MustParseUUID("22222222-2222-2222-2222-222222222222")
+	base := MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   commentID,
+		Scope:      MemoryScope{WorkspaceID: workspaceID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "remember this visible project decision",
+	}
+	if _, ok := BuildApprovedMemoryRetainRequest(base); !ok {
+		t.Fatal("approved human comment should pass capture policy")
+	}
+	base.SourceType = "arbitrary_attachment"
+	if _, ok := BuildApprovedMemoryRetainRequest(base); ok {
+		t.Fatal("arbitrary attachments must not pass capture policy")
+	}
+	base.SourceType = MemorySourceHumanComment
+	base.Text = "password=super-secret"
+	if _, ok := BuildApprovedMemoryRetainRequest(base); ok {
+		t.Fatal("secret-like content must not pass capture policy")
+	}
+}
+
+func TestMemoryRecallForTaskScopesAndTruncates(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	otherWorkspaceID := util.MustParseUUID(uuid.NewString())
+	issueID := util.MustParseUUID(uuid.NewString())
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		for _, ws := range []pgtype.UUID{workspaceID, otherWorkspaceID} {
+			_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_provider_delivery WHERE workspace_id = $1`, ws)
+			_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_event WHERE workspace_id = $1`, ws)
+			_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_workspace_config WHERE workspace_id = $1`, ws)
+		}
+	})
+	for _, ws := range []pgtype.UUID{workspaceID, otherWorkspaceID} {
+		if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+			WorkspaceID:                  ws,
+			Enabled:                      true,
+			PrimaryProvider:              "hindsight",
+			ReadMode:                     "primary",
+			ProviderSettings:             []byte(`{}`),
+			ProviderCredentialsEncrypted: []byte(`{}`),
+		}); err != nil {
+			t.Fatalf("seed memory config: %v", err)
+		}
+	}
+
+	svc := NewMemoryService(queries, pool)
+	longText := strings.Repeat("scoped ", 80)
+	if _, err := svc.Retain(ctx, mustMemoryRetain(t, MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   util.MustParseUUID(uuid.NewString()),
+		Scope:      MemoryScope{WorkspaceID: workspaceID, IssueID: issueID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       longText,
+	})); err != nil {
+		t.Fatalf("retain scoped memory: %v", err)
+	}
+	if _, err := svc.Retain(ctx, mustMemoryRetain(t, MemoryCaptureSource{
+		SourceType: MemorySourceHumanComment,
+		SourceID:   util.MustParseUUID(uuid.NewString()),
+		Scope:      MemoryScope{WorkspaceID: otherWorkspaceID},
+		Actor:      MemoryActor{Type: "member"},
+		Text:       "foreign workspace memory must not appear",
+	})); err != nil {
+		t.Fatalf("retain foreign memory: %v", err)
+	}
+
+	items, err := svc.RecallForTask(ctx, MemoryRecallForTaskRequest{
+		Scope:       MemoryScope{WorkspaceID: workspaceID, IssueID: issueID},
+		TokenBudget: 40,
+		Limit:       4,
+	})
+	if err != nil {
+		t.Fatalf("RecallForTask: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("recall items = %d, want 1 scoped item: %#v", len(items), items)
+	}
+	if items[0].Scope.WorkspaceID != util.UUIDToString(workspaceID) || items[0].Scope.IssueID != util.UUIDToString(issueID) {
+		t.Fatalf("wrong recall scope: %#v", items[0].Scope)
+	}
+	if strings.Contains(items[0].Text, "foreign workspace") {
+		t.Fatal("recall leaked foreign workspace memory")
+	}
+	if got := len(strings.Fields(items[0].Text)); got > 20 {
+		t.Fatalf("recall text was not token-truncated enough: %d words", got)
+	}
+}
+
+func mustMemoryRetain(t *testing.T, src MemoryCaptureSource) MemoryRetainRequest {
+	t.Helper()
+	req, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		t.Fatalf("source did not pass capture policy: %#v", src)
+	}
+	return req
 }

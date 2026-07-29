@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 var (
@@ -105,6 +107,43 @@ type MemoryRecallResult struct {
 	Provider   string          `json:"provider"`
 	Results    json.RawMessage `json:"results"`
 	Provenance json.RawMessage `json:"provenance"`
+}
+
+type MemoryCaptureSource struct {
+	SourceType string
+	SourceID   pgtype.UUID
+	Scope      MemoryScope
+	Actor      MemoryActor
+	Text       string
+	Metadata   map[string]any
+}
+
+type MemoryRecallForTaskRequest struct {
+	Scope       MemoryScope
+	Query       string
+	TokenBudget int
+	Limit       int32
+}
+
+const (
+	MemorySourceIssueDescription    = "issue_description"
+	MemorySourceHumanComment        = "human_comment"
+	MemorySourceAgentOutcomeSummary = "agent_outcome_summary"
+	MemorySourceExplicitFeedback    = "explicit_feedback"
+	MemorySourceMergedPRVerdict     = "merged_pr_verdict"
+
+	defaultMemoryRecallTokenBudget = 600
+	defaultMemoryRecallLimit       = 8
+	maxMemoryRecallEventScan       = 200
+	maxMemoryRecallTextTokens      = 220
+)
+
+var approvedMemorySources = map[string]bool{
+	MemorySourceIssueDescription:    true,
+	MemorySourceHumanComment:        true,
+	MemorySourceAgentOutcomeSummary: true,
+	MemorySourceExplicitFeedback:    true,
+	MemorySourceMergedPRVerdict:     true,
 }
 
 type MemoryService struct {
@@ -213,6 +252,162 @@ func (s *MemoryService) Retain(ctx context.Context, req MemoryRetainRequest) (Me
 		return nil
 	}); err != nil {
 		return MemoryRetainResult{}, err
+	}
+	return out, nil
+}
+
+func (s *MemoryService) RetainApprovedSource(ctx context.Context, src MemoryCaptureSource) (MemoryRetainResult, bool, error) {
+	req, ok := BuildApprovedMemoryRetainRequest(src)
+	if !ok {
+		return MemoryRetainResult{}, false, nil
+	}
+	res, err := s.Retain(ctx, req)
+	if errors.Is(err, ErrMemoryDisabled) {
+		return MemoryRetainResult{}, true, nil
+	}
+	return res, true, err
+}
+
+func BuildApprovedMemoryRetainRequest(src MemoryCaptureSource) (MemoryRetainRequest, bool) {
+	sourceType := strings.TrimSpace(src.SourceType)
+	text := strings.TrimSpace(src.Text)
+	if !approvedMemorySources[sourceType] || text == "" || containsMemoryDeniedContent(text) {
+		return MemoryRetainRequest{}, false
+	}
+	content, err := json.Marshal(map[string]any{
+		"source_type": sourceType,
+		"source_id":   uuidString(src.SourceID),
+		"text":        text,
+	})
+	if err != nil {
+		return MemoryRetainRequest{}, false
+	}
+	metadata := map[string]any{
+		"source_type": sourceType,
+		"source_id":   uuidString(src.SourceID),
+	}
+	for k, v := range src.Metadata {
+		if strings.TrimSpace(k) != "" {
+			metadata[k] = v
+		}
+	}
+	keyParts := []string{
+		sourceType,
+		uuidString(src.Scope.WorkspaceID),
+		uuidString(src.Scope.ProjectID),
+		uuidString(src.Scope.AgentID),
+		uuidString(src.Scope.IssueID),
+		uuidString(src.Scope.TaskID),
+		uuidString(src.SourceID),
+	}
+	return MemoryRetainRequest{
+		Scope:          src.Scope,
+		Actor:          src.Actor,
+		EventType:      "retain",
+		IdempotencyKey: "memory_capture:" + strings.Join(keyParts, ":"),
+		Content:        content,
+		Metadata:       metadata,
+	}, true
+}
+
+func containsMemoryDeniedContent(text string) bool {
+	lower := strings.ToLower(text)
+	denied := []string{
+		"-----begin private key-----",
+		"-----begin rsa private key-----",
+		"aws_secret_access_key",
+		"secret_access_key",
+		"password=",
+		"passwd=",
+		"api_key=",
+		"apikey=",
+		"token=",
+		"authorization: bearer",
+		"raw shell output",
+	}
+	for _, needle := range denied {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *MemoryService) RecallForTask(ctx context.Context, req MemoryRecallForTaskRequest) ([]protocol.MemoryRecallData, error) {
+	if s == nil || s.Queries == nil {
+		return nil, fmt.Errorf("memory service not configured")
+	}
+	if !req.Scope.WorkspaceID.Valid {
+		return nil, fmt.Errorf("%w: workspace_id is required", ErrMemoryConfig)
+	}
+	cfg, err := s.Queries.GetMemoryWorkspaceConfig(ctx, req.Scope.WorkspaceID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrMemoryDisabled
+		}
+		return nil, err
+	}
+	if !cfg.Enabled {
+		return nil, ErrMemoryDisabled
+	}
+	provider := strings.TrimSpace(cfg.PrimaryProvider)
+	if provider == "" {
+		return nil, fmt.Errorf("%w: primary provider is required when enabled", ErrMemoryConfig)
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = defaultMemoryRecallLimit
+	}
+	tokenBudget := req.TokenBudget
+	if tokenBudget <= 0 {
+		tokenBudget = defaultMemoryRecallTokenBudget
+	}
+
+	rows, err := s.Queries.ListMemoryEventsByWorkspace(ctx, db.ListMemoryEventsByWorkspaceParams{
+		WorkspaceID: req.Scope.WorkspaceID,
+		Limit:       maxMemoryRecallEventScan,
+		Offset:      0,
+	})
+	if err != nil {
+		return nil, err
+	}
+	recalledAt := s.now().Format(time.RFC3339)
+	items := make([]protocol.MemoryRecallData, 0, len(rows))
+	for _, row := range rows {
+		item, ok := memoryRecallDataFromEvent(row, provider, recalledAt)
+		if !ok || !memoryEventMatchesScope(row, req.Scope) {
+			continue
+		}
+		items = append(items, item)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i], items[j]
+		if scoreA, scoreB := memoryScopeSpecificity(a.Scope), memoryScopeSpecificity(b.Scope); scoreA != scoreB {
+			return scoreA > scoreB
+		}
+		if a.CapturedAt != b.CapturedAt {
+			return a.CapturedAt > b.CapturedAt
+		}
+		return a.MemoryID < b.MemoryID
+	})
+
+	out := make([]protocol.MemoryRecallData, 0, minInt(len(items), int(limit)))
+	used := 0
+	for _, item := range items {
+		item.Text = truncateApproxTokens(item.Text, maxMemoryRecallTextTokens)
+		cost := approxTokenCount(item.Text) + 24
+		if cost > tokenBudget {
+			item.Text = truncateApproxTokens(item.Text, maxInt(tokenBudget-24, 0))
+			cost = approxTokenCount(item.Text) + 24
+		}
+		if strings.TrimSpace(item.Text) == "" || used+cost > tokenBudget {
+			continue
+		}
+		out = append(out, item)
+		used += cost
+		if len(out) >= int(limit) {
+			break
+		}
 	}
 	return out, nil
 }
@@ -396,4 +591,115 @@ func uuidString(u pgtype.UUID) string {
 		return ""
 	}
 	return util.UUIDToString(u)
+}
+
+type memoryEventContent struct {
+	SourceType string `json:"source_type"`
+	SourceID   string `json:"source_id"`
+	Text       string `json:"text"`
+}
+
+func memoryRecallDataFromEvent(row db.MemoryEvent, provider, recalledAt string) (protocol.MemoryRecallData, bool) {
+	if row.EventType != "retain" || row.Status == "deleted" {
+		return protocol.MemoryRecallData{}, false
+	}
+	var env MemoryEventEnvelope
+	if err := json.Unmarshal(row.Envelope, &env); err != nil {
+		return protocol.MemoryRecallData{}, false
+	}
+	var content memoryEventContent
+	if err := json.Unmarshal(env.Content, &content); err != nil {
+		return protocol.MemoryRecallData{}, false
+	}
+	if !approvedMemorySources[content.SourceType] || strings.TrimSpace(content.Text) == "" || containsMemoryDeniedContent(content.Text) {
+		return protocol.MemoryRecallData{}, false
+	}
+	return protocol.MemoryRecallData{
+		MemoryID: uuidString(row.ID),
+		Provider: provider,
+		Scope: protocol.MemoryRecallScope{
+			WorkspaceID: uuidString(row.WorkspaceID),
+			ProjectID:   uuidString(row.ProjectID),
+			AgentID:     uuidString(row.AgentID),
+			IssueID:     uuidString(row.IssueID),
+			TaskID:      uuidString(row.TaskID),
+		},
+		SourceType: content.SourceType,
+		SourceID:   content.SourceID,
+		Text:       content.Text,
+		CapturedAt: timestamptzString(row.CreatedAt),
+		RecalledAt: recalledAt,
+	}, true
+}
+
+func memoryEventMatchesScope(row db.MemoryEvent, scope MemoryScope) bool {
+	if row.WorkspaceID != scope.WorkspaceID {
+		return false
+	}
+	if row.ProjectID.Valid && (!scope.ProjectID.Valid || row.ProjectID != scope.ProjectID) {
+		return false
+	}
+	if row.AgentID.Valid && (!scope.AgentID.Valid || row.AgentID != scope.AgentID) {
+		return false
+	}
+	if row.IssueID.Valid && (!scope.IssueID.Valid || row.IssueID != scope.IssueID) {
+		return false
+	}
+	if row.TaskID.Valid && (!scope.TaskID.Valid || row.TaskID != scope.TaskID) {
+		return false
+	}
+	return true
+}
+
+func memoryScopeSpecificity(scope protocol.MemoryRecallScope) int {
+	score := 0
+	if scope.ProjectID != "" {
+		score++
+	}
+	if scope.AgentID != "" {
+		score++
+	}
+	if scope.IssueID != "" {
+		score += 2
+	}
+	if scope.TaskID != "" {
+		score++
+	}
+	return score
+}
+
+func approxTokenCount(text string) int {
+	return len(strings.Fields(text))
+}
+
+func truncateApproxTokens(text string, maxTokens int) string {
+	if maxTokens <= 0 {
+		return ""
+	}
+	fields := strings.Fields(text)
+	if len(fields) <= maxTokens {
+		return strings.TrimSpace(text)
+	}
+	return strings.Join(fields[:maxTokens], " ") + " ..."
+}
+
+func timestamptzString(ts pgtype.Timestamptz) string {
+	if !ts.Valid {
+		return ""
+	}
+	return ts.Time.UTC().Format(time.RFC3339)
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

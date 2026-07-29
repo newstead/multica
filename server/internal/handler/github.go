@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -1732,6 +1733,14 @@ func (h *Handler) advanceIssueToDone(ctx context.Context, issue db.Issue, worksp
 	// notifyParentOfChildDone re-checks every guard (prev != done, parent
 	// exists, parent not terminal), so calling it unconditionally is safe.
 	h.notifyParentOfChildDone(ctx, issue, updated)
+
+	h.captureMemoryBestEffort(ctx, service.MemoryCaptureSource{
+		SourceType: service.MemorySourceMergedPRVerdict,
+		SourceID:   updated.ID,
+		Scope:      issueMemoryScope(updated, pgtype.UUID{}),
+		Actor:      service.MemoryActor{Type: "system"},
+		Text:       fmt.Sprintf("Merged PR verdict advanced issue %s to done", updated.Title),
+	})
 
 	prefix := h.getIssuePrefix(ctx, issue.WorkspaceID)
 	resp := issueToResponse(updated, prefix)

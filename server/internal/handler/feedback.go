@@ -12,6 +12,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
 	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -124,6 +125,15 @@ func (h *Handler) CreateFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("feedback submitted", append(logger.RequestAttrs(r), "feedback_id", uuidToString(fb.ID))...)
+	if fb.WorkspaceID.Valid {
+		h.captureMemoryBestEffort(r.Context(), service.MemoryCaptureSource{
+			SourceType: service.MemorySourceExplicitFeedback,
+			SourceID:   fb.ID,
+			Scope:      service.MemoryScope{WorkspaceID: fb.WorkspaceID},
+			Actor:      service.MemoryActor{Type: "member", ID: fb.UserID},
+			Text:       message,
+		})
+	}
 
 	kind := strings.TrimSpace(req.Kind)
 	if kind == "" {

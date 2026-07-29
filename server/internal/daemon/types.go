@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/multica-ai/multica/server/internal/runtimeapps"
+	"github.com/multica-ai/multica/server/pkg/protocol"
 )
 
 // AgentEntry describes a single available agent CLI.
@@ -70,6 +71,7 @@ type Task struct {
 	ThreadName                    string                 `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
 	Agent                         *AgentData             `json:"agent,omitempty"`
 	ConnectedApps                 []ConnectedAppData     `json:"connected_apps,omitempty"` // per-run app capabilities mounted through runtime MCP overlays
+	MemoryRecall                  []protocol.MemoryRecallData `json:"memory_recall,omitempty"`
 	Repos                         []RepoData             `json:"repos,omitempty"`
 	ProjectID                     string                 `json:"project_id,omitempty"`                       // active project for this task, when present
 	ProjectTitle                  string                 `json:"project_title,omitempty"`                    // human-readable project title for context injection
@@ -266,5 +268,6 @@ type TaskResult struct {
 	// the terminal report so the server clears the resume pointer and flags the
 	// continuity gap for the next claim. Not part of the wire result itself.
 	SessionRolloutMissing bool             `json:"-"`
-	Usage                 []TaskUsageEntry `json:"usage,omitempty"` // per-model token usage
+	Usage                 []TaskUsageEntry                 `json:"usage,omitempty"` // per-model token usage
+	MemoryRecall          []protocol.MemoryRecallProvenance `json:"memory_recall,omitempty"`
 }
