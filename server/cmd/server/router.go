@@ -911,6 +911,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// for the same reason as GitHub installations; connect /
 					// disconnect are admin-gated in the group below.
 					r.Get("/vcs/connections", h.ListVCSConnections)
+					// Memory gateway read-only state is member-visible; mutation is admin-gated below.
+					r.Get("/memory/config", h.GetMemoryConfig)
+					r.Get("/memory/recall-samples", h.ListMemoryRecallSamples)
 					// Custom runtime profiles — listing/reading is member-visible
 					// (the Runtime page renders for everyone; create/edit/delete
 					// are admin-gated below).
@@ -949,6 +952,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/vcs/connections", h.ConnectVCS)
 					r.Post("/vcs/connections/{connectionId}/rotate-webhook", h.RotateVCSConnectionWebhook)
 					r.Delete("/vcs/connections/{connectionId}", h.DeleteVCSConnection)
+					// Memory gateway config and server-owned event capture remain admin-gated while the feature is incubating.
+					r.Put("/memory/config", h.UpdateMemoryConfig)
+					r.Post("/memory/events/retain", h.CreateMemoryRetainEvent)
 				})
 
 				// Lark integration. Every endpoint here only requires

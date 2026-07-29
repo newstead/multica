@@ -801,6 +801,72 @@ type Member struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type MemoryEvent struct {
+	ID             pgtype.UUID        `json:"id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	ProjectID      pgtype.UUID        `json:"project_id"`
+	AgentID        pgtype.UUID        `json:"agent_id"`
+	IssueID        pgtype.UUID        `json:"issue_id"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	ActorType      string             `json:"actor_type"`
+	ActorID        pgtype.UUID        `json:"actor_id"`
+	EventType      string             `json:"event_type"`
+	IdempotencyKey string             `json:"idempotency_key"`
+	Envelope       []byte             `json:"envelope"`
+	Status         string             `json:"status"`
+	AttemptCount   int32              `json:"attempt_count"`
+	AvailableAt    pgtype.Timestamptz `json:"available_at"`
+	LastAttemptAt  pgtype.Timestamptz `json:"last_attempt_at"`
+	TerminalAt     pgtype.Timestamptz `json:"terminal_at"`
+	Error          pgtype.Text        `json:"error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MemoryProviderDelivery struct {
+	ID               pgtype.UUID        `json:"id"`
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	MemoryEventID    pgtype.UUID        `json:"memory_event_id"`
+	Provider         string             `json:"provider"`
+	Status           string             `json:"status"`
+	AttemptCount     int32              `json:"attempt_count"`
+	NextAttemptAt    pgtype.Timestamptz `json:"next_attempt_at"`
+	LastAttemptAt    pgtype.Timestamptz `json:"last_attempt_at"`
+	TerminalAt       pgtype.Timestamptz `json:"terminal_at"`
+	ProviderMemoryID pgtype.Text        `json:"provider_memory_id"`
+	Response         []byte             `json:"response"`
+	Error            pgtype.Text        `json:"error"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+type MemoryRecallSample struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+	AgentID     pgtype.UUID        `json:"agent_id"`
+	IssueID     pgtype.UUID        `json:"issue_id"`
+	TaskID      pgtype.UUID        `json:"task_id"`
+	Provider    string             `json:"provider"`
+	Query       string             `json:"query"`
+	Results     []byte             `json:"results"`
+	Provenance  []byte             `json:"provenance"`
+	SampledAt   pgtype.Timestamptz `json:"sampled_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type MemoryWorkspaceConfig struct {
+	WorkspaceID                  pgtype.UUID        `json:"workspace_id"`
+	Enabled                      bool               `json:"enabled"`
+	PrimaryProvider              string             `json:"primary_provider"`
+	ShadowProvider               pgtype.Text        `json:"shadow_provider"`
+	ReadMode                     string             `json:"read_mode"`
+	ProviderSettings             []byte             `json:"provider_settings"`
+	ProviderCredentialsEncrypted []byte             `json:"provider_credentials_encrypted"`
+	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type NotificationPreference struct {
 	ID          pgtype.UUID        `json:"id"`
 	WorkspaceID pgtype.UUID        `json:"workspace_id"`
