@@ -1651,3 +1651,193 @@ func TestDashboardFailureWireContractKeepsEmptyReason(t *testing.T) {
 		})
 	}
 }
+
+func TestDashboardAgentSessionsAndCodeEndpoints(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var runtimeID, agentID string
+	if err := testPool.QueryRow(ctx, `SELECT id FROM agent_runtime WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&runtimeID); err != nil {
+		t.Fatalf("fetch runtime: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID); err != nil {
+		t.Fatalf("fetch agent: %v", err)
+	}
+
+	var projectID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO project (workspace_id, title)
+		VALUES ($1, 'dashboard sessions/code project')
+		RETURNING id
+	`, testWorkspaceID).Scan(&projectID); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectID) })
+
+	var emptyProjectID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO project (workspace_id, title)
+		VALUES ($1, 'dashboard sessions/code empty project')
+		RETURNING id
+	`, testWorkspaceID).Scan(&emptyProjectID); err != nil {
+		t.Fatalf("create empty project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, emptyProjectID) })
+
+	var issueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, creator_id, creator_type, project_id, number)
+		VALUES ($1, 'dashboard sessions/code issue', $2, 'member', $3,
+		        (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1))
+		RETURNING id
+	`, testWorkspaceID, testUserID, projectID).Scan(&issueID); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
+
+	now := time.Now().UTC()
+	completedCreated := now.Add(-60 * time.Minute)
+	completedStarted := completedCreated.Add(5 * time.Minute)
+	completedAt := completedStarted.Add(20 * time.Minute)
+	failedCreated := now.Add(-45 * time.Minute)
+	failedStarted := failedCreated.Add(10 * time.Minute)
+	failedAt := failedStarted.Add(15 * time.Minute)
+
+	var diffTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, created_at, started_at, completed_at, result)
+		VALUES ($1, $2, $3, 'completed', $4, $5, $6,
+		        '{"diff_stats":{"additions":10,"deletions":3,"files_changed":2}}'::jsonb)
+		RETURNING id
+	`, agentID, issueID, runtimeID, completedCreated, completedStarted, completedAt).Scan(&diffTaskID); err != nil {
+		t.Fatalf("insert completed task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, diffTaskID) })
+
+	var failedTaskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, created_at, started_at, completed_at, failure_reason)
+		VALUES ($1, $2, $3, 'failed', $4, $5, $6, 'agent_error')
+		RETURNING id
+	`, agentID, issueID, runtimeID, failedCreated, failedStarted, failedAt).Scan(&failedTaskID); err != nil {
+		t.Fatalf("insert failed task: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, failedTaskID) })
+
+	var prID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO github_pull_request (
+			workspace_id, installation_id, repo_owner, repo_name, pr_number,
+			title, state, html_url, branch, pr_created_at, pr_updated_at,
+			additions, deletions, changed_files
+		)
+		VALUES (
+			$1, 424242, 'newstead', 'multica',
+			(SELECT COALESCE(MAX(pr_number), 0) + 1 FROM github_pull_request WHERE workspace_id = $1),
+			'ROL-54 dashboard test', 'open', 'https://github.com/newstead/multica/pull/424242', 'agent/rol-54-dashboard-test', now(), now(),
+			100, 25, 8
+		)
+		RETURNING id
+	`, testWorkspaceID).Scan(&prID); err != nil {
+		t.Fatalf("insert github pr: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM github_pull_request WHERE id = $1`, prID) })
+
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO issue_pull_request (issue_id, pull_request_id, close_intent, reference_only)
+		VALUES ($1, $2, false, false)
+	`, issueID, prID); err != nil {
+		t.Fatalf("link issue pr: %v", err)
+	}
+
+	// sessions — project-scoped populated period
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardAgentSessions(w, newRequest("GET", "/api/dashboard/agents/sessions?days=1&project_id="+projectID, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("agent sessions: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var rows []DashboardAgentSessionsResponse
+		if err := json.NewDecoder(w.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode agent sessions: %v", err)
+		}
+		var got *DashboardAgentSessionsResponse
+		for i := range rows {
+			if rows[i].AgentID == agentID {
+				got = &rows[i]
+			}
+		}
+		if got == nil {
+			t.Fatalf("agent sessions: expected row for agent %s, got %v", agentID, rows)
+		}
+		if got.TaskCount != 2 || got.CompletedCount != 1 || got.FailedCount != 1 {
+			t.Errorf("agent sessions counts = tasks %d completed %d failed %d, want 2/1/1", got.TaskCount, got.CompletedCount, got.FailedCount)
+		}
+		if got.QueueWaitP50Seconds == 0 || got.QueueWaitP95Seconds == 0 || got.RunDurationP50Seconds == 0 || got.RunDurationP95Seconds == 0 {
+			t.Errorf("agent sessions percentiles should be non-zero: %+v", got)
+		}
+		if len(got.FailureReasons) != 1 || got.FailureReasons[0].FailureReason != "agent_error" || got.FailureReasons[0].Count != 1 {
+			t.Errorf("agent sessions failure reasons = %+v, want agent_error count 1", got.FailureReasons)
+		}
+	}
+
+	// code — project-scoped populated period
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardAgentCode(w, newRequest("GET", "/api/dashboard/agents/code?days=1&project_id="+projectID, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("agent code: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var rows []DashboardAgentCodeResponse
+		if err := json.NewDecoder(w.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode agent code: %v", err)
+		}
+		var got *DashboardAgentCodeResponse
+		for i := range rows {
+			if rows[i].AgentID == agentID {
+				got = &rows[i]
+			}
+		}
+		if got == nil {
+			t.Fatalf("agent code: expected row for agent %s, got %v", agentID, rows)
+		}
+		if got.Additions != 10 || got.Deletions != 3 || got.FilesChanged != 2 || got.TaskCount != 1 {
+			t.Errorf("agent code task stats = %+v, want additions/deletions/files/task_count 10/3/2/1", got)
+		}
+		if got.PRAdditions != 100 || got.PRDeletions != 25 || got.PRChangedFiles != 8 || got.PullRequestCount != 1 {
+			t.Errorf("agent code pr stats = %+v, want pr additions/deletions/files/count 100/25/8/1", got)
+		}
+	}
+
+	// Empty project window returns empty arrays for both endpoints.
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardAgentSessions(w, newRequest("GET", "/api/dashboard/agents/sessions?days=1&project_id="+emptyProjectID, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("empty sessions: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var rows []DashboardAgentSessionsResponse
+		if err := json.NewDecoder(w.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode empty sessions: %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("empty sessions: expected 0 rows, got %v", rows)
+		}
+	}
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardAgentCode(w, newRequest("GET", "/api/dashboard/agents/code?days=1&project_id="+emptyProjectID, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("empty code: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var rows []DashboardAgentCodeResponse
+		if err := json.NewDecoder(w.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode empty code: %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("empty code: expected 0 rows, got %v", rows)
+		}
+	}
+}

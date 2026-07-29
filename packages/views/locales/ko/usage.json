@@ -95,5 +95,81 @@
   },
   "duration": {
     "less_than_minute": "1분 미만"
+  },
+  "tabs": {
+    "overview": "개요",
+    "agents": "에이전트"
+  },
+  "agents": {
+    "subtitle": "에이전트별 효율, 모델 구성, 세션, 코드 변경, 병목을 확인합니다.",
+    "unknown_agent": "알 수 없는 에이전트",
+    "kpi": {
+      "completed_label": "완료 · {{days}}D",
+      "failed_label": "실패 · {{days}}D",
+      "failed_hint": "실패율 {{rate}}",
+      "cost_label": "비용 · {{days}}D",
+      "cache_label": "캐시 적중 · {{days}}D",
+      "cache_hint": "캐시 읽기 {{tokens}}",
+      "tokens_loc_label": "Tokens / LOC · {{days}}D",
+      "loc_label": "변경 LOC · {{days}}D",
+      "loc_hint": "{{additions}} / {{deletions}}"
+    },
+    "tokens": {
+      "title": "토큰 추이",
+      "subtitle": "일별 입력, 출력, 캐시 읽기, 캐시 쓰기 토큰입니다."
+    },
+    "model_mix": {
+      "title": "모델 구성",
+      "subtitle": "토큰 사용량 상위 provider/model입니다.",
+      "other": "기타",
+      "no_data": "이 기간에 모델 사용량이 없습니다.",
+      "unknown_provider": "알 수 없는 provider",
+      "unknown_model": "알 수 없는 모델"
+    },
+    "sessions": {
+      "title": "세션",
+      "subtitle": "에이전트별 대기 시간과 실행 시간 백분위입니다.",
+      "no_data": "이 기간에 완료된 세션이 없습니다."
+    },
+    "failures": {
+      "title": "실패 원인",
+      "subtitle": "가장 빈번한 종료 task 실패입니다.",
+      "no_data": "이 기간에 실패가 없습니다.",
+      "unknown_reason": "알 수 없는 원인"
+    },
+    "code": {
+      "title": "코드 변경",
+      "subtitle": "task 단위 diff 통계와 연결된 PR 스냅샷입니다.",
+      "header_agent": "에이전트",
+      "header_task_diff": "Task +/-",
+      "header_files": "파일",
+      "header_tasks": "Tasks",
+      "header_pr_diff": "PR +/-",
+      "header_pr_files": "PR 파일",
+      "header_prs": "PR",
+      "no_data": "이 기간에 코드 변경이 없습니다."
+    },
+    "bottlenecks": {
+      "title": "병목",
+      "subtitle": "대기, 실행 시간, 실패율, 토큰 효율 문제를 클라이언트에서 표시합니다.",
+      "score": "점수 {{score}}",
+      "no_data": "이 기간에 뚜렷한 병목이 없습니다.",
+      "reason_high_queue": "긴 대기 시간",
+      "reason_long_runtime": "긴 실행 시간",
+      "reason_high_failure": "높은 실패율",
+      "reason_high_tokens_loc": "LOC당 높은 토큰",
+      "tokens_per_loc": "{{tokens}}/LOC"
+    },
+    "empty": {
+      "title": "아직 에이전트 사용량이 없습니다",
+      "body": "이 워크스페이스에서 에이전트가 task를 완료하면 효율 지표가 여기에 표시됩니다."
+    },
+    "chart": {
+      "tokens": "토큰",
+      "queue_p50": "대기 p50",
+      "queue_p95": "대기 p95",
+      "run_p50": "실행 p50",
+      "run_p95": "실행 p95"
+    }
   }
 }

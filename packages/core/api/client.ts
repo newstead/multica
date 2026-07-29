@@ -70,6 +70,8 @@ import type {
   DashboardUsageDaily,
   DashboardUsageByAgent,
   DashboardAgentRunTime,
+  DashboardAgentSessions,
+  DashboardAgentCode,
   DashboardRunTimeDaily,
   DashboardFailureDaily,
   DashboardFailureByAgent,
@@ -194,6 +196,8 @@ import {
   AgentBuilderSessionSchema,
   agentBuilderRuntimeSwitchFallback,
   DashboardAgentRunTimeListSchema,
+  DashboardAgentSessionsListSchema,
+  DashboardAgentCodeListSchema,
   DashboardRunTimeDailyListSchema,
   DashboardFailureDailyListSchema,
   DashboardFailureByAgentListSchema,
@@ -1608,6 +1612,38 @@ export class ApiClient {
       DashboardAgentRunTimeListSchema,
       [],
       { endpoint: "GET /api/dashboard/agent-runtime" },
+    );
+  }
+
+  async getDashboardAgentSessions(
+    params: { days?: number; project_id?: string | null; tz?: string },
+  ): Promise<DashboardAgentSessions[]> {
+    const search = new URLSearchParams();
+    if (params.days) search.set("days", String(params.days));
+    if (params.project_id) search.set("project_id", params.project_id);
+    if (params.tz) search.set("tz", params.tz);
+    const raw = await this.fetch<unknown>(`/api/dashboard/agents/sessions?${search}`);
+    return parseWithFallback<DashboardAgentSessions[]>(
+      raw,
+      DashboardAgentSessionsListSchema,
+      [],
+      { endpoint: "GET /api/dashboard/agents/sessions" },
+    );
+  }
+
+  async getDashboardAgentCode(
+    params: { days?: number; project_id?: string | null; tz?: string },
+  ): Promise<DashboardAgentCode[]> {
+    const search = new URLSearchParams();
+    if (params.days) search.set("days", String(params.days));
+    if (params.project_id) search.set("project_id", params.project_id);
+    if (params.tz) search.set("tz", params.tz);
+    const raw = await this.fetch<unknown>(`/api/dashboard/agents/code?${search}`);
+    return parseWithFallback<DashboardAgentCode[]>(
+      raw,
+      DashboardAgentCodeListSchema,
+      [],
+      { endpoint: "GET /api/dashboard/agents/code" },
     );
   }
 

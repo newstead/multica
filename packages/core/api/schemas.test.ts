@@ -8,6 +8,8 @@ import {
   DashboardAgentRunTimeListSchema,
   DashboardFailureByAgentListSchema,
   DashboardFailureDailyListSchema,
+  DashboardAgentSessionsListSchema,
+  DashboardAgentCodeListSchema,
   DashboardUsageByAgentListSchema,
   DashboardUsageDailyListSchema,
   ChatDraftRestoresResponseSchema,
@@ -615,6 +617,18 @@ describe("dashboard + runtime usage schema drift", () => {
       { model: "claude-opus-4-7", input_tokens: 7 },
     ]);
     expect(parsed[0]?.agent_id).toBe("");
+  });
+
+  it("coerces missing fields on the agent sessions and code dashboard schemas", () => {
+    const sessions = DashboardAgentSessionsListSchema.parse([{ failed_count: 1 }]);
+    expect(sessions[0]?.agent_id).toBe("");
+    expect(sessions[0]?.failure_reasons).toEqual([]);
+    expect(sessions[0]?.queue_wait_p95_seconds).toBe(0);
+
+    const code = DashboardAgentCodeListSchema.parse([{ additions: 12 }]);
+    expect(code[0]?.agent_id).toBe("");
+    expect(code[0]?.deletions).toBe(0);
+    expect(code[0]?.pr_changed_files).toBe(0);
   });
 
   it("coerces missing fields on every runtime usage schema", () => {

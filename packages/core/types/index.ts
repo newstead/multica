@@ -52,6 +52,8 @@ export type {
   DashboardUsageDaily,
   DashboardUsageByAgent,
   DashboardAgentRunTime,
+  DashboardAgentSessions,
+  DashboardAgentCode,
   DashboardRunTimeDaily,
   DashboardFailureDaily,
   DashboardFailureByAgent,

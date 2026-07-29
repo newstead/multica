@@ -21,6 +21,18 @@ export const dashboardKeys = {
     projectId: string | null,
     tz: string,
   ) => [...dashboardKeys.all(wsId), "agent-runtime", days, projectId, tz] as const,
+  agentSessions: (
+    wsId: string,
+    days: number,
+    projectId: string | null,
+    tz: string,
+  ) => [...dashboardKeys.all(wsId), "agent-sessions", days, projectId, tz] as const,
+  agentCode: (
+    wsId: string,
+    days: number,
+    projectId: string | null,
+    tz: string,
+  ) => [...dashboardKeys.all(wsId), "agent-code", days, projectId, tz] as const,
   runTimeDaily: (
     wsId: string,
     days: number,
@@ -122,6 +134,54 @@ export function dashboardAgentRunTimeOptions(
     queryKey,
     queryFn: () =>
       api.getDashboardAgentRunTime({
+        days,
+        project_id: projectId ?? undefined,
+        tz,
+      }),
+    enabled: !!wsId,
+    staleTime: STALE_TIME,
+    placeholderData: (previousData, previousQuery) =>
+      isSameDashboardScope(previousQuery?.queryKey, queryKey)
+        ? keepPreviousData(previousData)
+        : undefined,
+  });
+}
+
+export function dashboardAgentSessionsOptions(
+  wsId: string,
+  days: number,
+  projectId: string | null,
+  tz: string,
+) {
+  const queryKey = dashboardKeys.agentSessions(wsId, days, projectId, tz);
+  return queryOptions({
+    queryKey,
+    queryFn: () =>
+      api.getDashboardAgentSessions({
+        days,
+        project_id: projectId ?? undefined,
+        tz,
+      }),
+    enabled: !!wsId,
+    staleTime: STALE_TIME,
+    placeholderData: (previousData, previousQuery) =>
+      isSameDashboardScope(previousQuery?.queryKey, queryKey)
+        ? keepPreviousData(previousData)
+        : undefined,
+  });
+}
+
+export function dashboardAgentCodeOptions(
+  wsId: string,
+  days: number,
+  projectId: string | null,
+  tz: string,
+) {
+  const queryKey = dashboardKeys.agentCode(wsId, days, projectId, tz);
+  return queryOptions({
+    queryKey,
+    queryFn: () =>
+      api.getDashboardAgentCode({
         days,
         project_id: projectId ?? undefined,
         tz,

@@ -101,6 +101,133 @@ func (q *Queries) GetTaskUsage(ctx context.Context, taskID pgtype.UUID) ([]TaskU
 	return items, nil
 }
 
+const listDashboardAgentCode = `-- name: ListDashboardAgentCode :many
+WITH task_diff_stats AS (
+    SELECT
+        atq.agent_id,
+        COALESCE(SUM(COALESCE((atq.result->'diff_stats'->>'additions')::int, 0)), 0)::bigint AS additions,
+        COALESCE(SUM(COALESCE((atq.result->'diff_stats'->>'deletions')::int, 0)), 0)::bigint AS deletions,
+        COALESCE(SUM(COALESCE(
+            (atq.result->'diff_stats'->>'files_changed')::int,
+            (atq.result->'diff_stats'->>'changed_files')::int,
+            0
+        )), 0)::bigint AS files_changed,
+        COUNT(*)::int AS task_count
+    FROM agent_task_queue atq
+    JOIN agent a ON a.id = atq.agent_id
+    LEFT JOIN issue i ON i.id = atq.issue_id
+    WHERE a.workspace_id = $1
+      AND atq.created_at >= $2::timestamptz
+      AND atq.result ? 'diff_stats'
+      AND ($3::uuid IS NULL OR i.project_id = $3)
+    GROUP BY atq.agent_id
+),
+ranked_pull_requests AS (
+    SELECT
+        atq.agent_id,
+        gpr.id AS pull_request_id,
+        gpr.additions,
+        gpr.deletions,
+        gpr.changed_files,
+        row_number() OVER (
+            PARTITION BY gpr.id
+            ORDER BY atq.created_at ASC, atq.id ASC
+        ) AS rn
+    FROM agent_task_queue atq
+    JOIN agent a ON a.id = atq.agent_id
+    JOIN issue i ON i.id = atq.issue_id
+    JOIN issue_pull_request ipr ON ipr.issue_id = i.id
+    JOIN github_pull_request gpr ON gpr.id = ipr.pull_request_id
+    WHERE a.workspace_id = $1
+      AND gpr.workspace_id = $1
+      AND atq.created_at >= $2::timestamptz
+      AND COALESCE(ipr.reference_only, false) = false
+      AND ($3::uuid IS NULL OR i.project_id = $3)
+),
+pr_stats AS (
+    SELECT
+        agent_id,
+        COALESCE(SUM(additions), 0)::bigint AS pr_additions,
+        COALESCE(SUM(deletions), 0)::bigint AS pr_deletions,
+        COALESCE(SUM(changed_files), 0)::bigint AS pr_changed_files,
+        COUNT(*)::int AS pull_request_count
+    FROM ranked_pull_requests
+    WHERE rn = 1
+    GROUP BY agent_id
+),
+agent_ids AS (
+    SELECT agent_id FROM task_diff_stats
+    UNION
+    SELECT agent_id FROM pr_stats
+)
+SELECT
+    ai.agent_id,
+    COALESCE(tds.additions, 0)::bigint AS additions,
+    COALESCE(tds.deletions, 0)::bigint AS deletions,
+    COALESCE(tds.files_changed, 0)::bigint AS files_changed,
+    COALESCE(tds.task_count, 0)::int AS task_count,
+    COALESCE(ps.pr_additions, 0)::bigint AS pr_additions,
+    COALESCE(ps.pr_deletions, 0)::bigint AS pr_deletions,
+    COALESCE(ps.pr_changed_files, 0)::bigint AS pr_changed_files,
+    COALESCE(ps.pull_request_count, 0)::int AS pull_request_count
+FROM agent_ids ai
+LEFT JOIN task_diff_stats tds ON tds.agent_id = ai.agent_id
+LEFT JOIN pr_stats ps ON ps.agent_id = ai.agent_id
+ORDER BY (COALESCE(tds.additions, 0) + COALESCE(tds.deletions, 0) + COALESCE(ps.pr_additions, 0) + COALESCE(ps.pr_deletions, 0)) DESC,
+         ai.agent_id
+`
+
+type ListDashboardAgentCodeParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Since       pgtype.Timestamptz `json:"since"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+}
+
+type ListDashboardAgentCodeRow struct {
+	AgentID          pgtype.UUID `json:"agent_id"`
+	Additions        int64       `json:"additions"`
+	Deletions        int64       `json:"deletions"`
+	FilesChanged     int64       `json:"files_changed"`
+	TaskCount        int32       `json:"task_count"`
+	PrAdditions      int64       `json:"pr_additions"`
+	PrDeletions      int64       `json:"pr_deletions"`
+	PrChangedFiles   int64       `json:"pr_changed_files"`
+	PullRequestCount int32       `json:"pull_request_count"`
+}
+
+// Per-agent task-level diff stats from agent_task_queue.result->'diff_stats'
+// plus PR-level GitHub stats from non-reference linked pull requests. PRs are
+// attributed once, to the earliest in-window task for the linked issue.
+func (q *Queries) ListDashboardAgentCode(ctx context.Context, arg ListDashboardAgentCodeParams) ([]ListDashboardAgentCodeRow, error) {
+	rows, err := q.db.Query(ctx, listDashboardAgentCode, arg.WorkspaceID, arg.Since, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDashboardAgentCodeRow{}
+	for rows.Next() {
+		var i ListDashboardAgentCodeRow
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.Additions,
+			&i.Deletions,
+			&i.FilesChanged,
+			&i.TaskCount,
+			&i.PrAdditions,
+			&i.PrDeletions,
+			&i.PrChangedFiles,
+			&i.PullRequestCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDashboardAgentRunTime = `-- name: ListDashboardAgentRunTime :many
 SELECT
     atq.agent_id,
@@ -159,6 +286,151 @@ func (q *Queries) ListDashboardAgentRunTime(ctx context.Context, arg ListDashboa
 			&i.TotalSeconds,
 			&i.TaskCount,
 			&i.FailedCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDashboardAgentSessions = `-- name: ListDashboardAgentSessions :many
+WITH terminal_tasks AS (
+    SELECT
+        atq.agent_id,
+        atq.status,
+        atq.failure_reason,
+        CASE
+            WHEN atq.started_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (atq.started_at - atq.created_at))::double precision
+            ELSE NULL
+        END AS queue_wait_seconds,
+        CASE
+            WHEN atq.started_at IS NOT NULL AND atq.completed_at IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (atq.completed_at - atq.started_at))::double precision
+            ELSE NULL
+        END AS run_duration_seconds
+    FROM agent_task_queue atq
+    JOIN agent a ON a.id = atq.agent_id
+    LEFT JOIN issue i ON i.id = atq.issue_id
+    WHERE a.workspace_id = $1
+      AND atq.status IN ('completed', 'failed')
+      AND atq.completed_at IS NOT NULL
+      AND atq.completed_at >= $2::timestamptz
+      AND ($3::uuid IS NULL OR i.project_id = $3)
+),
+agent_rollup AS (
+    SELECT
+        agent_id,
+        COUNT(*)::int AS task_count,
+        COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_count,
+        COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_count,
+        COALESCE(ROUND(
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY queue_wait_seconds)
+            FILTER (WHERE queue_wait_seconds IS NOT NULL)
+        )::bigint, 0)::bigint AS queue_wait_p50_seconds,
+        COALESCE(ROUND(
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY queue_wait_seconds)
+            FILTER (WHERE queue_wait_seconds IS NOT NULL)
+        )::bigint, 0)::bigint AS queue_wait_p95_seconds,
+        COALESCE(ROUND(
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY run_duration_seconds)
+            FILTER (WHERE run_duration_seconds IS NOT NULL)
+        )::bigint, 0)::bigint AS run_duration_p50_seconds,
+        COALESCE(ROUND(
+            percentile_cont(0.95) WITHIN GROUP (ORDER BY run_duration_seconds)
+            FILTER (WHERE run_duration_seconds IS NOT NULL)
+        )::bigint, 0)::bigint AS run_duration_p95_seconds
+    FROM terminal_tasks
+    GROUP BY agent_id
+),
+failure_counts AS (
+    SELECT
+        agent_id,
+        COALESCE(NULLIF(failure_reason, ''), 'unknown') AS failure_reason,
+        COUNT(*)::int AS count
+    FROM terminal_tasks
+    WHERE status = 'failed'
+    GROUP BY agent_id, COALESCE(NULLIF(failure_reason, ''), 'unknown')
+),
+ranked_failure_counts AS (
+    SELECT
+        agent_id,
+        failure_reason,
+        count,
+        row_number() OVER (PARTITION BY agent_id ORDER BY count DESC, failure_reason) AS rn
+    FROM failure_counts
+),
+failure_breakdown AS (
+    SELECT
+        agent_id,
+        jsonb_agg(
+            jsonb_build_object('failure_reason', failure_reason, 'count', count)
+            ORDER BY count DESC, failure_reason
+        ) AS failure_reasons
+    FROM ranked_failure_counts
+    WHERE rn <= 5
+    GROUP BY agent_id
+)
+SELECT
+    ar.agent_id,
+    ar.task_count,
+    ar.completed_count,
+    ar.failed_count,
+    COALESCE(fb.failure_reasons, '[]'::jsonb) AS failure_reasons,
+    ar.queue_wait_p50_seconds,
+    ar.queue_wait_p95_seconds,
+    ar.run_duration_p50_seconds,
+    ar.run_duration_p95_seconds
+FROM agent_rollup ar
+LEFT JOIN failure_breakdown fb ON fb.agent_id = ar.agent_id
+ORDER BY ar.task_count DESC, ar.agent_id
+`
+
+type ListDashboardAgentSessionsParams struct {
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Since       pgtype.Timestamptz `json:"since"`
+	ProjectID   pgtype.UUID        `json:"project_id"`
+}
+
+type ListDashboardAgentSessionsRow struct {
+	AgentID               pgtype.UUID `json:"agent_id"`
+	TaskCount             int32       `json:"task_count"`
+	CompletedCount        int32       `json:"completed_count"`
+	FailedCount           int32       `json:"failed_count"`
+	FailureReasons        []byte      `json:"failure_reasons"`
+	QueueWaitP50Seconds   int64       `json:"queue_wait_p50_seconds"`
+	QueueWaitP95Seconds   int64       `json:"queue_wait_p95_seconds"`
+	RunDurationP50Seconds int64       `json:"run_duration_p50_seconds"`
+	RunDurationP95Seconds int64       `json:"run_duration_p95_seconds"`
+}
+
+// Per-agent terminal task counts, failure reason breakdown, queue wait
+// percentiles, and run duration percentiles for the workspace dashboard.
+// The window is anchored on completed_at, matching the existing runtime
+// dashboard queries.
+func (q *Queries) ListDashboardAgentSessions(ctx context.Context, arg ListDashboardAgentSessionsParams) ([]ListDashboardAgentSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listDashboardAgentSessions, arg.WorkspaceID, arg.Since, arg.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDashboardAgentSessionsRow{}
+	for rows.Next() {
+		var i ListDashboardAgentSessionsRow
+		if err := rows.Scan(
+			&i.AgentID,
+			&i.TaskCount,
+			&i.CompletedCount,
+			&i.FailedCount,
+			&i.FailureReasons,
+			&i.QueueWaitP50Seconds,
+			&i.QueueWaitP95Seconds,
+			&i.RunDurationP50Seconds,
+			&i.RunDurationP95Seconds,
 		); err != nil {
 			return nil, err
 		}

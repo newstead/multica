@@ -95,5 +95,81 @@
   },
   "duration": {
     "less_than_minute": "1分未満"
+  },
+  "tabs": {
+    "overview": "概要",
+    "agents": "エージェント"
+  },
+  "agents": {
+    "subtitle": "エージェント別の効率、モデル構成、セッション、コード変更、ボトルネックを表示します。",
+    "unknown_agent": "不明なエージェント",
+    "kpi": {
+      "completed_label": "完了 · {{days}}D",
+      "failed_label": "失敗 · {{days}}D",
+      "failed_hint": "失敗率 {{rate}}",
+      "cost_label": "コスト · {{days}}D",
+      "cache_label": "キャッシュヒット · {{days}}D",
+      "cache_hint": "キャッシュ読み取り {{tokens}}",
+      "tokens_loc_label": "Tokens / LOC · {{days}}D",
+      "loc_label": "変更 LOC · {{days}}D",
+      "loc_hint": "{{additions}} / {{deletions}}"
+    },
+    "tokens": {
+      "title": "トークン推移",
+      "subtitle": "日別の入力、出力、キャッシュ読み取り、キャッシュ書き込みトークンです。"
+    },
+    "model_mix": {
+      "title": "モデル構成",
+      "subtitle": "トークン量上位の provider/model です。",
+      "other": "その他",
+      "no_data": "この期間のモデル使用量はありません。",
+      "unknown_provider": "不明な provider",
+      "unknown_model": "不明なモデル"
+    },
+    "sessions": {
+      "title": "セッション",
+      "subtitle": "エージェント別の待機時間と実行時間のパーセンタイルです。",
+      "no_data": "この期間に完了したセッションはありません。"
+    },
+    "failures": {
+      "title": "失敗理由",
+      "subtitle": "最も多い終端 task の失敗です。",
+      "no_data": "この期間の失敗はありません。",
+      "unknown_reason": "不明な理由"
+    },
+    "code": {
+      "title": "コード変更",
+      "subtitle": "task 単位の diff 統計とリンク済み PR スナップショットです。",
+      "header_agent": "エージェント",
+      "header_task_diff": "Task +/-",
+      "header_files": "ファイル",
+      "header_tasks": "Tasks",
+      "header_pr_diff": "PR +/-",
+      "header_pr_files": "PR ファイル",
+      "header_prs": "PR",
+      "no_data": "この期間のコード変更はありません。"
+    },
+    "bottlenecks": {
+      "title": "ボトルネック",
+      "subtitle": "待機、実行時間、失敗率、トークン効率の問題をクライアント側で示します。",
+      "score": "スコア {{score}}",
+      "no_data": "この期間に明確なボトルネックはありません。",
+      "reason_high_queue": "待機時間が長い",
+      "reason_long_runtime": "実行時間が長い",
+      "reason_high_failure": "失敗率が高い",
+      "reason_high_tokens_loc": "LOC あたりのトークンが多い",
+      "tokens_per_loc": "{{tokens}}/LOC"
+    },
+    "empty": {
+      "title": "エージェント使用量はまだありません",
+      "body": "このワークスペースでエージェントが task を完了すると、効率指標がここに表示されます。"
+    },
+    "chart": {
+      "tokens": "トークン",
+      "queue_p50": "待機 p50",
+      "queue_p95": "待機 p95",
+      "run_p50": "実行 p50",
+      "run_p95": "実行 p95"
+    }
   }
 }

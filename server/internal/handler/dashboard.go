@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -12,7 +13,7 @@ import (
 // ---------------------------------------------------------------------------
 // Workspace / Project dashboard
 //
-// Six read endpoints power the workspace dashboard:
+// Eight read endpoints power the workspace dashboard:
 //
 //   GET /api/dashboard/usage/daily        per-(date, model) token rows
 //   GET /api/dashboard/usage/by-agent     per-(agent, model) token rows
@@ -20,6 +21,8 @@ import (
 //   GET /api/dashboard/runtime/daily      per-date run-time + task counts
 //   GET /api/dashboard/failures/daily     per-(date, failure_reason) counts
 //   GET /api/dashboard/failures/by-agent  per-(agent, failure_reason) counts
+//   GET /api/dashboard/agents/sessions    per-agent session stats + failure breakdown
+//   GET /api/dashboard/agents/code        per-agent diff stats + PR stats
 //
 // All of them accept ?days=N (defaults to 30, capped at 365) and an optional
 // ?project_id=<uuid> to scope the rollup to a single project. With no
@@ -394,6 +397,75 @@ func (h *Handler) GetDashboardFailuresDaily(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// DashboardAgentFailureReasonResponse is one failed-task reason bucket for an
+// agent. The SQL query returns the top reasons by count.
+type DashboardAgentFailureReasonResponse struct {
+	FailureReason string `json:"failure_reason"`
+	Count         int32  `json:"count"`
+}
+
+// DashboardAgentSessionsResponse is one agent's terminal task/session summary
+// over the selected dashboard window.
+type DashboardAgentSessionsResponse struct {
+	AgentID               string                                `json:"agent_id"`
+	TaskCount             int32                                 `json:"task_count"`
+	CompletedCount        int32                                 `json:"completed_count"`
+	FailedCount           int32                                 `json:"failed_count"`
+	FailureReasons        []DashboardAgentFailureReasonResponse `json:"failure_reasons"`
+	QueueWaitP50Seconds   int64                                 `json:"queue_wait_p50_seconds"`
+	QueueWaitP95Seconds   int64                                 `json:"queue_wait_p95_seconds"`
+	RunDurationP50Seconds int64                                 `json:"run_duration_p50_seconds"`
+	RunDurationP95Seconds int64                                 `json:"run_duration_p95_seconds"`
+}
+
+// GetDashboardAgentSessions returns per-agent terminal task counts, failure
+// reason breakdowns, queue wait percentiles, and run duration percentiles.
+func (h *Handler) GetDashboardAgentSessions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+		return
+	}
+	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	rows, err := h.Queries.ListDashboardAgentSessions(r.Context(), db.ListDashboardAgentSessionsParams{
+		WorkspaceID: parseUUID(workspaceID),
+		Since:       since,
+		ProjectID:   projectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list agent sessions")
+		return
+	}
+
+	resp := make([]DashboardAgentSessionsResponse, len(rows))
+	for i, row := range rows {
+		failureReasons := []DashboardAgentFailureReasonResponse{}
+		if len(row.FailureReasons) > 0 {
+			if err := json.Unmarshal(row.FailureReasons, &failureReasons); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to decode agent sessions")
+				return
+			}
+		}
+		resp[i] = DashboardAgentSessionsResponse{
+			AgentID:               uuidToString(row.AgentID),
+			TaskCount:             row.TaskCount,
+			CompletedCount:        row.CompletedCount,
+			FailedCount:           row.FailedCount,
+			FailureReasons:        failureReasons,
+			QueueWaitP50Seconds:   row.QueueWaitP50Seconds,
+			QueueWaitP95Seconds:   row.QueueWaitP95Seconds,
+			RunDurationP50Seconds: row.RunDurationP50Seconds,
+			RunDurationP95Seconds: row.RunDurationP95Seconds,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // DashboardFailureByAgentResponse is one (agent, failure_reason) bucket of
 // terminal-task counts. FailureReason == "" is the succeeded bucket.
 type DashboardFailureByAgentResponse struct {
@@ -439,6 +511,62 @@ func (h *Handler) GetDashboardFailuresByAgent(w http.ResponseWriter, r *http.Req
 			AgentID:       uuidToString(row.AgentID),
 			FailureReason: row.FailureReason,
 			TaskCount:     row.TaskCount,
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// DashboardAgentCodeResponse is one agent's code-change summary over the
+// selected dashboard window. Task-level stats come from result.diff_stats;
+// PR-level stats come from linked GitHub pull request snapshots.
+type DashboardAgentCodeResponse struct {
+	AgentID          string `json:"agent_id"`
+	Additions        int64  `json:"additions"`
+	Deletions        int64  `json:"deletions"`
+	FilesChanged     int64  `json:"files_changed"`
+	TaskCount        int32  `json:"task_count"`
+	PRAdditions      int64  `json:"pr_additions"`
+	PRDeletions      int64  `json:"pr_deletions"`
+	PRChangedFiles   int64  `json:"pr_changed_files"`
+	PullRequestCount int32  `json:"pull_request_count"`
+}
+
+// GetDashboardAgentCode returns per-agent task diff stats plus linked GitHub PR
+// stats, optionally scoped to a project.
+func (h *Handler) GetDashboardAgentCode(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+		return
+	}
+	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	rows, err := h.Queries.ListDashboardAgentCode(r.Context(), db.ListDashboardAgentCodeParams{
+		WorkspaceID: parseUUID(workspaceID),
+		Since:       since,
+		ProjectID:   projectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list agent code")
+		return
+	}
+
+	resp := make([]DashboardAgentCodeResponse, len(rows))
+	for i, row := range rows {
+		resp[i] = DashboardAgentCodeResponse{
+			AgentID:          uuidToString(row.AgentID),
+			Additions:        row.Additions,
+			Deletions:        row.Deletions,
+			FilesChanged:     row.FilesChanged,
+			TaskCount:        row.TaskCount,
+			PRAdditions:      row.PrAdditions,
+			PRDeletions:      row.PrDeletions,
+			PRChangedFiles:   row.PrChangedFiles,
+			PullRequestCount: row.PullRequestCount,
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)

@@ -95,5 +95,81 @@
   },
   "duration": {
     "less_than_minute": "<1m"
+  },
+  "tabs": {
+    "overview": "Overview",
+    "agents": "Agents"
+  },
+  "agents": {
+    "subtitle": "Agent-level efficiency, model mix, sessions, code changes, and bottlenecks.",
+    "unknown_agent": "Unknown agent",
+    "kpi": {
+      "completed_label": "Completed · {{days}}D",
+      "failed_label": "Failed · {{days}}D",
+      "failed_hint": "{{rate}} failure rate",
+      "cost_label": "Cost · {{days}}D",
+      "cache_label": "Cache hit · {{days}}D",
+      "cache_hint": "{{tokens}} cache reads",
+      "tokens_loc_label": "Tokens / LOC · {{days}}D",
+      "loc_label": "LOC changed · {{days}}D",
+      "loc_hint": "{{additions}} / {{deletions}}"
+    },
+    "tokens": {
+      "title": "Tokens trend",
+      "subtitle": "Input, output, cache read, and cache write tokens by day."
+    },
+    "model_mix": {
+      "title": "Model mix",
+      "subtitle": "Top provider/model pairs by token volume.",
+      "other": "Other",
+      "no_data": "No model usage in this window.",
+      "unknown_provider": "Unknown provider",
+      "unknown_model": "Unknown model"
+    },
+    "sessions": {
+      "title": "Sessions",
+      "subtitle": "Queue wait and run duration percentiles per agent.",
+      "no_data": "No completed sessions in this window."
+    },
+    "failures": {
+      "title": "Failure reasons",
+      "subtitle": "Most frequent terminal task failures.",
+      "no_data": "No failures in this window.",
+      "unknown_reason": "Unknown reason"
+    },
+    "code": {
+      "title": "Code changes",
+      "subtitle": "Task-level diff stats alongside linked PR snapshots.",
+      "header_agent": "Agent",
+      "header_task_diff": "Task +/-",
+      "header_files": "Files",
+      "header_tasks": "Tasks",
+      "header_pr_diff": "PR +/-",
+      "header_pr_files": "PR files",
+      "header_prs": "PRs",
+      "no_data": "No code changes in this window."
+    },
+    "bottlenecks": {
+      "title": "Bottlenecks",
+      "subtitle": "Client-side flags for queue wait, runtime, failure rate, and token efficiency.",
+      "score": "Score {{score}}",
+      "no_data": "No clear bottlenecks in this window.",
+      "reason_high_queue": "High queue wait",
+      "reason_long_runtime": "Long runtime",
+      "reason_high_failure": "High failure rate",
+      "reason_high_tokens_loc": "High tokens per LOC",
+      "tokens_per_loc": "{{tokens}}/LOC"
+    },
+    "empty": {
+      "title": "No agent usage yet",
+      "body": "Once agents complete tasks in this workspace, their efficiency metrics will appear here."
+    },
+    "chart": {
+      "tokens": "Tokens",
+      "queue_p50": "Queue p50",
+      "queue_p95": "Queue p95",
+      "run_p50": "Run p50",
+      "run_p95": "Run p95"
+    }
   }
 }
