@@ -13,14 +13,16 @@ import (
 // ---------------------------------------------------------------------------
 // Workspace / Project dashboard
 //
-// Six read endpoints power the workspace dashboard:
+// Eight read endpoints power the workspace dashboard:
 //
-//   GET /api/dashboard/usage/daily        per-(date, model) token rows
-//   GET /api/dashboard/usage/by-agent     per-(agent, model) token rows
-//   GET /api/dashboard/agent-runtime      per-agent run-time + task counts
-//   GET /api/dashboard/runtime/daily      per-date run-time + task counts
-//   GET /api/dashboard/failures/daily     per-(date, failure_reason) counts
-//   GET /api/dashboard/failures/by-agent  per-(agent, failure_reason) counts
+//   GET /api/dashboard/usage/daily       per-(date, model) token rows
+//   GET /api/dashboard/usage/by-agent    per-(agent, model) token rows
+//   GET /api/dashboard/agent-runtime     per-agent run-time + task counts
+//   GET /api/dashboard/runtime/daily     per-date run-time + task counts
+//   GET /api/dashboard/agents/sessions   per-agent session and failure summaries
+//   GET /api/dashboard/agents/code       per-agent task and PR code-change stats
+//   GET /api/dashboard/failures/daily    per-(date, failure_reason) counts
+//   GET /api/dashboard/failures/by-agent per-(agent, failure_reason) counts
 //
 // All of them accept ?days=N (defaults to 30, capped at 365) and an optional
 // ?project_id=<uuid> to scope the rollup to a single project. With no
@@ -33,7 +35,7 @@ import (
 // Access control: the workspace-wide series (usage/daily, runtime/daily,
 // failures/daily) carry no agent dimension and need workspace membership only —
 // token spend / run time / failure volume are workspace-level operational
-// metrics. The three per-AGENT rollups additionally apply per-agent visibility:
+// metrics. The five per-AGENT rollups additionally apply per-agent visibility:
 // see foldRestrictedAgents.
 // ---------------------------------------------------------------------------
 
@@ -508,10 +510,15 @@ type DashboardAgentSessionsResponse struct {
 // reason breakdowns, queue wait percentiles, and run duration percentiles.
 func (h *Handler) GetDashboardAgentSessions(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
-	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
 		return
 	}
 	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	restricted, ok := h.dashboardRestrictedAgents(w, r, workspaceID, member.Role)
 	if !ok {
 		return
 	}
@@ -549,7 +556,65 @@ func (h *Handler) GetDashboardAgentSessions(w http.ResponseWriter, r *http.Reque
 			RunDurationP95Seconds: row.RunDurationP95Seconds,
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, foldRestrictedAgentSessions(resp, restricted))
+}
+
+func foldRestrictedAgentSessions(
+	rows []DashboardAgentSessionsResponse,
+	restricted map[string]struct{},
+) []DashboardAgentSessionsResponse {
+	return foldRestrictedAgents(
+		rows,
+		restricted,
+		func(row DashboardAgentSessionsResponse) string { return row.AgentID },
+		func(row DashboardAgentSessionsResponse) (DashboardAgentSessionsResponse, struct{}) {
+			row.AgentID = restrictedAgentsRowID
+			return row, struct{}{}
+		},
+		func(dst, src DashboardAgentSessionsResponse) DashboardAgentSessionsResponse {
+			dst.TaskCount += src.TaskCount
+			dst.CompletedCount += src.CompletedCount
+			dst.FailedCount += src.FailedCount
+			dst.FailureReasons = mergeAgentFailureReasons(dst.FailureReasons, src.FailureReasons)
+			dst.QueueWaitP50Seconds = maxInt64(dst.QueueWaitP50Seconds, src.QueueWaitP50Seconds)
+			dst.QueueWaitP95Seconds = maxInt64(dst.QueueWaitP95Seconds, src.QueueWaitP95Seconds)
+			dst.RunDurationP50Seconds = maxInt64(dst.RunDurationP50Seconds, src.RunDurationP50Seconds)
+			dst.RunDurationP95Seconds = maxInt64(dst.RunDurationP95Seconds, src.RunDurationP95Seconds)
+			return dst
+		},
+	)
+}
+
+func mergeAgentFailureReasons(
+	dst, src []DashboardAgentFailureReasonResponse,
+) []DashboardAgentFailureReasonResponse {
+	if len(dst) == 0 {
+		return src
+	}
+	if len(src) == 0 {
+		return dst
+	}
+	merged := append([]DashboardAgentFailureReasonResponse(nil), dst...)
+	positions := make(map[string]int, len(dst)+len(src))
+	for i, reason := range merged {
+		positions[reason.FailureReason] = i
+	}
+	for _, reason := range src {
+		if i, ok := positions[reason.FailureReason]; ok {
+			merged[i].Count += reason.Count
+			continue
+		}
+		positions[reason.FailureReason] = len(merged)
+		merged = append(merged, reason)
+	}
+	return merged
+}
+
+func maxInt64(a, b int64) int64 {
+	if b > a {
+		return b
+	}
+	return a
 }
 
 // DashboardAgentCodeResponse is one agent's code-change summary over the
@@ -571,10 +636,15 @@ type DashboardAgentCodeResponse struct {
 // stats, optionally scoped to a project.
 func (h *Handler) GetDashboardAgentCode(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
-	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
 		return
 	}
 	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	restricted, ok := h.dashboardRestrictedAgents(w, r, workspaceID, member.Role)
 	if !ok {
 		return
 	}
@@ -605,7 +675,33 @@ func (h *Handler) GetDashboardAgentCode(w http.ResponseWriter, r *http.Request) 
 			PullRequestCount: row.PullRequestCount,
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, foldRestrictedAgentCode(resp, restricted))
+}
+
+func foldRestrictedAgentCode(
+	rows []DashboardAgentCodeResponse,
+	restricted map[string]struct{},
+) []DashboardAgentCodeResponse {
+	return foldRestrictedAgents(
+		rows,
+		restricted,
+		func(row DashboardAgentCodeResponse) string { return row.AgentID },
+		func(row DashboardAgentCodeResponse) (DashboardAgentCodeResponse, struct{}) {
+			row.AgentID = restrictedAgentsRowID
+			return row, struct{}{}
+		},
+		func(dst, src DashboardAgentCodeResponse) DashboardAgentCodeResponse {
+			dst.Additions += src.Additions
+			dst.Deletions += src.Deletions
+			dst.FilesChanged += src.FilesChanged
+			dst.TaskCount += src.TaskCount
+			dst.PRAdditions += src.PRAdditions
+			dst.PRDeletions += src.PRDeletions
+			dst.PRChangedFiles += src.PRChangedFiles
+			dst.PullRequestCount += src.PullRequestCount
+			return dst
+		},
+	)
 }
 
 // ---------------------------------------------------------------------------

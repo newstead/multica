@@ -86,10 +86,11 @@ func TestDashboardPerAgentRollupsFoldRestrictedAgents(t *testing.T) {
 	started := time.Now().UTC().Add(-30 * time.Minute)
 	completed := started.Add(10 * time.Minute) // 600s run
 
-	// One completed + one failed run per agent, each with usage, so all three
-	// endpoints have something to fold: tokens/cost, run time, and a failure
-	// reason alongside its succeeded denominator.
-	seedRun := func(agentID, status, failureReason string, tokens int64) {
+	// One completed + one failed run per agent, each with usage, so every
+	// per-agent endpoint has something to fold: tokens/cost, run time, session
+	// counts, code stats, and a failure reason alongside its succeeded
+	// denominator.
+	seedRun := func(agentID, status, failureReason string, tokens int64) string {
 		var taskID string
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO agent_task_queue (
@@ -110,11 +111,29 @@ func TestDashboardPerAgentRollupsFoldRestrictedAgents(t *testing.T) {
 		`, taskID, tokens); err != nil {
 			t.Fatalf("insert task_usage: %v", err)
 		}
+		return taskID
 	}
-	seedRun(privateAgentID, "completed", "", 1000)
+	privateCompletedTaskID := seedRun(privateAgentID, "completed", "", 1000)
 	seedRun(privateAgentID, "failed", "runtime_offline", 200)
-	seedRun(publicAgentID, "completed", "", 300)
+	publicCompletedTaskID := seedRun(publicAgentID, "completed", "", 300)
 	seedRun(publicAgentID, "failed", "timeout", 50)
+	setDiffStats := func(taskID string, additions, deletions, filesChanged int) {
+		if _, err := testPool.Exec(ctx, `
+			UPDATE agent_task_queue
+			SET result = jsonb_build_object(
+				'diff_stats', jsonb_build_object(
+					'additions', $2::int,
+					'deletions', $3::int,
+					'files_changed', $4::int
+				)
+			)
+			WHERE id = $1
+		`, taskID, additions, deletions, filesChanged); err != nil {
+			t.Fatalf("set diff stats: %v", err)
+		}
+	}
+	setDiffStats(privateCompletedTaskID, 10, 2, 3)
+	setDiffStats(publicCompletedTaskID, 4, 1, 2)
 
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
@@ -241,6 +260,101 @@ func TestDashboardPerAgentRollupsFoldRestrictedAgents(t *testing.T) {
 		t.Errorf("agent-runtime: expected exactly 1 restricted bucket row, got %d", restrictedRows)
 	}
 
+	// ---- agents/sessions --------------------------------------------------
+
+	type sessionFailureReason struct {
+		FailureReason string `json:"failure_reason"`
+		Count         int32  `json:"count"`
+	}
+	type sessionRow struct {
+		AgentID        string                 `json:"agent_id"`
+		TaskCount      int32                  `json:"task_count"`
+		CompletedCount int32                  `json:"completed_count"`
+		FailedCount    int32                  `json:"failed_count"`
+		FailureReasons []sessionFailureReason `json:"failure_reasons"`
+	}
+	var ownerSessions, memberSessions []sessionRow
+	const sessionsPath = "/api/dashboard/agents/sessions?days=7"
+	read("agents/sessions", testHandler.GetDashboardAgentSessions, sessionsPath, testUserID, &ownerSessions)
+	read("agents/sessions", testHandler.GetDashboardAgentSessions, sessionsPath, memberID, &memberSessions)
+
+	sessionID := func(r sessionRow) string { return r.AgentID }
+	assertDashboardAgentPresence(t, "agents/sessions (owner)", dashboardAgentIDSet(ownerSessions, sessionID),
+		dashboardAgentPresence{privateAgent: true, publicAgent: true, sentinel: false}, privateAgentID, publicAgentID)
+	assertDashboardAgentPresence(t, "agents/sessions (member)", dashboardAgentIDSet(memberSessions, sessionID),
+		dashboardAgentPresence{privateAgent: false, publicAgent: true, sentinel: true}, privateAgentID, publicAgentID)
+
+	sumSessions := func(rows []sessionRow) (tasks, completed, failed int32, reasons map[string]int32) {
+		reasons = map[string]int32{}
+		for _, r := range rows {
+			tasks += r.TaskCount
+			completed += r.CompletedCount
+			failed += r.FailedCount
+			for _, reason := range r.FailureReasons {
+				reasons[reason.FailureReason] += reason.Count
+			}
+		}
+		return
+	}
+	ownerSessionTasks, ownerSessionCompleted, ownerSessionFailed, ownerSessionReasons := sumSessions(ownerSessions)
+	memberSessionTasks, memberSessionCompleted, memberSessionFailed, memberSessionReasons := sumSessions(memberSessions)
+	if ownerSessionTasks != memberSessionTasks || ownerSessionCompleted != memberSessionCompleted || ownerSessionFailed != memberSessionFailed {
+		t.Errorf("agents/sessions: folding changed counts — owner (%d tasks, %d completed, %d failed), member (%d tasks, %d completed, %d failed)",
+			ownerSessionTasks, ownerSessionCompleted, ownerSessionFailed, memberSessionTasks, memberSessionCompleted, memberSessionFailed)
+	}
+	for reason, count := range ownerSessionReasons {
+		if memberSessionReasons[reason] != count {
+			t.Errorf("agents/sessions: reason %q count changed — owner %d, member %d",
+				reason, count, memberSessionReasons[reason])
+		}
+	}
+
+	// ---- agents/code ------------------------------------------------------
+
+	type codeRow struct {
+		AgentID          string `json:"agent_id"`
+		Additions        int64  `json:"additions"`
+		Deletions        int64  `json:"deletions"`
+		FilesChanged     int64  `json:"files_changed"`
+		TaskCount        int32  `json:"task_count"`
+		PRAdditions      int64  `json:"pr_additions"`
+		PRDeletions      int64  `json:"pr_deletions"`
+		PRChangedFiles   int64  `json:"pr_changed_files"`
+		PullRequestCount int32  `json:"pull_request_count"`
+	}
+	var ownerCode, memberCode []codeRow
+	const codePath = "/api/dashboard/agents/code?days=7"
+	read("agents/code", testHandler.GetDashboardAgentCode, codePath, testUserID, &ownerCode)
+	read("agents/code", testHandler.GetDashboardAgentCode, codePath, memberID, &memberCode)
+
+	codeID := func(r codeRow) string { return r.AgentID }
+	assertDashboardAgentPresence(t, "agents/code (owner)", dashboardAgentIDSet(ownerCode, codeID),
+		dashboardAgentPresence{privateAgent: true, publicAgent: true, sentinel: false}, privateAgentID, publicAgentID)
+	assertDashboardAgentPresence(t, "agents/code (member)", dashboardAgentIDSet(memberCode, codeID),
+		dashboardAgentPresence{privateAgent: false, publicAgent: true, sentinel: true}, privateAgentID, publicAgentID)
+
+	sumCode := func(rows []codeRow) (adds, dels, files int64, tasks int32, prAdds, prDels, prFiles int64, prs int32) {
+		for _, r := range rows {
+			adds += r.Additions
+			dels += r.Deletions
+			files += r.FilesChanged
+			tasks += r.TaskCount
+			prAdds += r.PRAdditions
+			prDels += r.PRDeletions
+			prFiles += r.PRChangedFiles
+			prs += r.PullRequestCount
+		}
+		return
+	}
+	ownerAdds, ownerDels, ownerFiles, ownerCodeTasks, ownerPRAdds, ownerPRDels, ownerPRFiles, ownerPRs := sumCode(ownerCode)
+	memberAdds, memberDels, memberFiles, memberCodeTasks, memberPRAdds, memberPRDels, memberPRFiles, memberPRs := sumCode(memberCode)
+	if ownerAdds != memberAdds || ownerDels != memberDels || ownerFiles != memberFiles || ownerCodeTasks != memberCodeTasks ||
+		ownerPRAdds != memberPRAdds || ownerPRDels != memberPRDels || ownerPRFiles != memberPRFiles || ownerPRs != memberPRs {
+		t.Errorf("agents/code: folding changed totals — owner diff(%d,%d,%d,%d) pr(%d,%d,%d,%d), member diff(%d,%d,%d,%d) pr(%d,%d,%d,%d)",
+			ownerAdds, ownerDels, ownerFiles, ownerCodeTasks, ownerPRAdds, ownerPRDels, ownerPRFiles, ownerPRs,
+			memberAdds, memberDels, memberFiles, memberCodeTasks, memberPRAdds, memberPRDels, memberPRFiles, memberPRs)
+	}
+
 	// ---- failures/by-agent -------------------------------------------------
 
 	type failureRow struct {
@@ -330,11 +444,16 @@ func TestDashboardPerAgentRollupsFoldSystemAgentCarriers(t *testing.T) {
 	}
 
 	type totals struct {
-		tokens int64
-		secs   int64
-		tasks  int32
-		failed int32
-		runs   int32
+		tokens       int64
+		secs         int64
+		tasks        int32
+		failed       int32
+		runs         int32
+		sessionTasks int32
+		codeAdds     int64
+		codeDels     int64
+		codeFiles    int64
+		codeTasks    int32
 	}
 	// Sums the whole response rather than one row: the point is that the
 	// carrier's numbers are still IN there, just not attributable.
@@ -391,6 +510,36 @@ func TestDashboardPerAgentRollupsFoldSystemAgentCarriers(t *testing.T) {
 					out.runs += r.TaskCount
 				}
 			})
+		read("agents/sessions", testHandler.GetDashboardAgentSessions,
+			"/api/dashboard/agents/sessions?days=7", func(b []byte) {
+				var rows []struct {
+					TaskCount int32 `json:"task_count"`
+				}
+				if err := json.Unmarshal(b, &rows); err != nil {
+					t.Fatalf("decode agents/sessions: %v", err)
+				}
+				for _, r := range rows {
+					out.sessionTasks += r.TaskCount
+				}
+			})
+		read("agents/code", testHandler.GetDashboardAgentCode,
+			"/api/dashboard/agents/code?days=7", func(b []byte) {
+				var rows []struct {
+					Additions    int64 `json:"additions"`
+					Deletions    int64 `json:"deletions"`
+					FilesChanged int64 `json:"files_changed"`
+					TaskCount    int32 `json:"task_count"`
+				}
+				if err := json.Unmarshal(b, &rows); err != nil {
+					t.Fatalf("decode agents/code: %v", err)
+				}
+				for _, r := range rows {
+					out.codeAdds += r.Additions
+					out.codeDels += r.Deletions
+					out.codeFiles += r.FilesChanged
+					out.codeTasks += r.TaskCount
+				}
+			})
 		return out, bodies
 	}
 
@@ -431,11 +580,20 @@ func TestDashboardPerAgentRollupsFoldSystemAgentCarriers(t *testing.T) {
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO agent_task_queue (
 				agent_id, issue_id, runtime_id, status, failure_reason,
-				started_at, completed_at, created_at
+				started_at, completed_at, created_at, result
 			)
-			VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, now())
+			VALUES (
+				$1, $2, $3, $4, NULLIF($5, ''), $6, $7, now(),
+				jsonb_build_object(
+					'diff_stats', jsonb_build_object(
+						'additions', ($8 / 10)::int,
+						'deletions', 1,
+						'files_changed', 1
+					)
+				)
+			)
 			RETURNING id
-		`, carrierID, issueID, runtimeID, run.status, run.failureReason, started, completed).Scan(&taskID); err != nil {
+		`, carrierID, issueID, runtimeID, run.status, run.failureReason, started, completed, run.tokens).Scan(&taskID); err != nil {
 			t.Fatalf("insert carrier %s task: %v", run.status, err)
 		}
 		t.Cleanup(func() {
@@ -491,6 +649,21 @@ func TestDashboardPerAgentRollupsFoldSystemAgentCarriers(t *testing.T) {
 		}
 		if got := after.runs - viewer.before.runs; got != 2 {
 			t.Errorf("%s: failures/by-agent run delta = %d, want 2", viewer.label, got)
+		}
+		if got := after.sessionTasks - viewer.before.sessionTasks; got != 2 {
+			t.Errorf("%s: agents/sessions task delta = %d, want 2", viewer.label, got)
+		}
+		if got := after.codeAdds - viewer.before.codeAdds; got != 100 {
+			t.Errorf("%s: agents/code additions delta = %d, want 100", viewer.label, got)
+		}
+		if got := after.codeDels - viewer.before.codeDels; got != 2 {
+			t.Errorf("%s: agents/code deletions delta = %d, want 2", viewer.label, got)
+		}
+		if got := after.codeFiles - viewer.before.codeFiles; got != 2 {
+			t.Errorf("%s: agents/code files delta = %d, want 2", viewer.label, got)
+		}
+		if got := after.codeTasks - viewer.before.codeTasks; got != 2 {
+			t.Errorf("%s: agents/code task delta = %d, want 2", viewer.label, got)
 		}
 	}
 }
