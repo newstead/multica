@@ -14,7 +14,7 @@ import (
 
 const maxLegacyMigrationPrefix = 148
 
-var legacyDuplicateMigrationStems = map[string][]string{
+var knownDuplicateMigrationStems = map[string][]string{
 	"020": {"020_issue_number", "020_task_session"},
 	"026": {"026_comment_reactions", "026_task_messages"},
 	"029": {"029_attachment", "029_daemon_token", "029_drop_daemon_pairing"},
@@ -45,6 +45,8 @@ var legacyDuplicateMigrationStems = map[string][]string{
 	"124": {"124_autopilot_run_planned_at", "124_channel_generalization", "124_task_prepare_lease"},
 	"127": {"127_issue_pull_request_reference_only", "127_task_squad_id", "127_user_composio_connection"},
 	"128": {"128_agent_task_queue_runtime_mcp_overlay", "128_autopilot_collaborator", "128_comment_routing_escalation"},
+	"233": {"233_agent_task_queue_agent_terminal_latest_index", "233_task_usage_reasoning_tokens"},
+	"234": {"234_agent_task_queue_retired_session_id", "234_llm_usage_cost_backfill"},
 }
 
 var migrationPrefixPattern = regexp.MustCompile(`^(\d+)_`)
@@ -77,12 +79,12 @@ func TestMigrationNumericPrefixesStayUniqueAfterLegacySet(t *testing.T) {
 	for prefix, stems := range stemsByPrefix {
 		sort.Strings(stems)
 
-		legacyStems, isLegacyDuplicate := legacyDuplicateMigrationStems[prefix]
-		if isLegacyDuplicate {
-			expected := append([]string(nil), legacyStems...)
+		knownDuplicateStems, isKnownDuplicate := knownDuplicateMigrationStems[prefix]
+		if isKnownDuplicate {
+			expected := append([]string(nil), knownDuplicateStems...)
 			sort.Strings(expected)
 			if !reflect.DeepEqual(stems, expected) {
-				t.Errorf("legacy duplicate migration prefix %s changed: got %v, want %v; do not add to or rename historical duplicate-prefix migrations", prefix, stems, expected)
+				t.Errorf("known duplicate migration prefix %s changed: got %v, want %v; do not add to or rename immutable duplicate-prefix migrations", prefix, stems, expected)
 			}
 			continue
 		}
@@ -159,7 +161,7 @@ func splitMigrationFilename(name string) (stem, direction string, ok bool) {
 }
 
 func isKnownLegacyPrefix(prefix string) bool {
-	if _, ok := legacyDuplicateMigrationStems[prefix]; ok {
+	if _, ok := knownDuplicateMigrationStems[prefix]; ok {
 		return true
 	}
 
