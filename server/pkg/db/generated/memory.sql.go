@@ -129,182 +129,6 @@ func (q *Queries) ClaimDueMemoryProviderDeliveries(ctx context.Context, arg Clai
 	return items, nil
 }
 
-const listMemoryMem0DeliveriesByWorkspace = `-- name: ListMemoryMem0DeliveriesByWorkspace :many
-SELECT
-    d.id,
-    d.workspace_id,
-    d.memory_event_id,
-    e.project_id,
-    e.agent_id,
-    e.issue_id,
-    e.task_id,
-    e.event_type,
-    d.provider,
-    d.status,
-    d.attempt_count,
-    d.delivery_lag_ms,
-    e.created_at AS event_created_at,
-    d.created_at AS delivery_created_at,
-    d.last_attempt_at,
-    d.terminal_at,
-    d.updated_at
-FROM memory_provider_delivery d
-JOIN memory_event e
-  ON e.id = d.memory_event_id
- AND e.workspace_id = d.workspace_id
-WHERE d.workspace_id = $1
-  AND lower(d.provider) = 'mem0'
-  AND ($4::uuid IS NULL OR e.project_id = $4)
-  AND ($5::uuid IS NULL OR e.agent_id = $5)
-  AND ($6::uuid IS NULL OR e.issue_id = $6)
-  AND ($7::uuid IS NULL OR e.task_id = $7)
-ORDER BY COALESCE(d.last_attempt_at, d.updated_at, d.created_at) DESC
-LIMIT $2 OFFSET $3
-`
-
-type ListMemoryMem0DeliveriesByWorkspaceParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Limit       int32       `json:"limit"`
-	Offset      int32       `json:"offset"`
-	ProjectID   pgtype.UUID `json:"project_id"`
-	AgentID     pgtype.UUID `json:"agent_id"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	TaskID      pgtype.UUID `json:"task_id"`
-}
-
-type ListMemoryMem0DeliveriesByWorkspaceRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
-	MemoryEventID     pgtype.UUID        `json:"memory_event_id"`
-	ProjectID         pgtype.UUID        `json:"project_id"`
-	AgentID           pgtype.UUID        `json:"agent_id"`
-	IssueID           pgtype.UUID        `json:"issue_id"`
-	TaskID            pgtype.UUID        `json:"task_id"`
-	EventType         string             `json:"event_type"`
-	Provider          string             `json:"provider"`
-	Status            string             `json:"status"`
-	AttemptCount      int32              `json:"attempt_count"`
-	DeliveryLagMs     int64              `json:"delivery_lag_ms"`
-	EventCreatedAt    pgtype.Timestamptz `json:"event_created_at"`
-	DeliveryCreatedAt pgtype.Timestamptz `json:"delivery_created_at"`
-	LastAttemptAt     pgtype.Timestamptz `json:"last_attempt_at"`
-	TerminalAt        pgtype.Timestamptz `json:"terminal_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) ListMemoryMem0DeliveriesByWorkspace(ctx context.Context, arg ListMemoryMem0DeliveriesByWorkspaceParams) ([]ListMemoryMem0DeliveriesByWorkspaceRow, error) {
-	rows, err := q.db.Query(ctx, listMemoryMem0DeliveriesByWorkspace,
-		arg.WorkspaceID,
-		arg.Limit,
-		arg.Offset,
-		arg.ProjectID,
-		arg.AgentID,
-		arg.IssueID,
-		arg.TaskID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListMemoryMem0DeliveriesByWorkspaceRow{}
-	for rows.Next() {
-		var i ListMemoryMem0DeliveriesByWorkspaceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.MemoryEventID,
-			&i.ProjectID,
-			&i.AgentID,
-			&i.IssueID,
-			&i.TaskID,
-			&i.EventType,
-			&i.Provider,
-			&i.Status,
-			&i.AttemptCount,
-			&i.DeliveryLagMs,
-			&i.EventCreatedAt,
-			&i.DeliveryCreatedAt,
-			&i.LastAttemptAt,
-			&i.TerminalAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listMemoryRecallSamplesByWorkspaceProviderAndScope = `-- name: ListMemoryRecallSamplesByWorkspaceProviderAndScope :many
-SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at, recall_correlation_id, read_mode FROM memory_recall_sample
-WHERE workspace_id = $1
-  AND lower(provider) = lower($2)
-  AND ($5::uuid IS NULL OR project_id = $5)
-  AND ($6::uuid IS NULL OR agent_id = $6)
-  AND ($7::uuid IS NULL OR issue_id = $7)
-  AND ($8::uuid IS NULL OR task_id = $8)
-ORDER BY sampled_at DESC
-LIMIT $3 OFFSET $4
-`
-
-type ListMemoryRecallSamplesByWorkspaceProviderAndScopeParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Provider    string      `json:"provider"`
-	Limit       int32       `json:"limit"`
-	Offset      int32       `json:"offset"`
-	ProjectID   pgtype.UUID `json:"project_id"`
-	AgentID     pgtype.UUID `json:"agent_id"`
-	IssueID     pgtype.UUID `json:"issue_id"`
-	TaskID      pgtype.UUID `json:"task_id"`
-}
-
-func (q *Queries) ListMemoryRecallSamplesByWorkspaceProviderAndScope(ctx context.Context, arg ListMemoryRecallSamplesByWorkspaceProviderAndScopeParams) ([]MemoryRecallSample, error) {
-	rows, err := q.db.Query(ctx, listMemoryRecallSamplesByWorkspaceProviderAndScope,
-		arg.WorkspaceID,
-		arg.Provider,
-		arg.Limit,
-		arg.Offset,
-		arg.ProjectID,
-		arg.AgentID,
-		arg.IssueID,
-		arg.TaskID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []MemoryRecallSample{}
-	for rows.Next() {
-		var i MemoryRecallSample
-		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.ProjectID,
-			&i.AgentID,
-			&i.IssueID,
-			&i.TaskID,
-			&i.Provider,
-			&i.Query,
-			&i.Results,
-			&i.Provenance,
-			&i.SampledAt,
-			&i.CreatedAt,
-			&i.RecallCorrelationID,
-			&i.ReadMode,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const createMemoryRecallSample = `-- name: CreateMemoryRecallSample :one
 INSERT INTO memory_recall_sample (
     workspace_id, project_id, agent_id, issue_id, task_id, provider,
@@ -534,6 +358,115 @@ func (q *Queries) ListMemoryEventsByWorkspace(ctx context.Context, arg ListMemor
 	return items, nil
 }
 
+const listMemoryMem0DeliveriesByWorkspace = `-- name: ListMemoryMem0DeliveriesByWorkspace :many
+SELECT
+    d.id,
+    d.workspace_id,
+    d.memory_event_id,
+    e.project_id,
+    e.agent_id,
+    e.issue_id,
+    e.task_id,
+    e.event_type,
+    d.provider,
+    d.status,
+    d.attempt_count,
+    d.delivery_lag_ms,
+    e.created_at AS event_created_at,
+    d.created_at AS delivery_created_at,
+    d.last_attempt_at,
+    d.terminal_at,
+    d.updated_at
+FROM memory_provider_delivery d
+JOIN memory_event e
+  ON e.id = d.memory_event_id
+ AND e.workspace_id = d.workspace_id
+WHERE d.workspace_id = $1
+  AND lower(d.provider) = 'mem0'
+  AND ($4::uuid IS NULL OR e.project_id = $4::uuid)
+  AND ($5::uuid IS NULL OR e.agent_id = $5::uuid)
+  AND ($6::uuid IS NULL OR e.issue_id = $6::uuid)
+  AND ($7::uuid IS NULL OR e.task_id = $7::uuid)
+ORDER BY COALESCE(d.last_attempt_at, d.updated_at, d.created_at) DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListMemoryMem0DeliveriesByWorkspaceParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	AgentID     pgtype.UUID `json:"agent_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+}
+
+type ListMemoryMem0DeliveriesByWorkspaceRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	MemoryEventID     pgtype.UUID        `json:"memory_event_id"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	AgentID           pgtype.UUID        `json:"agent_id"`
+	IssueID           pgtype.UUID        `json:"issue_id"`
+	TaskID            pgtype.UUID        `json:"task_id"`
+	EventType         string             `json:"event_type"`
+	Provider          string             `json:"provider"`
+	Status            string             `json:"status"`
+	AttemptCount      int32              `json:"attempt_count"`
+	DeliveryLagMs     int64              `json:"delivery_lag_ms"`
+	EventCreatedAt    pgtype.Timestamptz `json:"event_created_at"`
+	DeliveryCreatedAt pgtype.Timestamptz `json:"delivery_created_at"`
+	LastAttemptAt     pgtype.Timestamptz `json:"last_attempt_at"`
+	TerminalAt        pgtype.Timestamptz `json:"terminal_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) ListMemoryMem0DeliveriesByWorkspace(ctx context.Context, arg ListMemoryMem0DeliveriesByWorkspaceParams) ([]ListMemoryMem0DeliveriesByWorkspaceRow, error) {
+	rows, err := q.db.Query(ctx, listMemoryMem0DeliveriesByWorkspace,
+		arg.WorkspaceID,
+		arg.Limit,
+		arg.Offset,
+		arg.ProjectID,
+		arg.AgentID,
+		arg.IssueID,
+		arg.TaskID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMemoryMem0DeliveriesByWorkspaceRow{}
+	for rows.Next() {
+		var i ListMemoryMem0DeliveriesByWorkspaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.MemoryEventID,
+			&i.ProjectID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.TaskID,
+			&i.EventType,
+			&i.Provider,
+			&i.Status,
+			&i.AttemptCount,
+			&i.DeliveryLagMs,
+			&i.EventCreatedAt,
+			&i.DeliveryCreatedAt,
+			&i.LastAttemptAt,
+			&i.TerminalAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMemoryRecallSamplesByWorkspace = `-- name: ListMemoryRecallSamplesByWorkspace :many
 SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at, recall_correlation_id, read_mode FROM memory_recall_sample
 WHERE workspace_id = $1
@@ -549,6 +482,73 @@ type ListMemoryRecallSamplesByWorkspaceParams struct {
 
 func (q *Queries) ListMemoryRecallSamplesByWorkspace(ctx context.Context, arg ListMemoryRecallSamplesByWorkspaceParams) ([]MemoryRecallSample, error) {
 	rows, err := q.db.Query(ctx, listMemoryRecallSamplesByWorkspace, arg.WorkspaceID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MemoryRecallSample{}
+	for rows.Next() {
+		var i MemoryRecallSample
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ProjectID,
+			&i.AgentID,
+			&i.IssueID,
+			&i.TaskID,
+			&i.Provider,
+			&i.Query,
+			&i.Results,
+			&i.Provenance,
+			&i.SampledAt,
+			&i.CreatedAt,
+			&i.RecallCorrelationID,
+			&i.ReadMode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMemoryRecallSamplesByWorkspaceProviderAndScope = `-- name: ListMemoryRecallSamplesByWorkspaceProviderAndScope :many
+SELECT id, workspace_id, project_id, agent_id, issue_id, task_id, provider, query, results, provenance, sampled_at, created_at, recall_correlation_id, read_mode FROM memory_recall_sample
+WHERE workspace_id = $1
+  AND provider = $2
+  AND ($5::uuid IS NULL OR project_id = $5::uuid)
+  AND ($6::uuid IS NULL OR agent_id = $6::uuid)
+  AND ($7::uuid IS NULL OR issue_id = $7::uuid)
+  AND ($8::uuid IS NULL OR task_id = $8::uuid)
+ORDER BY sampled_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListMemoryRecallSamplesByWorkspaceProviderAndScopeParams struct {
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+	Provider    string      `json:"provider"`
+	Limit       int32       `json:"limit"`
+	Offset      int32       `json:"offset"`
+	ProjectID   pgtype.UUID `json:"project_id"`
+	AgentID     pgtype.UUID `json:"agent_id"`
+	IssueID     pgtype.UUID `json:"issue_id"`
+	TaskID      pgtype.UUID `json:"task_id"`
+}
+
+func (q *Queries) ListMemoryRecallSamplesByWorkspaceProviderAndScope(ctx context.Context, arg ListMemoryRecallSamplesByWorkspaceProviderAndScopeParams) ([]MemoryRecallSample, error) {
+	rows, err := q.db.Query(ctx, listMemoryRecallSamplesByWorkspaceProviderAndScope,
+		arg.WorkspaceID,
+		arg.Provider,
+		arg.Limit,
+		arg.Offset,
+		arg.ProjectID,
+		arg.AgentID,
+		arg.IssueID,
+		arg.TaskID,
+	)
 	if err != nil {
 		return nil, err
 	}

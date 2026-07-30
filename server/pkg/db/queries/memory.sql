@@ -154,21 +154,21 @@ JOIN memory_event e
  AND e.workspace_id = d.workspace_id
 WHERE d.workspace_id = $1
   AND lower(d.provider) = 'mem0'
-  AND ($4::uuid IS NULL OR e.project_id = $4)
-  AND ($5::uuid IS NULL OR e.agent_id = $5)
-  AND ($6::uuid IS NULL OR e.issue_id = $6)
-  AND ($7::uuid IS NULL OR e.task_id = $7)
+  AND (@project_id::uuid IS NULL OR e.project_id = @project_id::uuid)
+  AND (@agent_id::uuid IS NULL OR e.agent_id = @agent_id::uuid)
+  AND (@issue_id::uuid IS NULL OR e.issue_id = @issue_id::uuid)
+  AND (@task_id::uuid IS NULL OR e.task_id = @task_id::uuid)
 ORDER BY COALESCE(d.last_attempt_at, d.updated_at, d.created_at) DESC
 LIMIT $2 OFFSET $3;
 
 -- name: ListMemoryRecallSamplesByWorkspaceProviderAndScope :many
 SELECT * FROM memory_recall_sample
 WHERE workspace_id = $1
-  AND lower(provider) = lower($2)
-  AND ($5::uuid IS NULL OR project_id = $5)
-  AND ($6::uuid IS NULL OR agent_id = $6)
-  AND ($7::uuid IS NULL OR issue_id = $7)
-  AND ($8::uuid IS NULL OR task_id = $8)
+  AND provider = $2
+  AND (@project_id::uuid IS NULL OR project_id = @project_id::uuid)
+  AND (@agent_id::uuid IS NULL OR agent_id = @agent_id::uuid)
+  AND (@issue_id::uuid IS NULL OR issue_id = @issue_id::uuid)
+  AND (@task_id::uuid IS NULL OR task_id = @task_id::uuid)
 ORDER BY sampled_at DESC
 LIMIT $3 OFFSET $4;
 
