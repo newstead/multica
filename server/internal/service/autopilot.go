@@ -44,6 +44,8 @@ type AutopilotService struct {
 const DefaultAutopilotTriggerTimezone = "UTC"
 
 const autopilotRecentDuplicateWindow = 60 * time.Second
+const autopilotScheduleOverlapReason = "skipped_overlap"
+const autopilotScheduleActiveIndex = "uq_autopilot_run_schedule_active"
 
 func NewAutopilotService(q *db.Queries, tx TxStarter, bus *events.Bus, taskSvc *TaskService) *AutopilotService {
 	return &AutopilotService{Queries: q, TxStarter: tx, Bus: bus, TaskSvc: taskSvc}
@@ -485,10 +487,24 @@ func (s *AutopilotService) dispatchAutopilot(
 		WebhookDeliveryID: webhookDeliveryID,
 	})
 	if err != nil {
+		if isAutopilotScheduleOverlap(err, source) {
+			run, err := s.recordSkippedRun(ctx, autopilot, triggerID, source, payload, plannedAt, webhookDeliveryID, autopilotScheduleOverlapReason)
+			return run, dispatch.ReasonAlreadyActive, err
+		}
 		return nil, dispatch.ReasonInternalError, fmt.Errorf("create run: %w", err)
 	}
 	s.captureAutopilotRunStarted(autopilot, run, source)
 	return s.dispatchAutopilotRun(ctx, autopilot, triggerID, source, &run, actorUserID)
+}
+
+func isAutopilotScheduleOverlap(err error, source string) bool {
+	if source != "schedule" {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "23505" &&
+		pgErr.ConstraintName == autopilotScheduleActiveIndex
 }
 
 // dispatchAutopilotRun performs the downstream side effect for an already
