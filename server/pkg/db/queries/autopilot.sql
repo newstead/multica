@@ -274,6 +274,18 @@ SELECT * FROM autopilot_run
 WHERE webhook_delivery_id = $1
 LIMIT 1;
 
+-- name: CreateSkippedAutopilotRun :one
+-- Persists an auditable terminal skipped run atomically: callers must never
+-- observe status='skipped' without the stable reason and completed_at stamp.
+INSERT INTO autopilot_run (
+    autopilot_id, trigger_id, source, status, completed_at, failure_reason,
+    trigger_payload, squad_id, planned_at, webhook_delivery_id
+) VALUES (
+    $1, sqlc.narg('trigger_id'), $2, 'skipped', now(), sqlc.narg('failure_reason'),
+    sqlc.narg('trigger_payload'), sqlc.narg('squad_id'), sqlc.narg('planned_at'),
+    sqlc.narg('webhook_delivery_id')
+) RETURNING *;
+
 -- name: RecoverPartialAutopilotRun :exec
 -- Recovers a partial-state autopilot_run from a crashed first attempt
 -- (the runner wrote the run row but died before creating the downstream

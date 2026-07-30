@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/multica-ai/multica/server/internal/service"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
@@ -26,6 +27,27 @@ func TestRunToResponseDoesNotReverseEngineerReasonCode(t *testing.T) {
 	}
 	if resp.FailureReason == nil || *resp.FailureReason == "" {
 		t.Errorf("failure_reason should still be surfaced for history rows")
+	}
+}
+
+func TestRunToResponseSurfacesSkippedOverlapReasonCode(t *testing.T) {
+	run := db.AutopilotRun{
+		Status: "skipped",
+		FailureReason: pgtype.Text{
+			String: service.AutopilotScheduleOverlapReason,
+			Valid:  true,
+		},
+	}
+	resp := runToResponse(run)
+	if resp.ReasonCode == nil || *resp.ReasonCode != service.AutopilotScheduleOverlapReason {
+		got := ""
+		if resp.ReasonCode != nil {
+			got = *resp.ReasonCode
+		}
+		t.Fatalf("reason_code = %q, want %q", got, service.AutopilotScheduleOverlapReason)
+	}
+	if resp.FailureReason == nil || *resp.FailureReason != service.AutopilotScheduleOverlapReason {
+		t.Fatalf("failure_reason should still be surfaced, got %#v", resp.FailureReason)
 	}
 }
 

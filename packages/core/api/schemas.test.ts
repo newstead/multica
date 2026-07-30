@@ -907,6 +907,18 @@ describe("AutopilotRunSchema", () => {
     expect(parsed.reason_code).toBe("invocation_not_allowed");
   });
 
+  it("preserves a scheduled overlap skip reason_code", () => {
+    const parsed = parseWithFallback(
+      { ...baseRun, source: "schedule", status: "skipped", issue_id: null, failure_reason: "skipped_overlap", reason_code: "skipped_overlap" },
+      AutopilotRunSchema,
+      FALLBACK_AUTOPILOT_RUN,
+      ENDPOINT,
+    );
+    expect(parsed.status).toBe("skipped");
+    expect(parsed.failure_reason).toBe("skipped_overlap");
+    expect(parsed.reason_code).toBe("skipped_overlap");
+  });
+
   it("tolerates an older server omitting reason_code", () => {
     const parsed = parseWithFallback(baseRun, AutopilotRunSchema, FALLBACK_AUTOPILOT_RUN, ENDPOINT);
     expect(parsed.status).toBe("issue_created");

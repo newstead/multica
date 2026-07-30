@@ -1,0 +1,2 @@
+-- Data reconciliation is intentionally irreversible. The companion index is
+-- removed by 227_autopilot_schedule_active_overlap_index.down.sql.

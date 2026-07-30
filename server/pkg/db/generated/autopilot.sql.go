@@ -454,6 +454,63 @@ func (q *Queries) CreateAutopilotTrigger(ctx context.Context, arg CreateAutopilo
 	return i, err
 }
 
+const createSkippedAutopilotRun = `-- name: CreateSkippedAutopilotRun :one
+INSERT INTO autopilot_run (
+    autopilot_id, trigger_id, source, status, completed_at, failure_reason,
+    trigger_payload, squad_id, planned_at, webhook_delivery_id
+) VALUES (
+    $1, $3, $2, 'skipped', now(), $4,
+    $5, $6, $7,
+    $8
+) RETURNING id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, squad_id, planned_at, webhook_delivery_id
+`
+
+type CreateSkippedAutopilotRunParams struct {
+	AutopilotID       pgtype.UUID        `json:"autopilot_id"`
+	Source            string             `json:"source"`
+	TriggerID         pgtype.UUID        `json:"trigger_id"`
+	FailureReason     pgtype.Text        `json:"failure_reason"`
+	TriggerPayload    []byte             `json:"trigger_payload"`
+	SquadID           pgtype.UUID        `json:"squad_id"`
+	PlannedAt         pgtype.Timestamptz `json:"planned_at"`
+	WebhookDeliveryID pgtype.UUID        `json:"webhook_delivery_id"`
+}
+
+// Persists an auditable terminal skipped run atomically: callers must never
+// observe status='skipped' without the stable reason and completed_at stamp.
+func (q *Queries) CreateSkippedAutopilotRun(ctx context.Context, arg CreateSkippedAutopilotRunParams) (AutopilotRun, error) {
+	row := q.db.QueryRow(ctx, createSkippedAutopilotRun,
+		arg.AutopilotID,
+		arg.Source,
+		arg.TriggerID,
+		arg.FailureReason,
+		arg.TriggerPayload,
+		arg.SquadID,
+		arg.PlannedAt,
+		arg.WebhookDeliveryID,
+	)
+	var i AutopilotRun
+	err := row.Scan(
+		&i.ID,
+		&i.AutopilotID,
+		&i.TriggerID,
+		&i.Source,
+		&i.Status,
+		&i.IssueID,
+		&i.TaskID,
+		&i.TriggeredAt,
+		&i.CompletedAt,
+		&i.FailureReason,
+		&i.TriggerPayload,
+		&i.Result,
+		&i.CreatedAt,
+		&i.SquadID,
+		&i.PlannedAt,
+		&i.WebhookDeliveryID,
+	)
+	return i, err
+}
+
 const deleteAutopilotCollaborator = `-- name: DeleteAutopilotCollaborator :exec
 DELETE FROM autopilot_collaborator
 WHERE autopilot_id = $1 AND user_type = $2 AND user_id = $3

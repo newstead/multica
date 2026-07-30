@@ -44,6 +44,8 @@ type AutopilotService struct {
 const DefaultAutopilotTriggerTimezone = "UTC"
 
 const autopilotRecentDuplicateWindow = 60 * time.Second
+const AutopilotScheduleOverlapReason = "skipped_overlap"
+const autopilotScheduleActiveIndex = "uq_autopilot_run_schedule_active"
 
 func NewAutopilotService(q *db.Queries, tx TxStarter, bus *events.Bus, taskSvc *TaskService) *AutopilotService {
 	return &AutopilotService{Queries: q, TxStarter: tx, Bus: bus, TaskSvc: taskSvc}
@@ -485,10 +487,24 @@ func (s *AutopilotService) dispatchAutopilot(
 		WebhookDeliveryID: webhookDeliveryID,
 	})
 	if err != nil {
+		if isAutopilotScheduleOverlap(err, source) {
+			run, err := s.recordSkippedRun(ctx, autopilot, triggerID, source, payload, plannedAt, webhookDeliveryID, AutopilotScheduleOverlapReason)
+			return run, dispatch.ReasonAlreadyActive, err
+		}
 		return nil, dispatch.ReasonInternalError, fmt.Errorf("create run: %w", err)
 	}
 	s.captureAutopilotRunStarted(autopilot, run, source)
 	return s.dispatchAutopilotRun(ctx, autopilot, triggerID, source, &run, actorUserID)
+}
+
+func isAutopilotScheduleOverlap(err error, source string) bool {
+	if source != "schedule" {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		pgErr.Code == "23505" &&
+		pgErr.ConstraintName == autopilotScheduleActiveIndex
 }
 
 // dispatchAutopilotRun performs the downstream side effect for an already
@@ -1368,11 +1384,11 @@ func (s *AutopilotService) recordSkippedRun(
 	webhookDeliveryID pgtype.UUID,
 	reason string,
 ) (*db.AutopilotRun, error) {
-	run, err := s.Queries.CreateAutopilotRun(ctx, db.CreateAutopilotRunParams{
+	run, err := s.Queries.CreateSkippedAutopilotRun(ctx, db.CreateSkippedAutopilotRunParams{
 		AutopilotID:       autopilot.ID,
 		TriggerID:         triggerID,
 		Source:            source,
-		Status:            "skipped",
+		FailureReason:     pgtype.Text{String: reason, Valid: true},
 		TriggerPayload:    payload,
 		SquadID:           autopilotSquadAttribution(autopilot),
 		PlannedAt:         plannedAt,
@@ -1380,17 +1396,6 @@ func (s *AutopilotService) recordSkippedRun(
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create skipped run: %w", err)
-	}
-
-	updated, err := s.Queries.UpdateAutopilotRunSkipped(ctx, db.UpdateAutopilotRunSkippedParams{
-		ID:            run.ID,
-		FailureReason: pgtype.Text{String: reason, Valid: true},
-	})
-	if err == nil {
-		run = updated
-	} else {
-		slog.Warn("failed to set skip reason on autopilot run",
-			"run_id", util.UUIDToString(run.ID), "error", err)
 	}
 
 	slog.Info("autopilot dispatch skipped",
