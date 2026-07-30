@@ -309,7 +309,7 @@ func TestMem0ProviderTimeoutRetryUsesIdempotencyPreflight(t *testing.T) {
 				"metadata": request.Metadata,
 			}
 			mu.Unlock()
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(250 * time.Millisecond)
 			writeMem0TestJSON(t, w, map[string]any{"results": []any{map[string]any{"id": "memory-timeout"}}})
 		default:
 			http.NotFound(w, r)
@@ -318,7 +318,7 @@ func TestMem0ProviderTimeoutRetryUsesIdempotencyPreflight(t *testing.T) {
 	defer server.Close()
 
 	provider := newMem0TestProvider(t, server.URL, Mem0ProviderConfig{
-		RequestTimeout: 10 * time.Millisecond,
+		RequestTimeout: 100 * time.Millisecond,
 		MaxAttempts:    2,
 		Sleep:          sleepContext,
 	})
