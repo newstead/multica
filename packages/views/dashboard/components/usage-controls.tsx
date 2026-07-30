@@ -60,7 +60,7 @@ export function Segmented<T extends string | number>({
 }) {
   return (
     <div
-      role="group"
+      role={label ? "group" : undefined}
       aria-label={label}
       className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5"
     >
