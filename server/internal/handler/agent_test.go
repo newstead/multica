@@ -803,15 +803,22 @@ func TestCreateAgent_IdentityMetadataNormalizesAndAudits(t *testing.T) {
 		t.Fatalf("language_codes = %v, want [GO PY]", resp.LanguageCodes)
 	}
 
-	var details string
+	var detailsRaw []byte
 	if err := testPool.QueryRow(context.Background(), `
-		SELECT details::text FROM activity_log
+		SELECT details FROM activity_log
 		WHERE workspace_id = $1 AND action = 'agent_identity_updated' AND details->>'agent_id' = $2
-	`, testWorkspaceID, resp.ID).Scan(&details); err != nil {
+	`, testWorkspaceID, resp.ID).Scan(&detailsRaw); err != nil {
 		t.Fatalf("expected agent_identity_updated activity row: %v", err)
 	}
-	if !strings.Contains(details, `"role_code":"BE"`) || !strings.Contains(details, `"language_codes":["GO","PY"]`) {
-		t.Fatalf("identity audit details missing normalized codes: %s", details)
+	var details struct {
+		RoleCode      string   `json:"role_code"`
+		LanguageCodes []string `json:"language_codes"`
+	}
+	if err := json.Unmarshal(detailsRaw, &details); err != nil {
+		t.Fatalf("decode identity audit details: %v", err)
+	}
+	if details.RoleCode != "BE" || !reflect.DeepEqual(details.LanguageCodes, []string{"GO", "PY"}) {
+		t.Fatalf("identity audit details = %+v, want role_code BE and language_codes [GO PY]", details)
 	}
 }
 
@@ -847,6 +854,37 @@ func TestCreateAgent_IdentityMetadataRejectsUnknownCodes(t *testing.T) {
 				t.Fatalf("error body %q missing %q", w.Body.String(), tc.want)
 			}
 		})
+	}
+}
+
+func installAgentIdentityAuditFailure(t *testing.T, agentID string) {
+	t.Helper()
+	ctx := context.Background()
+	functionName := "agent_identity_audit_fail_fn_" + randomID()
+	triggerName := "agent_identity_audit_fail_" + randomID()
+	t.Cleanup(func() {
+		testPool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER IF EXISTS %s ON activity_log`, triggerName))
+		testPool.Exec(ctx, fmt.Sprintf(`DROP FUNCTION IF EXISTS %s()`, functionName))
+	})
+
+	if _, err := testPool.Exec(ctx, fmt.Sprintf(`
+CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+	IF NEW.action = 'agent_identity_updated' AND NEW.details->>'agent_id' = '%s' THEN
+		RAISE EXCEPTION 'forced agent identity audit failure';
+	END IF;
+	RETURN NEW;
+END;
+$$;
+`, functionName, agentID)); err != nil {
+		t.Fatalf("install agent identity audit failure function: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, fmt.Sprintf(`
+CREATE TRIGGER %s
+BEFORE INSERT ON activity_log
+FOR EACH ROW EXECUTE FUNCTION %s();
+`, triggerName, functionName)); err != nil {
+		t.Fatalf("install agent identity audit failure trigger: %v", err)
 	}
 }
 
@@ -911,6 +949,60 @@ func TestUpdateAgent_IdentityMetadataTriState(t *testing.T) {
 	}
 	if count < 2 {
 		t.Fatalf("identity audit row count = %d, want at least 2", count)
+	}
+}
+
+func TestUpdateAgent_IdentityAuditFailureRollsBack(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	agentID := createHandlerTestAgent(t, "identity-update-audit-rollback", nil)
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM activity_log WHERE details->>'agent_id' = $1`, agentID)
+	})
+	if _, err := testPool.Exec(ctx, `
+		UPDATE agent SET role_code = 'BE', language_codes = ARRAY['GO']::TEXT[] WHERE id = $1
+	`, agentID); err != nil {
+		t.Fatalf("seed identity metadata: %v", err)
+	}
+	installAgentIdentityAuditFailure(t, agentID)
+
+	req := newRequest(http.MethodPut, "/api/agents/"+agentID, map[string]any{
+		"role_code":      "qa",
+		"language_codes": []string{"ts"},
+	})
+	req = withURLParam(req, "id", agentID)
+	w := httptest.NewRecorder()
+	testHandler.UpdateAgent(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("UpdateAgent: expected 500, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "rolled back") {
+		t.Fatalf("UpdateAgent body missing rollback explanation: %s", w.Body.String())
+	}
+
+	var roleCode string
+	var languageCodes []string
+	if err := testPool.QueryRow(ctx, `
+		SELECT role_code, language_codes FROM agent WHERE id = $1
+	`, agentID).Scan(&roleCode, &languageCodes); err != nil {
+		t.Fatalf("load agent identity after audit failure: %v", err)
+	}
+	if roleCode != "BE" || !reflect.DeepEqual(languageCodes, []string{"GO"}) {
+		t.Fatalf("identity after audit failure = role %q languages %v, want BE/[GO]", roleCode, languageCodes)
+	}
+
+	var count int
+	if err := testPool.QueryRow(ctx, `
+		SELECT count(*) FROM activity_log
+		WHERE workspace_id = $1 AND action = 'agent_identity_updated' AND details->>'agent_id' = $2
+	`, testWorkspaceID, agentID).Scan(&count); err != nil {
+		t.Fatalf("count identity audit rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("identity audit row count after rollback = %d, want 0", count)
 	}
 }
 
