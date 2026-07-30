@@ -636,7 +636,7 @@ export function AgentTranscriptDialog({
                 foreground entity — avatar + medium weight. */}
             <div className="flex min-w-0 items-center gap-2">
               {task.agent_id ? (
-                <ActorAvatar actorType="agent" actorId={task.agent_id} size="sm" enableHoverCard identityBadge={{ variant: "corner-tag", hostMode: "owned" }} />
+                <ActorAvatar actorType="agent" actorId={task.agent_id} size="sm" enableHoverCard identityBadge={{ variant: "inline-row", hostMode: "owned" }} />
               ) : (
                 <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
                   <Bot className="h-3 w-3" />

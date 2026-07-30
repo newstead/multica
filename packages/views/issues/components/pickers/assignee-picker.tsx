@@ -161,7 +161,7 @@ function AssigneePickerImpl({
       trigger={
         customTrigger ? customTrigger : assigneeType && assigneeId ? (
           <>
-            <ActorAvatar actorType={assigneeType} actorId={assigneeId} size="sm" enableHoverCard showStatusDot identityBadge={{ variant: "corner-tag", hostMode: "owned" }} />
+            <ActorAvatar actorType={assigneeType} actorId={assigneeId} size="sm" enableHoverCard showStatusDot identityBadge={{ variant: "inline-row", hostMode: "owned" }} />
             <span className="truncate">{triggerLabel}</span>
           </>
         ) : (
@@ -234,7 +234,7 @@ function AssigneePickerImpl({
                   setOpen(false);
                 }}
               >
-                <ActorAvatar actorType="agent" actorId={a.id} size="sm" showStatusDot identityBadge={{ variant: "corner-tag", hostMode: "owned" }} />
+                <ActorAvatar actorType="agent" actorId={a.id} size="sm" showStatusDot identityBadge={{ variant: "inline-row", hostMode: "owned" }} />
                 <span className={`truncate ${allowed ? "" : "text-muted-foreground"}`}>{a.name}</span>
                 {a.visibility === "private" && (
                   <Lock className="ml-auto h-3 w-3 text-muted-foreground" />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
 import { AVATAR_SIZE_PX, type AvatarSize } from "@multica/ui/lib/avatar-size";
@@ -123,7 +123,7 @@ const ROLE_CLASS: Record<KnownRoleCode, string> = {
 function normalizeIdentityCode(value: string | null | undefined) {
   const normalized = value?.trim().toUpperCase();
   if (!normalized) return null;
-  return normalized.replace(/\s+/g, "").slice(0, 6);
+  return normalized.replace(/\s+/g, "");
 }
 
 function normalizeLanguageCodes(values: readonly string[] | null | undefined) {
@@ -152,14 +152,17 @@ export function buildAgentIdentityBadgeModel(
   const languageText =
     languageCodes.length > 1
       ? `+${languageCodes.length}`
-      : languageCodes[0] ?? null;
+      : languageCodes[0]
+        ? displayIdentityCode(languageCodes[0], "language")
+        : null;
   const showLanguage = Boolean(
     languageText && !(variant === "corner-tag" && size === "sm"),
   );
+  const roleText = roleCode ? displayIdentityCode(roleCode, "role") : null;
   const text = roleCode
     ? showLanguage
-      ? `${roleCode}\u00b7${languageText}`
-      : roleCode
+      ? `${roleText}\u00b7${languageText}`
+      : roleText
     : languageText;
 
   return text
@@ -371,6 +374,50 @@ function AgentIdentityAvatarFrame({
   hostMode: AgentIdentityBadgeHostMode;
   children: React.ReactNode;
 }) {
+  const frameRef = useRef<HTMLSpanElement>(null);
+  const ownerDescriptionId = useId();
+  const [ownerElement, setOwnerElement] = useState<HTMLElement | null>(null);
+  const [ownerTooltipOpen, setOwnerTooltipOpen] = useState(false);
+
+  useEffect(() => {
+    if (hostMode !== "owned") return;
+    const frame = frameRef.current;
+    if (!frame) return;
+
+    const owner = frame.parentElement?.closest(
+      FOCUSABLE_ANCESTOR_SELECTOR,
+    ) as HTMLElement | null;
+    if (!owner) return;
+
+    const previousAriaLabel = owner.getAttribute("aria-label");
+    const previousAriaDescribedBy = owner.getAttribute("aria-describedby");
+    const baseLabel = previousAriaLabel ?? getOwnerTextWithoutIdentityFrame(owner);
+    owner.setAttribute("aria-label", appendIdentityLabel(baseLabel, label));
+    owner.setAttribute(
+      "aria-describedby",
+      mergeIdRefs(previousAriaDescribedBy, ownerDescriptionId),
+    );
+
+    const open = () => setOwnerTooltipOpen(true);
+    const close = () => setOwnerTooltipOpen(false);
+    owner.addEventListener("focusin", open);
+    owner.addEventListener("focusout", close);
+    owner.addEventListener("mouseenter", open);
+    owner.addEventListener("mouseleave", close);
+    setOwnerElement(owner);
+
+    return () => {
+      owner.removeEventListener("focusin", open);
+      owner.removeEventListener("focusout", close);
+      owner.removeEventListener("mouseenter", open);
+      owner.removeEventListener("mouseleave", close);
+      restoreAttribute(owner, "aria-label", previousAriaLabel);
+      restoreAttribute(owner, "aria-describedby", previousAriaDescribedBy);
+      setOwnerElement(null);
+      setOwnerTooltipOpen(false);
+    };
+  }, [hostMode, label, ownerDescriptionId]);
+
   const badgeElement = (
     <span
       data-testid="agent-identity-badge"
@@ -387,7 +434,6 @@ function AgentIdentityAvatarFrame({
         variant === "inline-row" &&
           "ml-1 inline-flex h-4 max-w-20 items-center rounded px-1 text-[10px] leading-none",
       )}
-      title={hostMode === "owned" ? label : undefined}
     >
       {badge.text}
     </span>
@@ -395,13 +441,19 @@ function AgentIdentityAvatarFrame({
 
   return (
     <span
+      ref={frameRef}
+      data-agent-identity-frame=""
       className={cn(
         "relative inline-flex shrink-0 items-center",
         variant === "chip-below" && "mb-3",
       )}
-      title={hostMode === "owned" ? label : undefined}
     >
       {children}
+      {hostMode === "owned" && (
+        <span id={ownerDescriptionId} className="sr-only">
+          {label}
+        </span>
+      )}
       {hostMode === "standalone" ? (
         <Tooltip>
           <TooltipTrigger
@@ -415,10 +467,56 @@ function AgentIdentityAvatarFrame({
           <TooltipContent>{label}</TooltipContent>
         </Tooltip>
       ) : (
-        badgeElement
+        <>
+          {badgeElement}
+          {ownerElement && ownerTooltipOpen ? (
+            <Tooltip open={ownerTooltipOpen} onOpenChange={setOwnerTooltipOpen}>
+              <TooltipContent anchor={ownerElement}>{label}</TooltipContent>
+            </Tooltip>
+          ) : null}
+        </>
       )}
     </span>
   );
+}
+
+function displayIdentityCode(code: string, kind: "role" | "language") {
+  const known = kind === "role"
+    ? isKnownRoleCode(code)
+    : isKnownLanguageCode(code);
+  return known ? code : code.slice(0, 4);
+}
+
+function getOwnerTextWithoutIdentityFrame(owner: HTMLElement) {
+  const clone = owner.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll("[data-agent-identity-frame]").forEach((element) => {
+    element.remove();
+  });
+  return clone.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function appendIdentityLabel(baseLabel: string, identityLabel: string) {
+  if (!baseLabel) return identityLabel;
+  if (baseLabel.includes(identityLabel)) return baseLabel;
+  return `${baseLabel}: ${identityLabel}`;
+}
+
+function mergeIdRefs(existing: string | null, next: string) {
+  const ids = new Set((existing ?? "").split(/\s+/).filter(Boolean));
+  ids.add(next);
+  return Array.from(ids).join(" ");
+}
+
+function restoreAttribute(
+  element: HTMLElement,
+  name: "aria-label" | "aria-describedby",
+  value: string | null,
+) {
+  if (value === null) {
+    element.removeAttribute(name);
+    return;
+  }
+  element.setAttribute(name, value);
 }
 
 function isKnownRoleCode(code: string): code is KnownRoleCode {

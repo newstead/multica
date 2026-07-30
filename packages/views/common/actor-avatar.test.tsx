@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ActorAvatar, buildAgentIdentityBadgeModel } from "./actor-avatar";
 
@@ -40,7 +40,7 @@ vi.mock("@multica/ui/components/ui/tooltip", () => ({
   TooltipTrigger: ({ children, ...props }: React.HTMLAttributes<HTMLSpanElement>) => (
     <span {...props}>{children}</span>
   ),
-  TooltipContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TooltipContent: ({ children }: { children: React.ReactNode }) => <div data-testid="tooltip-content">{children}</div>,
 }));
 vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({
@@ -129,19 +129,23 @@ describe("buildAgentIdentityBadgeModel", () => {
     expect(buildAgentIdentityBadgeModel(identity, "sm", "corner-tag")?.text).toBe("BE");
   });
 
-  it("bounds unknown values and renders polyglot counts deterministically", () => {
+  it("bounds unknown display text without truncating the stored identity", () => {
     expect(
       buildAgentIdentityBadgeModel(
         { roleCode: "specialist", languageCodes: ["go", "py", "ts", "go"] },
         "lg",
         "corner-tag",
       ),
-    ).toMatchObject({ text: "SPECIA\u00b7+3", roleCode: "SPECIA", languageCodes: ["GO", "PY", "TS"] });
+    ).toMatchObject({
+      text: "SPEC\u00b7+3",
+      roleCode: "SPECIALIST",
+      languageCodes: ["GO", "PY", "TS"],
+    });
   });
 });
 
 describe("ActorAvatar agent identity badge", () => {
-  it("renders an owned badge with localized title and combined accessible avatar name", () => {
+  it("renders an owned badge with a combined accessible avatar name", () => {
     actorState.identity = { roleCode: "BE", languageCodes: ["GO"] };
     actorState.avatarUrl = "emoji:🤖";
 
@@ -156,10 +160,7 @@ describe("ActorAvatar agent identity badge", () => {
     );
 
     expect(screen.getByTestId("agent-identity-badge")).toHaveTextContent("BE\u00b7GO");
-    expect(screen.getByTestId("agent-identity-badge")).toHaveAttribute(
-      "title",
-      "Backend Engineer \u00b7 Go",
-    );
+    expect(screen.getByTestId("agent-identity-badge")).not.toHaveAttribute("title");
     expect(screen.getByRole("img", { name: "Niko: Backend Engineer \u00b7 Go" })).toBeTruthy();
     expect(screen.getByTestId("base-avatar")).toHaveAttribute("data-avatar-url", "");
   });
@@ -195,5 +196,54 @@ describe("ActorAvatar agent identity badge", () => {
     );
 
     expect(screen.getByLabelText("Status: Online").className).toContain("top-0");
+  });
+
+  it("renders the approved inline text-track variant", () => {
+    actorState.identity = { roleCode: "QA", languageCodes: ["PY"] };
+
+    render(
+      <ActorAvatar
+        actorType="agent"
+        actorId="agent-1"
+        size="sm"
+        profileLink={false}
+        identityBadge={{ variant: "inline-row", hostMode: "owned" }}
+      />,
+    );
+
+    const badge = screen.getByTestId("agent-identity-badge");
+    expect(badge).toHaveTextContent("QA\u00b7PY");
+    expect(badge.className).toContain("inline-flex");
+    expect(badge.className).toContain("h-4");
+  });
+
+  it("publishes owned labels and tooltip behavior to the keyboard owner", () => {
+    actorState.identity = { roleCode: "specialist", languageCodes: ["typescript"] };
+
+    render(
+      <button type="button" aria-label="Open task">
+        <ActorAvatar
+          actorType="agent"
+          actorId="agent-1"
+          size="sm"
+          profileLink={false}
+          identityBadge={{ variant: "inline-row", hostMode: "owned" }}
+        />
+        Open task
+      </button>,
+    );
+
+    const button = screen.getByRole("button", {
+      name: "Open task: SPECIALIST \u00b7 TYPESCRIPT",
+    });
+    expect(button).toHaveAttribute("aria-describedby");
+    expect(screen.getByTestId("agent-identity-badge")).toHaveTextContent("SPEC\u00b7TYPE");
+    expect(screen.queryByTestId("tooltip-content")).toBeNull();
+
+    fireEvent.focus(button);
+
+    expect(screen.getByTestId("tooltip-content")).toHaveTextContent(
+      "SPECIALIST \u00b7 TYPESCRIPT",
+    );
   });
 });
