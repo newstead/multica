@@ -144,9 +144,6 @@ export type {
   GitHubConnectResponse,
 } from "./github";
 export type {
-  MemoryConfig,
-  MemoryRecallSample,
-  MemoryRecallSamplesResponse,
   MemoryAuditDelivery,
   MemoryAuditEvent,
   MemoryAuditListResponse,
