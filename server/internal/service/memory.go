@@ -35,6 +35,10 @@ type MemoryProvider interface {
 	Health(ctx context.Context) (MemoryProviderHealth, error)
 }
 
+type MemoryHistoryProvider interface {
+	History(ctx context.Context, scope MemoryScope, memoryID string) (json.RawMessage, error)
+}
+
 type MemoryProviderHealth struct {
 	Provider string         `json:"provider"`
 	OK       bool           `json:"ok"`
@@ -1074,9 +1078,50 @@ func callMemoryProvider(ctx context.Context, provider MemoryProvider, eventType 
 		return provider.Invalidate(ctx, envelope)
 	case "delete":
 		return provider.Delete(ctx, envelope)
+	case "history":
+		historyProvider, ok := provider.(MemoryHistoryProvider)
+		if !ok {
+			return MemoryProviderResult{}, fmt.Errorf("%w: provider %q does not support history", ErrMemoryConfig, provider.Name())
+		}
+		scope, err := memoryScopeFromEnvelope(envelope.Scope)
+		if err != nil {
+			return MemoryProviderResult{}, err
+		}
+		memoryID, err := memoryProviderMemoryID(envelope)
+		if err != nil {
+			return MemoryProviderResult{}, err
+		}
+		raw, err := historyProvider.History(ctx, scope, memoryID)
+		if err != nil {
+			return MemoryProviderResult{}, err
+		}
+		return MemoryProviderResult{ProviderMemoryID: memoryID, Response: raw}, nil
 	default:
 		return MemoryProviderResult{}, fmt.Errorf("%w: unsupported event_type", ErrMemoryConfig)
 	}
+}
+
+func memoryProviderMemoryID(event MemoryEventEnvelope) (string, error) {
+	var content struct {
+		MemoryID         string `json:"memory_id"`
+		ProviderMemoryID string `json:"provider_memory_id"`
+	}
+	if len(event.Content) > 0 {
+		if err := json.Unmarshal(event.Content, &content); err != nil {
+			return "", fmt.Errorf("%w: history content must be an object", ErrMemoryConfig)
+		}
+	}
+	memoryID := strings.TrimSpace(content.MemoryID)
+	if memoryID == "" {
+		memoryID = strings.TrimSpace(content.ProviderMemoryID)
+	}
+	if memoryID == "" {
+		memoryID = stringValue(event.Metadata["provider_memory_id"])
+	}
+	if memoryID == "" {
+		return "", fmt.Errorf("%w: provider memory ID is required", ErrMemoryConfig)
+	}
+	return memoryID, nil
 }
 
 func deliveryProviders(cfg db.MemoryWorkspaceConfig) []string {
@@ -1097,7 +1142,7 @@ func normalizeMemoryEventType(v string) (string, error) {
 	switch strings.TrimSpace(v) {
 	case "", "retain":
 		return "retain", nil
-	case "update", "invalidate", "delete":
+	case "update", "invalidate", "delete", "history":
 		return strings.TrimSpace(v), nil
 	default:
 		return "", fmt.Errorf("%w: unsupported event_type", ErrMemoryConfig)

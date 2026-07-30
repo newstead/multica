@@ -94,6 +94,46 @@ describe("mem0 board data", () => {
     expect(summary.auditRows.find((row) => row.id === "delete-error")?.status).toBe("error");
   });
 
+  it("does not count pending, skipped, or unknown delivery statuses as ok outcomes", () => {
+    const summary = buildMem0BoardSummary(config, board({
+      deliveries: [
+        delivery({ id: "queued-add", event_type: "retain", status: "queued" }),
+        delivery({ id: "delivering-update", event_type: "update", status: "delivering" }),
+        delivery({ id: "skipped-delete", event_type: "delete", status: "skipped" }),
+        delivery({ id: "unknown-write", event_type: "retain", status: "provider_paused" }),
+        delivery({ id: "retry-add", event_type: "retain", status: "retry" }),
+      ],
+    }));
+
+    expect(summary.outcomes).toEqual([{ operation: "add", ok: 0, error: 1 }]);
+    expect(summary.auditRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "queued-add", status: "unknown" }),
+        expect.objectContaining({ id: "delivering-update", status: "unknown" }),
+        expect.objectContaining({ id: "skipped-delete", status: "unknown" }),
+        expect.objectContaining({ id: "unknown-write", status: "unknown" }),
+        expect.objectContaining({ id: "retry-add", status: "error" }),
+      ]),
+    );
+  });
+
+  it("derives history success and failure outcomes from delivery audit rows", () => {
+    const summary = buildMem0BoardSummary(config, board({
+      deliveries: [
+        delivery({ id: "history-ok", event_type: "history", status: "delivered" }),
+        delivery({ id: "history-failed", event_type: "history", status: "terminal_failed" }),
+      ],
+    }));
+
+    expect(summary.outcomes).toEqual([{ operation: "history", ok: 1, error: 1 }]);
+    expect(summary.auditRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "history-ok", query: "history", status: "ok" }),
+        expect.objectContaining({ id: "history-failed", query: "history", status: "error" }),
+      ]),
+    );
+  });
+
   it("filters board rows to mem0, selected project, time range, and text query", () => {
     const now = new Date();
     const recent = now.toISOString();

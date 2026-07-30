@@ -155,6 +155,10 @@ function normalBoard() {
       delivery("retain-fast", "retain", "delivered", 0, 84),
       delivery("retain-slow", "retain", "delivered", 1, 235),
       delivery("update-ok", "update", "delivered", 2, 141),
+      delivery("history-ok", "history", "delivered", 2, 64),
+      delivery("history-failed", "history", "retry", 3, 0),
+      delivery("retain-queued", "retain", "queued", 0, 0),
+      delivery("delete-skipped", "delete", "skipped", 1, 0),
       delivery("delete-failed", "delete", "terminal_failed", 3, 0),
     ],
     recall_samples: [
@@ -279,6 +283,7 @@ test("mem0 board screenshot evidence - seeded populated board", async ({ page })
   await openMem0Page(page, "normal");
   await expect(page.getByText("Request audit")).toBeVisible();
   await expect(page.getByText("Find workspace memory gateway decisions")).toBeVisible();
+  await expect(page.getByText("History", { exact: true })).toBeVisible();
   await page.screenshot({ path: `${SHOTS_DIR}/01-populated.png`, fullPage: true });
 });
 

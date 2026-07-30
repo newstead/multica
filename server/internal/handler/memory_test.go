@@ -329,6 +329,42 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 		t.Fatal("worker did not dispatch other project delivery")
 	}
 
+	historyOK, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "history",
+		IdempotencyKey: "board-history-ok",
+		Content:        json.RawMessage(`{"memory_id":"handler-memory-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("history ok event: %v", err)
+	}
+	worked, err = worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext history ok: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch history ok delivery")
+	}
+	provider.historyErr = errors.New("history unavailable raw provider detail")
+	historyFailed, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "history",
+		IdempotencyKey: "board-history-failed",
+		Content:        json.RawMessage(`{"memory_id":"handler-memory-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("history failed event: %v", err)
+	}
+	worked, err = worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext history failed: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch history failed delivery")
+	}
+
 	recall := httptest.NewRecorder()
 	testHandler.CreateMemoryRecall(recall, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
 		"provider":       "mem0",
@@ -356,7 +392,7 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 		t.Fatalf("GetMemoryMem0Board: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if strings.Contains(body, "provider_memory_id") || strings.Contains(body, "response") || strings.Contains(body, "handler-memory-1") || strings.Contains(body, "do not leak me") {
+	if strings.Contains(body, "provider_memory_id") || strings.Contains(body, "response") || strings.Contains(body, "handler-memory-1") || strings.Contains(body, "history unavailable raw provider detail") || strings.Contains(body, "do not leak me") {
 		t.Fatalf("GetMemoryMem0Board leaked provider/raw data: %s", body)
 	}
 	var res MemoryMem0BoardResponse
@@ -366,12 +402,24 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 	if res.Health == nil || !res.Health.OK || res.Health.Provider != "mem0" {
 		t.Fatalf("health = %#v, want ok mem0", res.Health)
 	}
-	if len(res.Deliveries) != 1 {
-		t.Fatalf("deliveries = %#v, want one mem0 delivery", res.Deliveries)
+	if len(res.Deliveries) != 3 {
+		t.Fatalf("deliveries = %#v, want retain plus history success/failure", res.Deliveries)
 	}
-	delivery := res.Deliveries[0]
-	if delivery.MemoryEventID != uuidToString(retain.Event.ID) || delivery.EventType != "retain" || delivery.Status != "delivered" {
-		t.Fatalf("delivery = %#v, want delivered retain for event", delivery)
+	deliveriesByEvent := make(map[string]MemoryMem0BoardDeliveryResponse, len(res.Deliveries))
+	for _, delivery := range res.Deliveries {
+		deliveriesByEvent[delivery.MemoryEventID] = delivery
+	}
+	delivery := deliveriesByEvent[uuidToString(retain.Event.ID)]
+	if delivery.EventType != "retain" || delivery.Status != "delivered" {
+		t.Fatalf("retain delivery = %#v, want delivered retain for event", delivery)
+	}
+	historyOKDelivery := deliveriesByEvent[uuidToString(historyOK.Event.ID)]
+	if historyOKDelivery.EventType != "history" || historyOKDelivery.Status != "delivered" {
+		t.Fatalf("history ok delivery = %#v, want delivered history", historyOKDelivery)
+	}
+	historyFailedDelivery := deliveriesByEvent[uuidToString(historyFailed.Event.ID)]
+	if historyFailedDelivery.EventType != "history" || historyFailedDelivery.Status != "retry" {
+		t.Fatalf("history failed delivery = %#v, want retry history failure", historyFailedDelivery)
 	}
 	if len(res.RecallSamples) != 1 || res.RecallSamples[0].RecallCorrelationID != "board-recall" {
 		t.Fatalf("recall samples = %#v, want board-recall sample", res.RecallSamples)
@@ -404,7 +452,9 @@ func TestCreateMemoryRecallHonorsReleaseFlagRollback(t *testing.T) {
 type memoryHandlerFakeProvider struct {
 	name          string
 	recallResults json.RawMessage
+	historyErr    error
 	retained      []service.MemoryEventEnvelope
+	history       []string
 }
 
 func (p *memoryHandlerFakeProvider) Name() string { return p.name }
@@ -428,6 +478,14 @@ func (p *memoryHandlerFakeProvider) Invalidate(context.Context, service.MemoryEv
 
 func (p *memoryHandlerFakeProvider) Delete(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
 	return service.MemoryProviderResult{}, nil
+}
+
+func (p *memoryHandlerFakeProvider) History(_ context.Context, _ service.MemoryScope, memoryID string) (json.RawMessage, error) {
+	p.history = append(p.history, memoryID)
+	if p.historyErr != nil {
+		return nil, p.historyErr
+	}
+	return json.RawMessage(`{"events":[{"operation":"UPDATE","redacted":true}]}`), nil
 }
 
 func (p *memoryHandlerFakeProvider) Health(context.Context) (service.MemoryProviderHealth, error) {

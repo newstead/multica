@@ -72,6 +72,8 @@ function deliveryOperation(delivery: MemoryMem0BoardDelivery): MemoryOutcomeRow[
     case "delete":
     case "invalidate":
       return "delete";
+    case "history":
+      return "history";
     default:
       return "unknown";
   }
@@ -255,7 +257,8 @@ export function buildMem0BoardSummary(
   for (const delivery of sortedDeliveries) {
     const operation = deliveryOperation(delivery);
     const status = deliveryStatus(delivery);
-    bumpOutcome(operation, status !== "error");
+    if (status === "ok") bumpOutcome(operation, true);
+    if (status === "error") bumpOutcome(operation, false);
     const sampledAt = delivery.last_attempt_at || delivery.updated_at || delivery.delivery_created_at;
     const date = sampledAt.slice(0, 10) || "unknown";
     const bucket = ensureBucket(date);
