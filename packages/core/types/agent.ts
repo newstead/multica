@@ -377,6 +377,19 @@ export interface Agent {
   description: string;
   instructions: string;
   avatar_url: string | null;
+  /**
+   * Explicit ROLE code for standardized agent identity badges. Null/undefined
+   * means legacy avatar rendering with no identity badge. Unknown future codes
+   * are display data: clients should render the raw code rather than infer from
+   * name, project, model, or instructions.
+   */
+  role_code?: string | null;
+  /**
+   * Normalized, uppercase language codes for standardized agent identity
+   * badges. Null/undefined/empty means language unset. The backend trims,
+   * uppercases, dedupes, and sorts these values on write.
+   */
+  language_codes?: string[] | null;
   runtime_mode: AgentRuntimeMode;
   runtime_config: Record<string, unknown>;
   custom_args: string[];
@@ -518,6 +531,10 @@ export interface CreateAgentRequest {
   description?: string;
   instructions?: string;
   avatar_url?: string;
+  /** Explicit ROLE code for standardized agent identity badges. */
+  role_code?: string | null;
+  /** Primary/polyglot language code list. Backend normalizes and validates. */
+  language_codes?: string[] | null;
   runtime_id: string;
   runtime_config?: Record<string, unknown>;
   custom_env?: Record<string, string>;
@@ -644,6 +661,10 @@ export interface UpdateAgentRequest {
   description?: string;
   instructions?: string;
   avatar_url?: string;
+  /** Omitted preserves, null/empty clears, non-empty stores validated ROLE. */
+  role_code?: string | null;
+  /** Omitted preserves, null/empty clears, non-empty stores normalized codes. */
+  language_codes?: string[] | null;
   runtime_id?: string;
   runtime_config?: Record<string, unknown>;
   /**

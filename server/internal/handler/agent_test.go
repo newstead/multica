@@ -770,6 +770,150 @@ func TestUpdateAgent_RejectsRenameToArchivedName(t *testing.T) {
 	}
 }
 
+func TestCreateAgent_IdentityMetadataNormalizesAndAudits(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	agentName := "identity-create-test"
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM activity_log WHERE details->>'agent_name' = $1`, agentName)
+		testPool.Exec(context.Background(), `DELETE FROM agent WHERE workspace_id = $1 AND name = $2`, testWorkspaceID, agentName)
+	})
+
+	w := httptest.NewRecorder()
+	testHandler.CreateAgent(w, newRequest(http.MethodPost, "/api/agents", map[string]any{
+		"name":           agentName,
+		"runtime_id":     testRuntimeID,
+		"role_code":      " be ",
+		"language_codes": []string{"py", "GO", "py", ""},
+	}))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("CreateAgent: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp AgentResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.RoleCode == nil || *resp.RoleCode != "BE" {
+		t.Fatalf("role_code = %v, want BE", resp.RoleCode)
+	}
+	if !reflect.DeepEqual(resp.LanguageCodes, []string{"GO", "PY"}) {
+		t.Fatalf("language_codes = %v, want [GO PY]", resp.LanguageCodes)
+	}
+
+	var details string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT details::text FROM activity_log
+		WHERE workspace_id = $1 AND action = 'agent_identity_updated' AND details->>'agent_id' = $2
+	`, testWorkspaceID, resp.ID).Scan(&details); err != nil {
+		t.Fatalf("expected agent_identity_updated activity row: %v", err)
+	}
+	if !strings.Contains(details, `"role_code":"BE"`) || !strings.Contains(details, `"language_codes":["GO","PY"]`) {
+		t.Fatalf("identity audit details missing normalized codes: %s", details)
+	}
+}
+
+func TestCreateAgent_IdentityMetadataRejectsUnknownCodes(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	cases := []struct {
+		name string
+		body map[string]any
+		want string
+	}{
+		{
+			name: "role",
+			body: map[string]any{"name": "identity-bad-role", "runtime_id": testRuntimeID, "role_code": "DEV"},
+			want: "role_code",
+		},
+		{
+			name: "language",
+			body: map[string]any{"name": "identity-bad-lang", "runtime_id": testRuntimeID, "language_codes": []string{"GO", "PHP"}},
+			want: "language_codes",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			testHandler.CreateAgent(w, newRequest(http.MethodPost, "/api/agents", tc.body))
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("CreateAgent: expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), tc.want) {
+				t.Fatalf("error body %q missing %q", w.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestUpdateAgent_IdentityMetadataTriState(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	agentID := createHandlerTestAgent(t, "identity-update-test", nil)
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM activity_log WHERE details->>'agent_id' = $1`, agentID)
+	})
+
+	setReq := newRequest(http.MethodPut, "/api/agents/"+agentID, map[string]any{
+		"role_code":      "qa",
+		"language_codes": []string{"ts", "GO", "ts"},
+	})
+	setReq = withURLParam(setReq, "id", agentID)
+	setW := httptest.NewRecorder()
+	testHandler.UpdateAgent(setW, setReq)
+	if setW.Code != http.StatusOK {
+		t.Fatalf("UpdateAgent set: expected 200, got %d: %s", setW.Code, setW.Body.String())
+	}
+	var setResp AgentResponse
+	if err := json.NewDecoder(setW.Body).Decode(&setResp); err != nil {
+		t.Fatalf("decode set response: %v", err)
+	}
+	if setResp.RoleCode == nil || *setResp.RoleCode != "QA" {
+		t.Fatalf("set role_code = %v, want QA", setResp.RoleCode)
+	}
+	if !reflect.DeepEqual(setResp.LanguageCodes, []string{"GO", "TS"}) {
+		t.Fatalf("set language_codes = %v, want [GO TS]", setResp.LanguageCodes)
+	}
+
+	clearReq := newRequest(http.MethodPut, "/api/agents/"+agentID, map[string]any{
+		"role_code":      "",
+		"language_codes": []string{},
+	})
+	clearReq = withURLParam(clearReq, "id", agentID)
+	clearW := httptest.NewRecorder()
+	testHandler.UpdateAgent(clearW, clearReq)
+	if clearW.Code != http.StatusOK {
+		t.Fatalf("UpdateAgent clear: expected 200, got %d: %s", clearW.Code, clearW.Body.String())
+	}
+	var clearResp AgentResponse
+	if err := json.NewDecoder(clearW.Body).Decode(&clearResp); err != nil {
+		t.Fatalf("decode clear response: %v", err)
+	}
+	if clearResp.RoleCode != nil {
+		t.Fatalf("cleared role_code = %v, want nil", clearResp.RoleCode)
+	}
+	if clearResp.LanguageCodes != nil {
+		t.Fatalf("cleared language_codes = %v, want nil", clearResp.LanguageCodes)
+	}
+
+	var count int
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT count(*) FROM activity_log
+		WHERE workspace_id = $1 AND action = 'agent_identity_updated' AND details->>'agent_id' = $2
+	`, testWorkspaceID, agentID).Scan(&count); err != nil {
+		t.Fatalf("count identity audit rows: %v", err)
+	}
+	if count < 2 {
+		t.Fatalf("identity audit row count = %d, want at least 2", count)
+	}
+}
+
 func TestCreateAgent_AssignsAvatarDefault(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
