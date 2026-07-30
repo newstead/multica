@@ -53,6 +53,17 @@ function resultSummary(results: MemoryMutationProviderResult[]) {
   return `${ok}/${results.length}`;
 }
 
+function responseString(response: Record<string, unknown> | undefined, key: string) {
+  const value = response?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function hasVerifiedInvalidateTarget(event: MemoryAuditEvent, delivery: MemoryAuditDelivery) {
+  if (delivery.provider !== "hindsight") return Boolean(delivery.provider_memory_id);
+  if (event.event_type === "invalidate") return Boolean(delivery.provider_memory_id);
+  return Boolean(responseString(delivery.response, "memory_id") || responseString(delivery.response, "id"));
+}
+
 function ProviderResults({ results }: { results: MemoryMutationProviderResult[] }) {
   const { t: rawT } = useT("memory");
   const t = rawT as MemoryT;
@@ -265,7 +276,9 @@ export function MemoryAuditBoard() {
                     {event.deliveries.map((delivery) => (
                       <div key={delivery.id} className="flex gap-1">
                         <Button size="icon-sm" variant="ghost" title={t("audit.actions.correct")} onClick={() => openAction("correct", event, delivery)}><Wrench className="size-4" /></Button>
-                        <Button size="icon-sm" variant="ghost" title={t("audit.actions.invalidate")} onClick={() => openAction("invalidate", event, delivery)}><Ban className="size-4" /></Button>
+                        {hasVerifiedInvalidateTarget(event, delivery) ? (
+                          <Button size="icon-sm" variant="ghost" title={t("audit.actions.invalidate")} onClick={() => openAction("invalidate", event, delivery)}><Ban className="size-4" /></Button>
+                        ) : null}
                         <Button size="icon-sm" variant="ghost" title={t("audit.actions.delete")} onClick={() => openAction("delete", event, delivery)}><Trash2 className="size-4" /></Button>
                       </div>
                     ))}

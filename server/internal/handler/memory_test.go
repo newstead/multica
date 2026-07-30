@@ -397,6 +397,208 @@ func TestEraseMemoryScopeTargetsProjectOnly(t *testing.T) {
 	}
 }
 
+func TestDeleteMemoryAuditEventRejectsMismatchedTargetID(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "mem0", "")
+
+	provider := &memoryHandlerFakeProvider{name: "mem0"}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"mem0": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	retain, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "handler-mismatched-delete-target",
+		Content:        json.RawMessage(`{"text":"delete target"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+	for _, delivery := range retain.Deliveries {
+		if _, err := testHandler.MemoryService.DispatchMemoryProviderDelivery(context.Background(), parseUUID(testWorkspaceID), delivery.ID); err != nil {
+			t.Fatalf("dispatch retain delivery: %v", err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	testHandler.DeleteMemoryAuditEvent(w, memoryHandlerEventRequest(http.MethodDelete, "/api/workspaces/"+testWorkspaceID+"/memory/audit/"+uuidToString(retain.Event.ID), uuidToString(retain.Event.ID), map[string]any{
+		"provider":           "mem0",
+		"provider_memory_id": "different-memory",
+		"confirmation":       "DELETE",
+	}))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("DeleteMemoryAuditEvent mismatched target: expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "provider_memory_id does not match") {
+		t.Fatalf("mismatched target body = %s", w.Body.String())
+	}
+	if len(provider.deleted) != 0 {
+		t.Fatalf("provider delete calls = %d, want 0", len(provider.deleted))
+	}
+	var deleteEvents int
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM memory_event WHERE workspace_id = $1 AND event_type = 'delete'`, testWorkspaceID).Scan(&deleteEvents); err != nil {
+		t.Fatalf("count delete audit events: %v", err)
+	}
+	if deleteEvents != 0 {
+		t.Fatalf("delete audit events = %d, want 0", deleteEvents)
+	}
+}
+
+func TestCorrectHindsightDocumentUsesCanonicalDocumentTarget(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "hindsight", "")
+
+	provider := &memoryHandlerFakeProvider{name: "hindsight"}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"hindsight": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	retain, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "handler-hindsight-document-correct",
+		Content:        json.RawMessage(`{"text":"document target"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+	for _, delivery := range retain.Deliveries {
+		if _, err := testHandler.MemoryService.DispatchMemoryProviderDelivery(context.Background(), parseUUID(testWorkspaceID), delivery.ID); err != nil {
+			t.Fatalf("dispatch retain delivery: %v", err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	testHandler.CorrectMemoryAuditEvent(w, memoryHandlerEventRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/audit/"+uuidToString(retain.Event.ID)+"/correct", uuidToString(retain.Event.ID), map[string]any{
+		"provider": "hindsight",
+		"text":     "corrected document text",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("CorrectMemoryAuditEvent: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(provider.updated) != 1 {
+		t.Fatalf("provider update calls = %d, want 1", len(provider.updated))
+	}
+	content := memoryHandlerFakeEventContent(t, provider.updated[0])
+	if content["document_id"] != "hindsight-memory-1" {
+		t.Fatalf("hindsight correction document_id = %#v, want canonical delivery target", content["document_id"])
+	}
+	if content["memory_id"] != nil || content["provider_memory_id"] != nil {
+		t.Fatalf("hindsight document correction included memory identifiers: %#v", content)
+	}
+}
+
+func TestInvalidateHindsightDocumentTargetSkipsWithoutVerifiedMemoryID(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "hindsight", "")
+
+	provider := &memoryHandlerFakeProvider{name: "hindsight"}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"hindsight": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	retain, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "handler-hindsight-document-invalidate-skip",
+		Content:        json.RawMessage(`{"text":"document only"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+	for _, delivery := range retain.Deliveries {
+		if _, err := testHandler.MemoryService.DispatchMemoryProviderDelivery(context.Background(), parseUUID(testWorkspaceID), delivery.ID); err != nil {
+			t.Fatalf("dispatch retain delivery: %v", err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	testHandler.InvalidateMemoryAuditEvent(w, memoryHandlerEventRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/audit/"+uuidToString(retain.Event.ID)+"/invalidate", uuidToString(retain.Event.ID), map[string]any{
+		"provider":     "hindsight",
+		"confirmation": "INVALIDATE",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("InvalidateMemoryAuditEvent: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var res MemoryMutationResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(res.Results) != 1 || res.Results[0].Status != "skipped" || !strings.Contains(res.Results[0].Error, "verified provider memory id is missing") {
+		t.Fatalf("invalidate response = %#v, want skipped missing verified memory id", res)
+	}
+	if len(provider.invalidated) != 0 {
+		t.Fatalf("provider invalidate calls = %d, want 0", len(provider.invalidated))
+	}
+}
+
+func TestInvalidateHindsightMemoryUsesCanonicalMemoryTarget(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "hindsight", "")
+
+	provider := &memoryHandlerFakeProvider{name: "hindsight"}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"hindsight": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	updateEvent, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "update",
+		IdempotencyKey: "handler-hindsight-memory-invalidate",
+		Content:        json.RawMessage(`{"memory_id":"fact-1","text":"corrected fact"}`),
+	})
+	if err != nil {
+		t.Fatalf("seed update event: %v", err)
+	}
+	for _, delivery := range updateEvent.Deliveries {
+		if _, err := testHandler.MemoryService.DispatchMemoryProviderDelivery(context.Background(), parseUUID(testWorkspaceID), delivery.ID); err != nil {
+			t.Fatalf("dispatch update delivery: %v", err)
+		}
+	}
+	provider.updated = nil
+
+	w := httptest.NewRecorder()
+	testHandler.InvalidateMemoryAuditEvent(w, memoryHandlerEventRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/audit/"+uuidToString(updateEvent.Event.ID)+"/invalidate", uuidToString(updateEvent.Event.ID), map[string]any{
+		"provider":     "hindsight",
+		"confirmation": "INVALIDATE",
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("InvalidateMemoryAuditEvent: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(provider.invalidated) != 1 {
+		t.Fatalf("provider invalidate calls = %d, want 1", len(provider.invalidated))
+	}
+	content := memoryHandlerFakeEventContent(t, provider.invalidated[0])
+	if content["memory_id"] != "fact-1" || content["document_id"] != nil {
+		t.Fatalf("hindsight invalidation content = %#v, want memory_id fact-1 only", content)
+	}
+}
+
 func TestCreateMemoryRecallEndpointKeepsDualResultsSeparate(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -640,6 +842,9 @@ type memoryHandlerFakeProvider struct {
 	historyErr    error
 	retained      []service.MemoryEventEnvelope
 	history       []string
+	updated       []service.MemoryEventEnvelope
+	invalidated   []service.MemoryEventEnvelope
+	deleted       []service.MemoryEventEnvelope
 	deleteErr     error
 }
 
@@ -654,19 +859,25 @@ func (p *memoryHandlerFakeProvider) Recall(_ context.Context, req service.Memory
 	return service.MemoryRecallResult{Provider: req.Provider, Results: p.recallResults, Provenance: json.RawMessage(`{"handler":"test"}`)}, nil
 }
 
-func (p *memoryHandlerFakeProvider) Update(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
-	return service.MemoryProviderResult{}, nil
+func (p *memoryHandlerFakeProvider) Update(_ context.Context, event service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	p.updated = append(p.updated, event)
+	targetID := memoryHandlerFakeEventTargetID(event)
+	return service.MemoryProviderResult{ProviderMemoryID: targetID, Response: json.RawMessage(fmt.Sprintf(`{"id":%q,"ok":true}`, targetID))}, nil
 }
 
-func (p *memoryHandlerFakeProvider) Invalidate(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
-	return service.MemoryProviderResult{}, nil
+func (p *memoryHandlerFakeProvider) Invalidate(_ context.Context, event service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	p.invalidated = append(p.invalidated, event)
+	targetID := memoryHandlerFakeEventTargetID(event)
+	return service.MemoryProviderResult{ProviderMemoryID: targetID, Response: json.RawMessage(fmt.Sprintf(`{"id":%q,"ok":true}`, targetID))}, nil
 }
 
-func (p *memoryHandlerFakeProvider) Delete(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+func (p *memoryHandlerFakeProvider) Delete(_ context.Context, event service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
+	p.deleted = append(p.deleted, event)
 	if p.deleteErr != nil {
 		return service.MemoryProviderResult{}, p.deleteErr
 	}
-	return service.MemoryProviderResult{Response: json.RawMessage(`{"ok":true}`)}, nil
+	targetID := memoryHandlerFakeEventTargetID(event)
+	return service.MemoryProviderResult{ProviderMemoryID: targetID, Response: json.RawMessage(fmt.Sprintf(`{"id":%q,"ok":true}`, targetID))}, nil
 }
 
 func (p *memoryHandlerFakeProvider) History(_ context.Context, _ service.MemoryScope, memoryID string) (json.RawMessage, error) {
@@ -679,6 +890,26 @@ func (p *memoryHandlerFakeProvider) History(_ context.Context, _ service.MemoryS
 
 func (p *memoryHandlerFakeProvider) Health(context.Context) (service.MemoryProviderHealth, error) {
 	return service.MemoryProviderHealth{Provider: p.name, OK: true}, nil
+}
+
+func memoryHandlerFakeEventContent(t *testing.T, event service.MemoryEventEnvelope) map[string]any {
+	t.Helper()
+	var content map[string]any
+	if err := json.Unmarshal(event.Content, &content); err != nil {
+		t.Fatalf("decode fake provider event content: %v", err)
+	}
+	return content
+}
+
+func memoryHandlerFakeEventTargetID(event service.MemoryEventEnvelope) string {
+	var content map[string]any
+	_ = json.Unmarshal(event.Content, &content)
+	for _, key := range []string{"memory_id", "document_id", "provider_memory_id"} {
+		if value, ok := content[key].(string); ok && value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func TestMemoryDeliveryWorkerHonorsReleaseFlagRollback(t *testing.T) {

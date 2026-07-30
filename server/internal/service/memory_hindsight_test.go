@@ -311,6 +311,75 @@ func TestHindsightCorrectionInvalidationRestoreAndDeleteLifecycle(t *testing.T) 
 	}
 }
 
+func TestHindsightDocumentUpdateUsesDocumentRetainTarget(t *testing.T) {
+	t.Parallel()
+
+	type recordedRequest struct {
+		Method string
+		Path   string
+		Body   map[string]any
+	}
+	var recorded []recordedRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+		}
+		recorded = append(recorded, recordedRequest{Method: r.Method, Path: r.URL.Path, Body: body})
+		writeHindsightJSON(t, w, map[string]any{
+			"success":      true,
+			"operation_id": body["operation_id"],
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	provider := newTestHindsightProvider(t, server.URL, HindsightConfig{})
+	event := hindsightTestEvent(`{"document_id":"doc-canonical","text":"correct document"}`)
+	result, err := provider.Update(context.Background(), event)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if result.ProviderMemoryID != "doc-canonical" {
+		t.Fatalf("ProviderMemoryID = %q, want document target", result.ProviderMemoryID)
+	}
+	if len(recorded) != 1 {
+		t.Fatalf("recorded %d requests, want 1", len(recorded))
+	}
+	request := recorded[0]
+	if request.Method != http.MethodPost || !strings.HasSuffix(request.Path, "/memories") {
+		t.Fatalf("document correction request = %#v, want POST memories retain path", request)
+	}
+	items, ok := request.Body["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v, want one document item", request.Body["items"])
+	}
+	item, ok := items[0].(map[string]any)
+	if !ok || item["document_id"] != "doc-canonical" {
+		t.Fatalf("document item = %#v, want canonical document_id", items[0])
+	}
+}
+
+func TestHindsightInvalidateDoesNotTreatProviderMemoryIDAsMemoryID(t *testing.T) {
+	t.Parallel()
+
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		writeHindsightJSON(t, w, map[string]any{"id": "unexpected"})
+	}))
+	t.Cleanup(server.Close)
+
+	provider := newTestHindsightProvider(t, server.URL, HindsightConfig{})
+	event := hindsightTestEvent(`{"provider_memory_id":"doc-only","reason":"superseded"}`)
+	_, err := provider.Invalidate(context.Background(), event)
+	if err == nil || !strings.Contains(err.Error(), "invalidate requires memory_id") {
+		t.Fatalf("Invalidate error = %v, want memory_id requirement", err)
+	}
+	if attempts != 0 {
+		t.Fatalf("upstream attempts = %d, want 0", attempts)
+	}
+}
+
 func TestHindsightDeleteTreatsMissingDocumentAsIdempotentSuccess(t *testing.T) {
 	t.Parallel()
 

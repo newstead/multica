@@ -659,14 +659,15 @@ func (h *Handler) mutateMemoryAuditEvent(w http.ResponseWriter, r *http.Request,
 	actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(wsUUID))
 	results := make([]MemoryMutationProviderResult, 0, len(deliveries))
 	for _, delivery := range deliveries {
-		providerMemoryID := firstNonEmpty(req.ProviderMemoryID, req.MemoryID, delivery.ProviderMemoryID.String)
-		if providerMemoryID == "" {
-			results = append(results, MemoryMutationProviderResult{Provider: delivery.Provider, Status: "skipped", Error: "provider memory id is missing"})
-			continue
+		target := memoryMutationTargetFromDelivery(source, delivery)
+		if err := validateMemoryMutationRequestTarget(req, target); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
 		}
-		content := map[string]any{"provider_memory_id": providerMemoryID, "memory_id": providerMemoryID}
-		if req.DocumentID != "" {
-			content["document_id"] = req.DocumentID
+		content, resultID, targetKind, skipReason := memoryMutationPayload(operation, target)
+		if skipReason != "" {
+			results = append(results, MemoryMutationProviderResult{Provider: delivery.Provider, ProviderMemoryID: resultID, Status: "skipped", Error: skipReason})
+			continue
 		}
 		if req.Text != "" {
 			content["text"] = req.Text
@@ -680,7 +681,7 @@ func (h *Handler) mutateMemoryAuditEvent(w http.ResponseWriter, r *http.Request,
 		if operation == "invalidate" {
 			content["state"] = "invalidated"
 		}
-		results = append(results, h.dispatchMemoryAdminMutation(r, source, actorType, actorID, operation, delivery.Provider, providerMemoryID, content))
+		results = append(results, h.dispatchMemoryAdminMutation(r, source, actorType, actorID, operation, delivery.Provider, resultID, targetKind, content))
 	}
 	writeJSON(w, http.StatusOK, MemoryMutationResponse{Operation: operation, Results: results})
 }
@@ -746,18 +747,29 @@ func (h *Handler) EraseMemoryScope(w http.ResponseWriter, r *http.Request) {
 	actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(wsUUID))
 	results := make([]MemoryMutationProviderResult, 0, len(targets))
 	seen := map[string]bool{}
-	for _, target := range targets {
-		providerMemoryID := strings.TrimSpace(target.ProviderMemoryID.String)
+	for _, eraseTarget := range targets {
+		providerMemoryID := strings.TrimSpace(eraseTarget.ProviderMemoryID.String)
 		if providerMemoryID == "" {
 			continue
 		}
-		key := target.Provider + "\x00" + providerMemoryID
+		target := memoryMutationTarget{Provider: eraseTarget.Provider, ProviderMemoryID: providerMemoryID}
+		if target.Provider == "hindsight" {
+			target.DocumentID = providerMemoryID
+		} else {
+			target.MemoryID = providerMemoryID
+		}
+		content, resultID, targetKind, skipReason := memoryMutationPayload("delete", target)
+		if skipReason != "" {
+			results = append(results, MemoryMutationProviderResult{Provider: eraseTarget.Provider, ProviderMemoryID: resultID, Status: "skipped", Error: skipReason})
+			continue
+		}
+		key := eraseTarget.Provider + "\x00" + targetKind + "\x00" + resultID
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		content := map[string]any{"provider_memory_id": providerMemoryID, "memory_id": providerMemoryID, "reason": "scope erase"}
-		results = append(results, h.dispatchMemoryAdminMutation(r, target.Event, actorType, actorID, "delete", target.Provider, providerMemoryID, content))
+		content["reason"] = "scope erase"
+		results = append(results, h.dispatchMemoryAdminMutation(r, eraseTarget.Event, actorType, actorID, "delete", eraseTarget.Provider, resultID, targetKind, content))
 	}
 	writeJSON(w, http.StatusOK, MemoryMutationResponse{Operation: "erase", Results: results})
 }
@@ -841,6 +853,13 @@ type memoryEraseTarget struct {
 	Event            db.MemoryEvent
 	Provider         string
 	ProviderMemoryID pgtype.Text
+}
+
+type memoryMutationTarget struct {
+	Provider         string
+	ProviderMemoryID string
+	MemoryID         string
+	DocumentID       string
 }
 
 func memoryAuditFiltersFromRequest(w http.ResponseWriter, r *http.Request, workspaceID pgtype.UUID) (memoryAuditFilters, bool) {
@@ -1023,7 +1042,141 @@ ORDER BY memory_event.created_at DESC`, args...)
 	return targets, rows.Err()
 }
 
-func (h *Handler) dispatchMemoryAdminMutation(r *http.Request, source db.MemoryEvent, actorType, actorID, operation, provider, providerMemoryID string, content map[string]any) MemoryMutationProviderResult {
+func memoryMutationTargetFromDelivery(source db.MemoryEvent, delivery db.MemoryProviderDelivery) memoryMutationTarget {
+	providerMemoryID := strings.TrimSpace(delivery.ProviderMemoryID.String)
+	target := memoryMutationTarget{Provider: delivery.Provider, ProviderMemoryID: providerMemoryID}
+	if delivery.Provider != "hindsight" {
+		target.MemoryID = providerMemoryID
+		return target
+	}
+
+	memoryID := firstNonEmpty(memoryDeliveryResponseString(delivery.Response, "memory_id"), memoryDeliveryResponseString(delivery.Response, "id"))
+	documentID := memoryDeliveryResponseString(delivery.Response, "document_id")
+	switch source.EventType {
+	case "retain", "delete":
+		documentID = firstNonEmpty(documentID, providerMemoryID)
+	case "invalidate", "restore":
+		memoryID = firstNonEmpty(memoryID, providerMemoryID)
+	case "update":
+		if memoryID == "" {
+			documentID = firstNonEmpty(documentID, providerMemoryID)
+		}
+	default:
+		memoryID = firstNonEmpty(memoryID, providerMemoryID)
+	}
+	target.MemoryID = memoryID
+	target.DocumentID = documentID
+	return target
+}
+
+func validateMemoryMutationRequestTarget(req MemoryMutationRequest, target memoryMutationTarget) error {
+	checks := []struct {
+		field     string
+		supplied  string
+		canonical string
+	}{
+		{field: "provider_memory_id", supplied: req.ProviderMemoryID, canonical: target.ProviderMemoryID},
+		{field: "memory_id", supplied: req.MemoryID, canonical: target.MemoryID},
+		{field: "document_id", supplied: req.DocumentID, canonical: target.DocumentID},
+	}
+	for _, check := range checks {
+		supplied := strings.TrimSpace(check.supplied)
+		if supplied == "" {
+			continue
+		}
+		if supplied != strings.TrimSpace(check.canonical) {
+			return fmt.Errorf("%s does not match the audited provider target", check.field)
+		}
+	}
+	return nil
+}
+
+func memoryMutationPayload(operation string, target memoryMutationTarget) (map[string]any, string, string, string) {
+	content := map[string]any{}
+	if target.Provider == "hindsight" {
+		switch operation {
+		case "delete":
+			if target.DocumentID == "" {
+				return nil, target.ProviderMemoryID, "document", "provider document id is missing"
+			}
+			content["document_id"] = target.DocumentID
+			return content, target.DocumentID, "document", ""
+		case "invalidate":
+			if target.MemoryID == "" {
+				return nil, target.ProviderMemoryID, "memory", "verified provider memory id is missing"
+			}
+			content["memory_id"] = target.MemoryID
+			content["provider_memory_id"] = target.MemoryID
+			return content, target.MemoryID, "memory", ""
+		default:
+			if target.DocumentID != "" {
+				content["document_id"] = target.DocumentID
+				return content, target.DocumentID, "document", ""
+			}
+			if target.MemoryID != "" {
+				content["memory_id"] = target.MemoryID
+				content["provider_memory_id"] = target.MemoryID
+				return content, target.MemoryID, "memory", ""
+			}
+			return nil, target.ProviderMemoryID, "", "provider target id is missing"
+		}
+	}
+
+	if target.MemoryID == "" {
+		return nil, target.ProviderMemoryID, "memory", "provider memory id is missing"
+	}
+	content["provider_memory_id"] = target.MemoryID
+	content["memory_id"] = target.MemoryID
+	return content, target.MemoryID, "memory", ""
+}
+
+func memoryDeliveryResponseString(response []byte, keys ...string) string {
+	if len(response) == 0 {
+		return ""
+	}
+	var data map[string]any
+	if err := json.Unmarshal(response, &data); err != nil {
+		return ""
+	}
+	for _, key := range keys {
+		value, ok := data[key]
+		if !ok || value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			if trimmed := strings.TrimSpace(typed); trimmed != "" {
+				return trimmed
+			}
+		case fmt.Stringer:
+			if trimmed := strings.TrimSpace(typed.String()); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	return ""
+}
+
+func memoryAdminMutationMetadata(source db.MemoryEvent, provider, providerMemoryID, targetKind, operation string, content map[string]any) map[string]any {
+	metadata := map[string]any{
+		"source_event_id":    uuidToString(source.ID),
+		"provider":           provider,
+		"provider_memory_id": providerMemoryID,
+		"admin_action":       operation,
+	}
+	if targetKind != "" {
+		metadata["target_kind"] = targetKind
+	}
+	if memoryID, ok := content["memory_id"].(string); ok && strings.TrimSpace(memoryID) != "" {
+		metadata["memory_id"] = strings.TrimSpace(memoryID)
+	}
+	if documentID, ok := content["document_id"].(string); ok && strings.TrimSpace(documentID) != "" {
+		metadata["document_id"] = strings.TrimSpace(documentID)
+	}
+	return metadata
+}
+
+func (h *Handler) dispatchMemoryAdminMutation(r *http.Request, source db.MemoryEvent, actorType, actorID, operation, provider, providerMemoryID, targetKind string, content map[string]any) MemoryMutationProviderResult {
 	result := MemoryMutationProviderResult{Provider: provider, ProviderMemoryID: providerMemoryID, Status: "failed"}
 	contentRaw, err := json.Marshal(content)
 	if err != nil {
@@ -1038,12 +1191,7 @@ func (h *Handler) dispatchMemoryAdminMutation(r *http.Request, source db.MemoryE
 		CorrelationID: "memory_admin:" + operation + ":" + uuidToString(source.ID) + ":" + provider,
 		SourceID:      uuidToString(source.ID),
 		Content:       contentRaw,
-		Metadata: map[string]any{
-			"source_event_id":    uuidToString(source.ID),
-			"provider":           provider,
-			"provider_memory_id": providerMemoryID,
-			"admin_action":       operation,
-		},
+		Metadata:      memoryAdminMutationMetadata(source, provider, providerMemoryID, targetKind, operation, content),
 	}
 	_, envelopeRaw, err := service.BuildMemoryEventEnvelope(req)
 	if err != nil {
