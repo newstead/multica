@@ -847,5 +847,37 @@
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected",
     "clear_selection": "Clear selection"
+  },
+  "identity": {
+    "role_unset": "role unset",
+    "language_unset": "language unset",
+    "roles": {
+      "TL": "Tech Lead",
+      "BE": "Backend Engineer",
+      "FE": "Frontend Engineer",
+      "FS": "Full-Stack Engineer",
+      "QA": "Quality Assurance",
+      "OPS": "Operations / DevOps",
+      "ML": "Machine Learning",
+      "DA": "Data Analyst",
+      "SRE": "Site Reliability",
+      "SEC": "Security"
+    },
+    "languages": {
+      "GO": "Go",
+      "PY": "Python",
+      "TS": "TypeScript",
+      "JS": "JavaScript",
+      "RS": "Rust",
+      "SH": "Shell",
+      "RB": "Ruby",
+      "JV": "Java",
+      "KT": "Kotlin",
+      "SW": "Swift",
+      "CS": "C#",
+      "CP": "C++",
+      "SC": "Scala",
+      "EL": "Elixir"
+    }
   }
 }

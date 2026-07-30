@@ -1169,6 +1169,7 @@ function IssueTableBodyCell({
             actorType={issue.creator_type}
             actorId={issue.creator_id}
             size="sm"
+            identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
           />
           <span className="truncate">
             {meta.getActorName(issue.creator_type, issue.creator_id)}

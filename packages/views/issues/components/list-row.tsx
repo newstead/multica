@@ -169,6 +169,7 @@ function ListRowContent({
               actorId={issue.assignee_id!}
               size="sm"
               enableHoverCard
+              identityBadge={{ variant: "inline-row", hostMode: "owned" }}
             />
           )}
         </AppLink>

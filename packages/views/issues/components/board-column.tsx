@@ -353,6 +353,7 @@ function BoardGroupHeading({
         actorId={group.assigneeId}
         size="sm"
         showStatusDot={group.assigneeType === "agent"}
+        identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
       />
     ) : (
       <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground">
