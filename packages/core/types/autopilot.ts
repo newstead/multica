@@ -122,9 +122,9 @@ export interface AutopilotRun {
   triggered_at: string;
   completed_at: string | null;
   failure_reason: string | null;
-  // Stable, localizable, enumeration-safe classification of a non-success run
-  // (skipped/failed), derived server-side from failure_reason (MUL-4525). The
-  // "run now" UI localizes this instead of echoing the raw English reason.
+  // Stable, localizable, enumeration-safe classification of a non-success run.
+  // Persisted history only includes explicit server-owned codes such as
+  // skipped_overlap; immediate dispatch responses may include admission codes.
   // Older servers omit it.
   reason_code?: string;
   trigger_payload: unknown;

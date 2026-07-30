@@ -153,10 +153,10 @@ type AutopilotRunResponse struct {
 	CompletedAt   *string `json:"completed_at"`
 	FailureReason *string `json:"failure_reason"`
 	// ReasonCode is a stable, localizable, enumeration-safe classification of a
-	// non-success run (skipped/failed), derived from FailureReason. The "run now"
-	// UI localizes it instead of echoing the raw English reason (which may name a
-	// private assignee agent). Additive: nil for success-path runs and ignored by
-	// old clients (MUL-4525).
+	// non-success run. Persisted history only includes explicit server-owned codes
+	// such as skipped_overlap; handlers may also set decision-time admission codes
+	// for immediate responses. Additive: nil for success-path runs and ignored by
+	// old clients.
 	ReasonCode     *string `json:"reason_code,omitempty"`
 	TriggerPayload any     `json:"trigger_payload"`
 	Result         any     `json:"result"`
@@ -285,14 +285,22 @@ func runToResponse(r db.AutopilotRun) AutopilotRunResponse {
 		TriggeredAt:   timestampToString(r.TriggeredAt),
 		CompletedAt:   timestampToPtr(r.CompletedAt),
 		FailureReason: textToPtr(r.FailureReason),
-		// ReasonCode is left unset here: it is a decision-time value the manual
-		// "run now" handler injects from the typed dispatch outcome (MUL-4525).
-		// Persisted rows (list/history) surface the human failure_reason instead
-		// of a code reverse-engineered from that text.
+		// Persisted rows only surface stable localizable codes when the scheduler
+		// wrote an explicit terminal classification. Other failure_reason text stays
+		// human-only and is not reverse-engineered into admission reason codes.
+		ReasonCode:     autopilotRunReasonCode(r),
 		TriggerPayload: payload,
 		Result:         result,
 		CreatedAt:      timestampToString(r.CreatedAt),
 	}
+}
+
+func autopilotRunReasonCode(r db.AutopilotRun) *string {
+	if r.Status == "skipped" && r.FailureReason.Valid && r.FailureReason.String == service.AutopilotScheduleOverlapReason {
+		code := service.AutopilotScheduleOverlapReason
+		return &code
+	}
+	return nil
 }
 
 // runToResponseSlim mirrors runToResponse but omits TriggerPayload, intended

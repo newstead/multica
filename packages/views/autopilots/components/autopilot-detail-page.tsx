@@ -67,6 +67,7 @@ import { AutopilotDialog } from "./autopilot-dialog";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
 import { WebhookPayloadPreview } from "./webhook-payload-preview";
 import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
+import { autopilotRunMessage } from "./autopilot-run-message";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
 
@@ -79,9 +80,6 @@ type RunStatus = "issue_created" | "running" | "skipped" | "completed" | "failed
 const RUN_VISUAL: Record<RunStatus, { color: string; icon: typeof CheckCircle2; spin?: boolean }> = {
   issue_created: { color: "text-blue-500", icon: Clock },
   running: { color: "text-blue-500", icon: Loader2, spin: true },
-  // `skipped` (admission check found the assignee runtime offline,
-  // MUL-1899) is muted so it doesn't read as a failure-ratio inflator.
-  // The row still shows failure_reason which carries the skip context.
   skipped: { color: "text-muted-foreground", icon: Ban },
   completed: { color: "text-emerald-500", icon: CheckCircle2 },
   failed: { color: "text-destructive", icon: XCircle },
@@ -111,6 +109,7 @@ function RunRow({ run, agentId, agentName }: { run: AutopilotRun; agentId: strin
   const status = (RUN_VISUAL[run.status as RunStatus] ? (run.status as RunStatus) : "issue_created");
   const visual = RUN_VISUAL[status];
   const StatusIcon = visual.icon;
+  const runMessage = autopilotRunMessage(run, t(($) => $.run.skipped_overlap));
 
   // For runs with a task_id (run_only mode), build a minimal AgentTask so
   // TranscriptButton can lazy-load the execution transcript.
@@ -145,10 +144,12 @@ function RunRow({ run, agentId, agentName }: { run: AutopilotRun; agentId: strin
         {t(($) => $.run_source[run.source as "schedule" | "manual" | "webhook" | "api"]) ?? run.source}
       </span>
       <span className="flex-1 min-w-0 text-xs text-muted-foreground truncate">
-        {run.issue_id ? (
+        {runMessage?.kind === "issue" ? (
           t(($) => $.run.issue_linked)
-        ) : run.failure_reason ? (
-          <span className="text-destructive">{run.failure_reason}</span>
+        ) : runMessage?.kind === "skip" ? (
+          <span className="text-muted-foreground">{runMessage.text}</span>
+        ) : runMessage?.kind === "error" ? (
+          <span className="text-destructive">{runMessage.text}</span>
         ) : null}
       </span>
       <span className="w-32 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
