@@ -829,5 +829,37 @@
   "actions": {
     "selected_other": "{{count}}개 선택됨",
     "clear_selection": "선택 해제"
+  },
+  "identity": {
+    "role_unset": "역할 미설정",
+    "language_unset": "언어 미설정",
+    "roles": {
+      "TL": "기술 리드",
+      "BE": "백엔드 엔지니어",
+      "FE": "프론트엔드 엔지니어",
+      "FS": "풀스택 엔지니어",
+      "QA": "품질 보증",
+      "OPS": "운영 / DevOps",
+      "ML": "머신러닝",
+      "DA": "데이터 분석가",
+      "SRE": "사이트 신뢰성",
+      "SEC": "보안"
+    },
+    "languages": {
+      "GO": "Go",
+      "PY": "Python",
+      "TS": "TypeScript",
+      "JS": "JavaScript",
+      "RS": "Rust",
+      "SH": "Shell",
+      "RB": "Ruby",
+      "JV": "Java",
+      "KT": "Kotlin",
+      "SW": "Swift",
+      "CS": "C#",
+      "CP": "C++",
+      "SC": "Scala",
+      "EL": "Elixir"
+    }
   }
 }

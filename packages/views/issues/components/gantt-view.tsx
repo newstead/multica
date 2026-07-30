@@ -383,6 +383,7 @@ function ScheduledRow({
               actorId={issue.assignee_id}
               size="sm"
               enableHoverCard
+              identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
             />
           )}
         </AppLink>

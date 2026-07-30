@@ -21,6 +21,11 @@ const EMPTY_MEMBERS: MemberWithUser[] = [];
 const EMPTY_AGENTS: Agent[] = [];
 const EMPTY_SQUADS: Squad[] = [];
 
+type AgentIdentityFields = {
+  role_code?: string | null;
+  language_codes?: string[] | null;
+};
+
 /**
  * Pure actor-name resolution over explicit directory snapshots. Async flows
  * (e.g. CSV export) must resolve names from directories they have awaited
@@ -88,6 +93,16 @@ export function useActorName() {
     return null;
   }, [agents, members, squads]);
 
+  const getAgentIdentity = useCallback((type: string, id: string) => {
+    if (type !== "agent") return null;
+    const agent = agents.find((a) => a.id === id) as (Agent & AgentIdentityFields) | undefined;
+    if (!agent) return null;
+    return {
+      roleCode: agent.role_code ?? null,
+      languageCodes: agent.language_codes ?? [],
+    };
+  }, [agents]);
+
   return useMemo(
     () => ({
       getMemberName,
@@ -96,12 +111,14 @@ export function useActorName() {
       getActorName,
       getActorInitials,
       getActorAvatarUrl,
+      getAgentIdentity,
     }),
     [
       getActorAvatarUrl,
       getActorInitials,
       getActorName,
       getAgentName,
+      getAgentIdentity,
       getMemberName,
       getSquadName,
     ],

@@ -176,6 +176,7 @@ vi.mock("@multica/core/api", () => ({
 }));
 
 vi.mock("@multica/core/paths", () => ({
+  useWorkspaceSlug: () => null,
   useWorkspacePaths: () => ({
     agentDetail: (id: string) => `/acme/agents/${id}`,
   }),

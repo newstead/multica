@@ -184,7 +184,7 @@ function SubscriberPopoverContent({
                     className="flex items-center gap-2.5"
                   >
                     <Checkbox checked={isSubbed} className="pointer-events-none" />
-                    <ActorAvatar actorType="agent" actorId={a.id} size="md" showStatusDot />
+                    <ActorAvatar actorType="agent" actorId={a.id} size="md" showStatusDot identityBadge={{ variant: "corner-tag", hostMode: "owned" }} />
                     <span className="truncate flex-1">{a.name}</span>
                   </CommandItem>
                 );
@@ -547,7 +547,7 @@ function ActivityBlock({
         } else if (isDueDateChange) {
           leadIcon = <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />;
         } else {
-          leadIcon = <ActorAvatar actorType={entry.actor_type} actorId={entry.actor_id} size="sm" />;
+          leadIcon = <ActorAvatar actorType={entry.actor_type} actorId={entry.actor_id} size="sm" identityBadge={{ variant: "corner-tag", hostMode: "owned" }} />;
         }
 
         return (
@@ -777,6 +777,7 @@ function SubIssueRow({
                   actorId={child.assignee_id}
                   size="sm"
                   className="shrink-0"
+                  identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
                 />
               ) : (
                 <span
@@ -2023,7 +2024,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </button>
         {detailsOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
           <PropRow label={t(($) => $.detail.prop_created_by)}>
-            <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size="sm" enableHoverCard />
+            <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size="sm" enableHoverCard identityBadge={{ variant: "corner-tag", hostMode: "owned" }} />
             <span className="cursor-pointer truncate">{getActorName(issue.creator_type, issue.creator_id)}</span>
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_created)}>
@@ -2582,6 +2583,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                             actorId={sub.user_id}
                             size="md"
                             enableHoverCard
+                            identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
                           />
                         ))}
                         {subscribers.length > 4 && (
