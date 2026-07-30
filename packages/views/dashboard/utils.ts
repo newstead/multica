@@ -52,6 +52,16 @@ export interface DailyCostStack {
   total: number;
 }
 
+export function filterDailyRowsToWindow<T extends { date: string }>(
+  rows: T[],
+  days: number,
+  tz: string,
+): T[] {
+  const today = todayIso(tz);
+  const cutoff = addDaysIso(today, -(days - 1));
+  return rows.filter((row) => row.date >= cutoff && row.date <= today);
+}
+
 function formatDateLabel(d: string): string {
   // Anchor to local midnight so the formatted label matches the bucket the
   // server picked (which is already in workspace time). Pasting the raw
