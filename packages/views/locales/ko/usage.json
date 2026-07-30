@@ -104,14 +104,14 @@
     "subtitle": "에이전트별 효율, 모델 구성, 세션, 코드 변경, 병목을 확인합니다.",
     "unknown_agent": "알 수 없는 에이전트",
     "kpi": {
-      "completed_label": "완료 · {{days}}D",
-      "failed_label": "실패 · {{days}}D",
+      "completed_label": "완료 · {{days}}일",
+      "failed_label": "실패 · {{days}}일",
       "failed_hint": "실패율 {{rate}}",
-      "cost_label": "비용 · {{days}}D",
-      "cache_label": "캐시 적중 · {{days}}D",
+      "cost_label": "비용 · {{days}}일",
+      "cache_label": "캐시 적중 · {{days}}일",
       "cache_hint": "캐시 읽기 {{tokens}}",
-      "tokens_loc_label": "Tokens / LOC · {{days}}D",
-      "loc_label": "변경 LOC · {{days}}D",
+      "tokens_loc_label": "Tokens / LOC · {{days}}일",
+      "loc_label": "변경 LOC · {{days}}일",
       "loc_hint": "{{additions}} / {{deletions}}"
     },
     "tokens": {

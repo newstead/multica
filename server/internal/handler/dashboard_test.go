@@ -1841,3 +1841,160 @@ func TestDashboardAgentSessionsAndCodeEndpoints(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardNoDateEndpointsUseExactViewerDayWindow(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	var runtimeID string
+	if err := testPool.QueryRow(ctx, `SELECT id FROM agent_runtime WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&runtimeID); err != nil {
+		t.Fatalf("fetch runtime: %v", err)
+	}
+
+	var agentID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent (
+			workspace_id, name, description, runtime_mode, runtime_config,
+			runtime_id, visibility, max_concurrent_tasks, owner_id,
+			instructions, custom_env, custom_args, mcp_config
+		)
+		VALUES ($1, 'exact-window-agent', '', 'cloud', '{}'::jsonb, $2, 'private', 1, $3, '', '{}'::jsonb, '[]'::jsonb, '[]'::jsonb)
+		RETURNING id
+	`, testWorkspaceID, runtimeID, testUserID).Scan(&agentID); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent WHERE id = $1`, agentID) })
+
+	var projectID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO project (workspace_id, title)
+		VALUES ($1, 'dashboard exact window project')
+		RETURNING id
+	`, testWorkspaceID).Scan(&projectID); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM project WHERE id = $1`, projectID) })
+
+	var issueID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO issue (workspace_id, title, creator_id, creator_type, project_id, number)
+		VALUES ($1, 'dashboard exact window issue', $2, 'member', $3,
+		        (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $1))
+		RETURNING id
+	`, testWorkspaceID, testUserID, projectID).Scan(&issueID); err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
+
+	startOfToday := time.Now().UTC().Truncate(24 * time.Hour)
+	todayCreated := startOfToday.Add(time.Hour)
+	todayStarted := todayCreated.Add(time.Minute)
+	todayCompleted := todayStarted.Add(time.Minute)
+	yesterdayCreated := startOfToday.Add(-23 * time.Hour)
+	yesterdayStarted := yesterdayCreated.Add(time.Minute)
+	yesterdayCompleted := yesterdayStarted.Add(time.Minute)
+
+	insertTask := func(createdAt, startedAt, completedAt time.Time, additions int) string {
+		var taskID string
+		if err := testPool.QueryRow(ctx, `
+			INSERT INTO agent_task_queue (agent_id, issue_id, runtime_id, status, created_at, started_at, completed_at, result)
+			VALUES ($1, $2, $3, 'completed', $4, $5, $6,
+			        jsonb_build_object('diff_stats', jsonb_build_object('additions', $7::int, 'deletions', 1, 'files_changed', 1)))
+			RETURNING id
+		`, agentID, issueID, runtimeID, createdAt, startedAt, completedAt, additions).Scan(&taskID); err != nil {
+			t.Fatalf("insert task: %v", err)
+		}
+		t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
+		return taskID
+	}
+	insertTask(todayCreated, todayStarted, todayCompleted, 10)
+	insertTask(yesterdayCreated, yesterdayStarted, yesterdayCompleted, 1000)
+
+	const provider = "exact-cutoff-test"
+	const model = "exact-cutoff-model"
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM task_usage_hourly WHERE agent_id = $1 AND provider = $2 AND model = $3`, agentID, provider, model)
+	})
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO task_usage_hourly (
+			bucket_hour, workspace_id, runtime_id, agent_id, project_id,
+			provider, model, input_tokens, output_tokens, cache_read_tokens,
+			cache_write_tokens, reasoning_tokens, task_count
+		)
+		VALUES
+			($1, $2, $3, $4, $5, $6, $7, 10, 0, 0, 0, 0, 1),
+			($8, $2, $3, $4, $5, $6, $7, 1000, 0, 0, 0, 0, 1)
+	`, todayCreated, testWorkspaceID, runtimeID, agentID, projectID, provider, model, yesterdayCreated); err != nil {
+		t.Fatalf("insert hourly usage: %v", err)
+	}
+
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardUsageByAgent(w, newRequest("GET", "/api/dashboard/usage/by-agent?days=1&tz=UTC&project_id="+projectID, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("by-agent: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var rows []struct {
+			AgentID     string `json:"agent_id"`
+			Provider    string `json:"provider"`
+			Model       string `json:"model"`
+			InputTokens int64  `json:"input_tokens"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode by-agent: %v", err)
+		}
+		var got int64
+		for _, r := range rows {
+			if r.AgentID == agentID && r.Provider == provider && r.Model == model {
+				got += r.InputTokens
+			}
+		}
+		if got != 10 {
+			t.Fatalf("by-agent input_tokens = %d, want today's 10 only; rows=%v", got, rows)
+		}
+	}
+
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardAgentSessions(w, newRequest("GET", "/api/dashboard/agents/sessions?days=1&tz=UTC&project_id="+projectID, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("sessions: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var rows []DashboardAgentSessionsResponse
+		if err := json.NewDecoder(w.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode sessions: %v", err)
+		}
+		var got *DashboardAgentSessionsResponse
+		for i := range rows {
+			if rows[i].AgentID == agentID {
+				got = &rows[i]
+			}
+		}
+		if got == nil || got.TaskCount != 1 || got.CompletedCount != 1 || got.FailedCount != 0 {
+			t.Fatalf("sessions row = %+v, want exactly today's completed task; rows=%v", got, rows)
+		}
+	}
+
+	{
+		w := httptest.NewRecorder()
+		testHandler.GetDashboardAgentCode(w, newRequest("GET", "/api/dashboard/agents/code?days=1&tz=UTC&project_id="+projectID, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("code: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var rows []DashboardAgentCodeResponse
+		if err := json.NewDecoder(w.Body).Decode(&rows); err != nil {
+			t.Fatalf("decode code: %v", err)
+		}
+		var got *DashboardAgentCodeResponse
+		for i := range rows {
+			if rows[i].AgentID == agentID {
+				got = &rows[i]
+			}
+		}
+		if got == nil || got.Additions != 10 || got.Deletions != 1 || got.FilesChanged != 1 || got.TaskCount != 1 {
+			t.Fatalf("code row = %+v, want exactly today's diff stats; rows=%v", got, rows)
+		}
+	}
+}
