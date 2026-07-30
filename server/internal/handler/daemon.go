@@ -2489,7 +2489,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				TaskID:      task.ID,
 			},
 			Query:       resp.ThreadName,
-			TokenBudget: 600,
+			TokenBudget: 1200,
 			Limit:       8,
 		}); err != nil {
 			if !errors.Is(err, service.ErrMemoryDisabled) {

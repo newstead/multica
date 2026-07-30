@@ -16,7 +16,7 @@ import (
 const (
 	memoryDeliveryWorkerPollInterval = time.Second
 	memoryDeliveryWorkerConcurrency  = 2
-	memoryDeliveryWorkerBatchSize    = 100
+	memoryDeliveryWorkerBatchSize    = 1
 )
 
 // MemoryDeliveryWorker owns durable memory-provider outbox dispatch. Provider

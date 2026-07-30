@@ -166,7 +166,7 @@ const (
 	MemorySourceExplicitFeedback    = "explicit_feedback"
 	MemorySourceMergedPRVerdict     = "merged_pr_verdict"
 
-	defaultMemoryRecallTokenBudget = 600
+	defaultMemoryRecallTokenBudget = 1200
 	defaultMemoryRecallLimit       = 8
 	maxMemoryRecallEventScan       = 200
 	maxMemoryRecallTextTokens      = 220
