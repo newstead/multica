@@ -2,6 +2,8 @@
  * @vitest-environment jsdom
  */
 import { fireEvent, render, screen } from "@testing-library/react";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@multica/ui/components/ui/dropdown-menu";
+import { cloneElement, isValidElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ActorAvatar, buildAgentIdentityBadgeModel } from "./actor-avatar";
 
@@ -32,7 +34,14 @@ vi.mock("@multica/ui/components/common/actor-avatar", () => ({
 }));
 vi.mock("@multica/ui/components/ui/hover-card", () => ({
   HoverCard: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  HoverCardTrigger: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  HoverCardTrigger: ({
+    children,
+    render,
+    ...props
+  }: React.HTMLAttributes<HTMLSpanElement> & { render?: React.ReactElement }) => {
+    const trigger = isValidElement(render) ? render : <span />;
+    return cloneElement(trigger, props, children);
+  },
   HoverCardContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("@multica/ui/components/ui/tooltip", () => ({
@@ -244,6 +253,81 @@ describe("ActorAvatar agent identity badge", () => {
 
     expect(screen.getByTestId("tooltip-content")).toHaveTextContent(
       "SPECIALIST \u00b7 TYPESCRIPT",
+    );
+  });
+
+  it("uses the internal hover-card trigger when no outer owner exists", () => {
+    actorState.identity = { roleCode: "BE", languageCodes: ["GO"] };
+
+    render(
+      <ActorAvatar
+        actorType="agent"
+        actorId="agent-1"
+        size="sm"
+        profileLink={false}
+        enableHoverCard
+        identityBadge={{ variant: "inline-row", hostMode: "owned" }}
+      />,
+    );
+
+    const trigger = screen
+      .getByTestId("base-avatar")
+      .closest("[data-actor-avatar-hover-trigger]");
+    expect(trigger).toHaveAttribute("tabindex", "0");
+    expect(trigger).toHaveAttribute(
+      "aria-label",
+      "Niko: Backend Engineer \u00b7 Go",
+    );
+    expect(trigger).toHaveAttribute("aria-describedby");
+
+    fireEvent.focus(trigger!);
+
+    expect(screen.getByTestId("tooltip-content")).toHaveTextContent(
+      "Backend Engineer \u00b7 Go",
+    );
+  });
+
+  it("treats managed menu items as owned hosts even with roving tabindex", () => {
+    actorState.identity = { roleCode: "QA", languageCodes: ["PY"] };
+
+    render(
+      <DropdownMenu open>
+        <DropdownMenuTrigger>Filters</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuCheckboxItem
+            checked
+            tabIndex={-1}
+            aria-label="Agent filter row"
+          >
+            <ActorAvatar
+              actorType="agent"
+              actorId="agent-1"
+              size="sm"
+              profileLink={false}
+              enableHoverCard
+              identityBadge={{ variant: "inline-row", hostMode: "owned" }}
+            />
+            Agent filter row
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>,
+    );
+
+    const item = screen.getByRole("menuitemcheckbox", {
+      name: "Agent filter row: Quality Assurance \u00b7 Python",
+    });
+    const trigger = screen
+      .getByTestId("base-avatar")
+      .closest("[data-actor-avatar-hover-trigger]");
+
+    expect(item).toHaveAttribute("data-slot", "dropdown-menu-checkbox-item");
+    expect(item).toHaveAttribute("aria-describedby");
+    expect(trigger).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.focus(item);
+
+    expect(screen.getByTestId("tooltip-content")).toHaveTextContent(
+      "Quality Assurance \u00b7 Python",
     );
   });
 });

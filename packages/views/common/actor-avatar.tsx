@@ -97,8 +97,22 @@ interface ActorAvatarProps {
   profileLink?: boolean;
 }
 
-const FOCUSABLE_ANCESTOR_SELECTOR =
-  'a[href], button:not([disabled]), [role="button"]:not([aria-disabled="true"]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE_ANCESTOR_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  '[role="button"]:not([aria-disabled="true"])',
+  '[role="link"]',
+  '[role="option"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[data-slot="dropdown-menu-item"]',
+  '[data-slot="dropdown-menu-checkbox-item"]',
+  '[data-slot="dropdown-menu-radio-item"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(", ");
+const OWNED_IDENTITY_HOVER_TRIGGER_SELECTOR =
+  "[data-actor-avatar-hover-trigger]";
 const PROFILE_LINK_CONTROL_SELECTOR =
   'button, [role^="menuitem"], [role="option"], [data-slot="dropdown-menu-item"], [data-slot="dropdown-menu-checkbox-item"], [data-slot="popover-trigger"]';
 
@@ -280,6 +294,7 @@ export function ActorAvatar({
     <AgentIdentityAvatarFrame
       badge={badgeModel}
       label={badgeLabel}
+      ownerLabel={`${name}: ${badgeLabel}`}
       variant={badgeVariant}
       hostMode={badgeHostMode}
     >
@@ -364,12 +379,14 @@ export function AgentStatusDot({
 function AgentIdentityAvatarFrame({
   badge,
   label,
+  ownerLabel,
   variant,
   hostMode,
   children,
 }: {
   badge: AgentIdentityBadgeModel;
   label: string;
+  ownerLabel: string;
   variant: AgentIdentityBadgeVariant;
   hostMode: AgentIdentityBadgeHostMode;
   children: React.ReactNode;
@@ -384,15 +401,16 @@ function AgentIdentityAvatarFrame({
     const frame = frameRef.current;
     if (!frame) return;
 
-    const owner = frame.parentElement?.closest(
-      FOCUSABLE_ANCESTOR_SELECTOR,
-    ) as HTMLElement | null;
+    const owner = findOwnedIdentityHost(frame);
     if (!owner) return;
 
     const previousAriaLabel = owner.getAttribute("aria-label");
     const previousAriaDescribedBy = owner.getAttribute("aria-describedby");
     const baseLabel = previousAriaLabel ?? getOwnerTextWithoutIdentityFrame(owner);
-    owner.setAttribute("aria-label", appendIdentityLabel(baseLabel, label));
+    owner.setAttribute(
+      "aria-label",
+      appendIdentityLabel(baseLabel, label, ownerLabel),
+    );
     owner.setAttribute(
       "aria-describedby",
       mergeIdRefs(previousAriaDescribedBy, ownerDescriptionId),
@@ -416,7 +434,7 @@ function AgentIdentityAvatarFrame({
       setOwnerElement(null);
       setOwnerTooltipOpen(false);
     };
-  }, [hostMode, label, ownerDescriptionId]);
+  }, [hostMode, label, ownerDescriptionId, ownerLabel]);
 
   const badgeElement = (
     <span
@@ -487,6 +505,14 @@ function displayIdentityCode(code: string, kind: "role" | "language") {
   return known ? code : code.slice(0, 4);
 }
 
+function findOwnedIdentityHost(frame: HTMLElement) {
+  const ancestor = frame.parentElement?.closest(FOCUSABLE_ANCESTOR_SELECTOR);
+  if (ancestor instanceof HTMLElement) return ancestor;
+
+  const hoverTrigger = frame.querySelector(OWNED_IDENTITY_HOVER_TRIGGER_SELECTOR);
+  return hoverTrigger instanceof HTMLElement ? hoverTrigger : null;
+}
+
 function getOwnerTextWithoutIdentityFrame(owner: HTMLElement) {
   const clone = owner.cloneNode(true) as HTMLElement;
   clone.querySelectorAll("[data-agent-identity-frame]").forEach((element) => {
@@ -495,8 +521,12 @@ function getOwnerTextWithoutIdentityFrame(owner: HTMLElement) {
   return clone.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 
-function appendIdentityLabel(baseLabel: string, identityLabel: string) {
-  if (!baseLabel) return identityLabel;
+function appendIdentityLabel(
+  baseLabel: string,
+  identityLabel: string,
+  fallbackLabel: string,
+) {
+  if (!baseLabel) return fallbackLabel;
   if (baseLabel.includes(identityLabel)) return baseLabel;
   return `${baseLabel}: ${identityLabel}`;
 }
@@ -676,6 +706,7 @@ function ActorAvatarHoverCardShell({
     <HoverCard>
       <HoverCardTrigger
         render={<span ref={triggerRef} />}
+        data-actor-avatar-hover-trigger=""
         tabIndex={tabIndex}
         className={className}
       >
