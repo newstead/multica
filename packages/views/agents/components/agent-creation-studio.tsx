@@ -18,6 +18,8 @@ import { api, ApiError } from "@multica/core/api";
 import { useAuthStore } from "@multica/core/auth";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
+  AGENT_MAX_CONCURRENT_TASKS_MAX,
+  AGENT_MAX_CONCURRENT_TASKS_MIN,
   agentTemplateDetailOptions,
   agentTemplateListOptions,
 } from "@multica/core/agents";
@@ -1627,7 +1629,9 @@ function BuilderConversation({
   ];
 
   return (
-    <section className="flex min-h-0 flex-col bg-background">
+    // `@container`: this is one column of the studio's split layout, so the
+    // shared chat gutter must size against the column, not the viewport.
+    <section className="flex min-h-0 flex-col bg-background @container">
       <header className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b px-5 py-2.5">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">
@@ -1943,7 +1947,14 @@ export function buildCreateAgentRequest(options: {
     if (duplicateSource.custom_args.length > 0) {
       request.custom_args = duplicateSource.custom_args;
     }
-    request.max_concurrent_tasks = duplicateSource.max_concurrent_tasks;
+    const sourceConcurrency = duplicateSource.max_concurrent_tasks;
+    if (
+      Number.isInteger(sourceConcurrency) &&
+      sourceConcurrency >= AGENT_MAX_CONCURRENT_TASKS_MIN &&
+      sourceConcurrency <= AGENT_MAX_CONCURRENT_TASKS_MAX
+    ) {
+      request.max_concurrent_tasks = sourceConcurrency;
+    }
   }
   return request;
 }

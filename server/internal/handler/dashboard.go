@@ -15,14 +15,14 @@ import (
 //
 // Eight read endpoints power the workspace dashboard:
 //
-//   GET /api/dashboard/usage/daily        per-(date, model) token rows
-//   GET /api/dashboard/usage/by-agent     per-(agent, model) token rows
-//   GET /api/dashboard/agent-runtime      per-agent run-time + task counts
-//   GET /api/dashboard/runtime/daily      per-date run-time + task counts
-//   GET /api/dashboard/failures/daily     per-(date, failure_reason) counts
-//   GET /api/dashboard/failures/by-agent  per-(agent, failure_reason) counts
-//   GET /api/dashboard/agents/sessions    per-agent session stats + failure breakdown
-//   GET /api/dashboard/agents/code        per-agent diff stats + PR stats
+//   GET /api/dashboard/usage/daily       per-(date, model) token rows
+//   GET /api/dashboard/usage/by-agent    per-(agent, model) token rows
+//   GET /api/dashboard/agent-runtime     per-agent run-time + task counts
+//   GET /api/dashboard/runtime/daily     per-date run-time + task counts
+//   GET /api/dashboard/agents/sessions   per-agent session and failure summaries
+//   GET /api/dashboard/agents/code       per-agent task and PR code-change stats
+//   GET /api/dashboard/failures/daily    per-(date, failure_reason) counts
+//   GET /api/dashboard/failures/by-agent per-(agent, failure_reason) counts
 //
 // All of them accept ?days=N (defaults to 30, capped at 365) and an optional
 // ?project_id=<uuid> to scope the rollup to a single project. With no
@@ -32,11 +32,96 @@ import (
 // dimension is intentionally preserved on the wire (same convention as the
 // per-runtime usage endpoints).
 //
-// Access control: workspace membership only — we don't filter by per-agent
-// visibility on the dashboard because token spend / run time are workspace-
-// level operational metrics. Agent-detail pages still gate on per-agent
-// access (see GetWorkspaceAgentRunCounts).
+// Access control: the workspace-wide series (usage/daily, runtime/daily,
+// failures/daily) carry no agent dimension and need workspace membership only —
+// token spend / run time / failure volume are workspace-level operational
+// metrics. The five per-AGENT rollups additionally apply per-agent visibility:
+// see foldRestrictedAgents.
 // ---------------------------------------------------------------------------
+
+// restrictedAgentsRowID is the synthetic agent_id that every row this response
+// refuses to name is folded onto. Deliberately not a UUID, so it can never
+// collide with a real agent id, and distinct from the client's "deleted agents"
+// bucket: those agents are gone, these are alive and still running.
+const restrictedAgentsRowID = "__restricted_agents__"
+
+// foldRestrictedAgents rewrites every row named by `restricted` (see
+// restrictedAgentIDs) onto restrictedAgentsRowID, merging the rewritten rows
+// that then collide on whatever dimensions the row has left (provider+model,
+// failure_reason, or nothing at all).
+//
+// "Private" is a promise the rest of the codebase keeps — agent detail 403s,
+// ListAgents filters, even an admin cannot invoke someone else's private agent.
+// These three endpoints used to break it by returning bare agent UUIDs for the
+// whole workspace, which told a plain member that a private agent exists, how
+// much it runs, and what it fails on. The client already collapsed those rows,
+// but client-side filtering is decoration: one curl bypasses it.
+//
+// The same fold covers the hidden `kind = 'system'` builder carriers, which no
+// list endpoint returns to anyone: aggregating over agent_task_queue /
+// task_usage picks them up regardless of kind, so without this they arrive as a
+// bare UUID no client can name.
+//
+// Folding rather than dropping: each of these responses is the per-agent half
+// of a pair whose other half (usage/daily, runtime/daily, failures/daily) is
+// workspace-scoped and unfiltered, so dropping rows would make the per-agent
+// breakdown stop adding up to the totals rendered directly beside it. One
+// merged bucket keeps every sum intact while carrying no real agent id and no
+// per-agent split.
+//
+// The retained dimensions leak nothing new: the workspace-level series already
+// exposes each (provider, model) / failure_reason total for the whole
+// workspace, and every visible agent's rows are returned in full, so the
+// restricted remainder was always one subtraction away.
+//
+// `rewrite` stamps the sentinel id and returns the merge key for what remains;
+// `merge` accumulates a later row onto the one already emitted. Row order is
+// otherwise preserved, with the bucket sitting where its first member was — the
+// client re-ranks all of these anyway.
+func foldRestrictedAgents[T any, K comparable](
+	rows []T,
+	restricted map[string]struct{},
+	agentIDOf func(T) string,
+	rewrite func(T) (T, K),
+	merge func(dst, src T) T,
+) []T {
+	if len(restricted) == 0 {
+		return rows
+	}
+	out := make([]T, 0, len(rows))
+	bucketAt := make(map[K]int)
+	for _, row := range rows {
+		if _, hidden := restricted[agentIDOf(row)]; !hidden {
+			out = append(out, row)
+			continue
+		}
+		folded, key := rewrite(row)
+		if i, ok := bucketAt[key]; ok {
+			out[i] = merge(out[i], folded)
+			continue
+		}
+		bucketAt[key] = len(out)
+		out = append(out, folded)
+	}
+	return out
+}
+
+// dashboardRestrictedAgents resolves the agents this request may not see. On
+// failure it writes a 500 and returns ok=false: an unfiltered rollup is the one
+// outcome this must never degrade to.
+func (h *Handler) dashboardRestrictedAgents(
+	w http.ResponseWriter,
+	r *http.Request,
+	workspaceID, role string,
+) (map[string]struct{}, bool) {
+	actorType, actorID := h.resolveActor(r, requestUserID(r), workspaceID)
+	restricted, ok := h.restrictedAgentIDs(r.Context(), workspaceID, actorType, actorID, role)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "failed to resolve agent access")
+		return nil, false
+	}
+	return restricted, true
+}
 
 // parseProjectIDParam reads ?project_id=<uuid> off the URL. Returns a
 // pgtype.UUID with Valid=false when the param is absent so sqlc's nullable
@@ -173,10 +258,15 @@ type DashboardUsageByAgentResponse struct {
 // task_usage_hourly with the viewer's tz applied to the `?days=` cutoff.
 func (h *Handler) GetDashboardUsageByAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
-	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
 		return
 	}
 	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	restricted, ok := h.dashboardRestrictedAgents(w, r, workspaceID, member.Role)
 	if !ok {
 		return
 	}
@@ -190,7 +280,42 @@ func (h *Handler) GetDashboardUsageByAgent(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to list usage by agent")
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, foldRestrictedUsageByAgent(resp, restricted))
+}
+
+// providerModelKey keeps the restricted bucket split by (provider, model) so
+// the client can still price it from its per-model table — without that the
+// bucket's cost is uncomputable and the leaderboard stops summing to the Cost
+// KPI, which is the whole reason these rows are folded rather than dropped.
+type providerModelKey struct{ provider, model string }
+
+func foldRestrictedUsageByAgent(
+	rows []DashboardUsageByAgentResponse,
+	restricted map[string]struct{},
+) []DashboardUsageByAgentResponse {
+	return foldRestrictedAgents(
+		rows,
+		restricted,
+		func(row DashboardUsageByAgentResponse) string { return row.AgentID },
+		func(row DashboardUsageByAgentResponse) (DashboardUsageByAgentResponse, providerModelKey) {
+			key := providerModelKey{provider: row.Provider, model: row.Model}
+			row.AgentID = restrictedAgentsRowID
+			return row, key
+		},
+		func(dst, src DashboardUsageByAgentResponse) DashboardUsageByAgentResponse {
+			dst.InputTokens += src.InputTokens
+			dst.OutputTokens += src.OutputTokens
+			dst.CacheReadTokens += src.CacheReadTokens
+			dst.CacheWriteTokens += src.CacheWriteTokens
+			dst.CostUSDTicks += src.CostUSDTicks
+			dst.UncostedInputTokens += src.UncostedInputTokens
+			dst.UncostedOutputTokens += src.UncostedOutputTokens
+			dst.UncostedCacheReadTokens += src.UncostedCacheReadTokens
+			dst.UncostedCacheWriteTokens += src.UncostedCacheWriteTokens
+			dst.TaskCount += src.TaskCount
+			return dst
+		},
+	)
 }
 
 func (h *Handler) listDashboardUsageByAgent(
@@ -246,10 +371,15 @@ type DashboardAgentRunTimeResponse struct {
 // finite duration.
 func (h *Handler) GetDashboardAgentRunTime(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
-	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
 		return
 	}
 	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	restricted, ok := h.dashboardRestrictedAgents(w, r, workspaceID, member.Role)
 	if !ok {
 		return
 	}
@@ -277,7 +407,30 @@ func (h *Handler) GetDashboardAgentRunTime(w http.ResponseWriter, r *http.Reques
 			FailedCount:  row.FailedCount,
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, foldRestrictedAgentRunTime(resp, restricted))
+}
+
+// The run-time row carries no dimension besides the agent, so every restricted
+// row merges into a single bucket — hence the empty merge key.
+func foldRestrictedAgentRunTime(
+	rows []DashboardAgentRunTimeResponse,
+	restricted map[string]struct{},
+) []DashboardAgentRunTimeResponse {
+	return foldRestrictedAgents(
+		rows,
+		restricted,
+		func(row DashboardAgentRunTimeResponse) string { return row.AgentID },
+		func(row DashboardAgentRunTimeResponse) (DashboardAgentRunTimeResponse, struct{}) {
+			row.AgentID = restrictedAgentsRowID
+			return row, struct{}{}
+		},
+		func(dst, src DashboardAgentRunTimeResponse) DashboardAgentRunTimeResponse {
+			dst.TotalSeconds += src.TotalSeconds
+			dst.TaskCount += src.TaskCount
+			dst.FailedCount += src.FailedCount
+			return dst
+		},
+	)
 }
 
 // DashboardRunTimeDailyResponse is one (date) bucket of terminal-task run
@@ -330,6 +483,225 @@ func (h *Handler) GetDashboardRunTimeDaily(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// DashboardAgentFailureReasonResponse is one failed-task reason bucket for an
+// agent. The SQL query returns the top reasons by count.
+type DashboardAgentFailureReasonResponse struct {
+	FailureReason string `json:"failure_reason"`
+	Count         int32  `json:"count"`
+}
+
+// DashboardAgentSessionsResponse is one agent's terminal task/session summary
+// over the selected dashboard window.
+type DashboardAgentSessionsResponse struct {
+	AgentID               string                                `json:"agent_id"`
+	TaskCount             int32                                 `json:"task_count"`
+	CompletedCount        int32                                 `json:"completed_count"`
+	FailedCount           int32                                 `json:"failed_count"`
+	FailureReasons        []DashboardAgentFailureReasonResponse `json:"failure_reasons"`
+	QueueWaitP50Seconds   int64                                 `json:"queue_wait_p50_seconds"`
+	QueueWaitP95Seconds   int64                                 `json:"queue_wait_p95_seconds"`
+	RunDurationP50Seconds int64                                 `json:"run_duration_p50_seconds"`
+	RunDurationP95Seconds int64                                 `json:"run_duration_p95_seconds"`
+}
+
+// GetDashboardAgentSessions returns per-agent terminal task counts, failure
+// reason breakdowns, queue wait percentiles, and run duration percentiles.
+func (h *Handler) GetDashboardAgentSessions(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
+		return
+	}
+	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	restricted, ok := h.dashboardRestrictedAgents(w, r, workspaceID, member.Role)
+	if !ok {
+		return
+	}
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	rows, err := h.Queries.ListDashboardAgentSessions(r.Context(), db.ListDashboardAgentSessionsParams{
+		WorkspaceID: parseUUID(workspaceID),
+		Since:       since,
+		ProjectID:   projectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list agent sessions")
+		return
+	}
+
+	resp := make([]DashboardAgentSessionsResponse, len(rows))
+	for i, row := range rows {
+		failureReasons := []DashboardAgentFailureReasonResponse{}
+		if len(row.FailureReasons) > 0 {
+			if err := json.Unmarshal(row.FailureReasons, &failureReasons); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to decode agent sessions")
+				return
+			}
+		}
+		resp[i] = DashboardAgentSessionsResponse{
+			AgentID:               uuidToString(row.AgentID),
+			TaskCount:             row.TaskCount,
+			CompletedCount:        row.CompletedCount,
+			FailedCount:           row.FailedCount,
+			FailureReasons:        failureReasons,
+			QueueWaitP50Seconds:   row.QueueWaitP50Seconds,
+			QueueWaitP95Seconds:   row.QueueWaitP95Seconds,
+			RunDurationP50Seconds: row.RunDurationP50Seconds,
+			RunDurationP95Seconds: row.RunDurationP95Seconds,
+		}
+	}
+	writeJSON(w, http.StatusOK, foldRestrictedAgentSessions(resp, restricted))
+}
+
+func foldRestrictedAgentSessions(
+	rows []DashboardAgentSessionsResponse,
+	restricted map[string]struct{},
+) []DashboardAgentSessionsResponse {
+	return foldRestrictedAgents(
+		rows,
+		restricted,
+		func(row DashboardAgentSessionsResponse) string { return row.AgentID },
+		func(row DashboardAgentSessionsResponse) (DashboardAgentSessionsResponse, struct{}) {
+			row.AgentID = restrictedAgentsRowID
+			return row, struct{}{}
+		},
+		func(dst, src DashboardAgentSessionsResponse) DashboardAgentSessionsResponse {
+			dst.TaskCount += src.TaskCount
+			dst.CompletedCount += src.CompletedCount
+			dst.FailedCount += src.FailedCount
+			dst.FailureReasons = mergeAgentFailureReasons(dst.FailureReasons, src.FailureReasons)
+			dst.QueueWaitP50Seconds = maxInt64(dst.QueueWaitP50Seconds, src.QueueWaitP50Seconds)
+			dst.QueueWaitP95Seconds = maxInt64(dst.QueueWaitP95Seconds, src.QueueWaitP95Seconds)
+			dst.RunDurationP50Seconds = maxInt64(dst.RunDurationP50Seconds, src.RunDurationP50Seconds)
+			dst.RunDurationP95Seconds = maxInt64(dst.RunDurationP95Seconds, src.RunDurationP95Seconds)
+			return dst
+		},
+	)
+}
+
+func mergeAgentFailureReasons(
+	dst, src []DashboardAgentFailureReasonResponse,
+) []DashboardAgentFailureReasonResponse {
+	if len(dst) == 0 {
+		return src
+	}
+	if len(src) == 0 {
+		return dst
+	}
+	merged := append([]DashboardAgentFailureReasonResponse(nil), dst...)
+	positions := make(map[string]int, len(dst)+len(src))
+	for i, reason := range merged {
+		positions[reason.FailureReason] = i
+	}
+	for _, reason := range src {
+		if i, ok := positions[reason.FailureReason]; ok {
+			merged[i].Count += reason.Count
+			continue
+		}
+		positions[reason.FailureReason] = len(merged)
+		merged = append(merged, reason)
+	}
+	return merged
+}
+
+func maxInt64(a, b int64) int64 {
+	if b > a {
+		return b
+	}
+	return a
+}
+
+// DashboardAgentCodeResponse is one agent's code-change summary over the
+// selected dashboard window. Task-level stats come from result.diff_stats;
+// PR-level stats come from linked GitHub pull request snapshots.
+type DashboardAgentCodeResponse struct {
+	AgentID          string `json:"agent_id"`
+	Additions        int64  `json:"additions"`
+	Deletions        int64  `json:"deletions"`
+	FilesChanged     int64  `json:"files_changed"`
+	TaskCount        int32  `json:"task_count"`
+	PRAdditions      int64  `json:"pr_additions"`
+	PRDeletions      int64  `json:"pr_deletions"`
+	PRChangedFiles   int64  `json:"pr_changed_files"`
+	PullRequestCount int32  `json:"pull_request_count"`
+}
+
+// GetDashboardAgentCode returns per-agent task diff stats plus linked GitHub PR
+// stats, optionally scoped to a project.
+func (h *Handler) GetDashboardAgentCode(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
+		return
+	}
+	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	restricted, ok := h.dashboardRestrictedAgents(w, r, workspaceID, member.Role)
+	if !ok {
+		return
+	}
+	tz := h.resolveViewingTZ(r)
+	since := parseSinceParamInTZ(r, 30, tz)
+
+	rows, err := h.Queries.ListDashboardAgentCode(r.Context(), db.ListDashboardAgentCodeParams{
+		WorkspaceID: parseUUID(workspaceID),
+		Since:       since,
+		ProjectID:   projectID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list agent code")
+		return
+	}
+
+	resp := make([]DashboardAgentCodeResponse, len(rows))
+	for i, row := range rows {
+		resp[i] = DashboardAgentCodeResponse{
+			AgentID:          uuidToString(row.AgentID),
+			Additions:        row.Additions,
+			Deletions:        row.Deletions,
+			FilesChanged:     row.FilesChanged,
+			TaskCount:        row.TaskCount,
+			PRAdditions:      row.PrAdditions,
+			PRDeletions:      row.PrDeletions,
+			PRChangedFiles:   row.PrChangedFiles,
+			PullRequestCount: row.PullRequestCount,
+		}
+	}
+	writeJSON(w, http.StatusOK, foldRestrictedAgentCode(resp, restricted))
+}
+
+func foldRestrictedAgentCode(
+	rows []DashboardAgentCodeResponse,
+	restricted map[string]struct{},
+) []DashboardAgentCodeResponse {
+	return foldRestrictedAgents(
+		rows,
+		restricted,
+		func(row DashboardAgentCodeResponse) string { return row.AgentID },
+		func(row DashboardAgentCodeResponse) (DashboardAgentCodeResponse, struct{}) {
+			row.AgentID = restrictedAgentsRowID
+			return row, struct{}{}
+		},
+		func(dst, src DashboardAgentCodeResponse) DashboardAgentCodeResponse {
+			dst.Additions += src.Additions
+			dst.Deletions += src.Deletions
+			dst.FilesChanged += src.FilesChanged
+			dst.TaskCount += src.TaskCount
+			dst.PRAdditions += src.PRAdditions
+			dst.PRDeletions += src.PRDeletions
+			dst.PRChangedFiles += src.PRChangedFiles
+			dst.PullRequestCount += src.PullRequestCount
+			return dst
+		},
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -397,75 +769,6 @@ func (h *Handler) GetDashboardFailuresDaily(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// DashboardAgentFailureReasonResponse is one failed-task reason bucket for an
-// agent. The SQL query returns the top reasons by count.
-type DashboardAgentFailureReasonResponse struct {
-	FailureReason string `json:"failure_reason"`
-	Count         int32  `json:"count"`
-}
-
-// DashboardAgentSessionsResponse is one agent's terminal task/session summary
-// over the selected dashboard window.
-type DashboardAgentSessionsResponse struct {
-	AgentID               string                                `json:"agent_id"`
-	TaskCount             int32                                 `json:"task_count"`
-	CompletedCount        int32                                 `json:"completed_count"`
-	FailedCount           int32                                 `json:"failed_count"`
-	FailureReasons        []DashboardAgentFailureReasonResponse `json:"failure_reasons"`
-	QueueWaitP50Seconds   int64                                 `json:"queue_wait_p50_seconds"`
-	QueueWaitP95Seconds   int64                                 `json:"queue_wait_p95_seconds"`
-	RunDurationP50Seconds int64                                 `json:"run_duration_p50_seconds"`
-	RunDurationP95Seconds int64                                 `json:"run_duration_p95_seconds"`
-}
-
-// GetDashboardAgentSessions returns per-agent terminal task counts, failure
-// reason breakdowns, queue wait percentiles, and run duration percentiles.
-func (h *Handler) GetDashboardAgentSessions(w http.ResponseWriter, r *http.Request) {
-	workspaceID := h.resolveWorkspaceID(r)
-	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
-		return
-	}
-	projectID, ok := parseProjectIDParam(w, r)
-	if !ok {
-		return
-	}
-	tz := h.resolveViewingTZ(r)
-	since := parseSinceParamInTZ(r, 30, tz)
-
-	rows, err := h.Queries.ListDashboardAgentSessions(r.Context(), db.ListDashboardAgentSessionsParams{
-		WorkspaceID: parseUUID(workspaceID),
-		Since:       since,
-		ProjectID:   projectID,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list agent sessions")
-		return
-	}
-
-	resp := make([]DashboardAgentSessionsResponse, len(rows))
-	for i, row := range rows {
-		failureReasons := []DashboardAgentFailureReasonResponse{}
-		if len(row.FailureReasons) > 0 {
-			if err := json.Unmarshal(row.FailureReasons, &failureReasons); err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to decode agent sessions")
-				return
-			}
-		}
-		resp[i] = DashboardAgentSessionsResponse{
-			AgentID:               uuidToString(row.AgentID),
-			TaskCount:             row.TaskCount,
-			CompletedCount:        row.CompletedCount,
-			FailedCount:           row.FailedCount,
-			FailureReasons:        failureReasons,
-			QueueWaitP50Seconds:   row.QueueWaitP50Seconds,
-			QueueWaitP95Seconds:   row.QueueWaitP95Seconds,
-			RunDurationP50Seconds: row.RunDurationP50Seconds,
-			RunDurationP95Seconds: row.RunDurationP95Seconds,
-		}
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
-
 // DashboardFailureByAgentResponse is one (agent, failure_reason) bucket of
 // terminal-task counts. FailureReason == "" is the succeeded bucket.
 type DashboardFailureByAgentResponse struct {
@@ -479,10 +782,15 @@ type DashboardFailureByAgentResponse struct {
 // Powers the Usage page's "top offenders" list.
 func (h *Handler) GetDashboardFailuresByAgent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)
-	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
+	member, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
 		return
 	}
 	projectID, ok := parseProjectIDParam(w, r)
+	if !ok {
+		return
+	}
+	restricted, ok := h.dashboardRestrictedAgents(w, r, workspaceID, member.Role)
 	if !ok {
 		return
 	}
@@ -513,61 +821,30 @@ func (h *Handler) GetDashboardFailuresByAgent(w http.ResponseWriter, r *http.Req
 			TaskCount:     row.TaskCount,
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, foldRestrictedFailuresByAgent(resp, restricted))
 }
 
-// DashboardAgentCodeResponse is one agent's code-change summary over the
-// selected dashboard window. Task-level stats come from result.diff_stats;
-// PR-level stats come from linked GitHub pull request snapshots.
-type DashboardAgentCodeResponse struct {
-	AgentID          string `json:"agent_id"`
-	Additions        int64  `json:"additions"`
-	Deletions        int64  `json:"deletions"`
-	FilesChanged     int64  `json:"files_changed"`
-	TaskCount        int32  `json:"task_count"`
-	PRAdditions      int64  `json:"pr_additions"`
-	PRDeletions      int64  `json:"pr_deletions"`
-	PRChangedFiles   int64  `json:"pr_changed_files"`
-	PullRequestCount int32  `json:"pull_request_count"`
-}
-
-// GetDashboardAgentCode returns per-agent task diff stats plus linked GitHub PR
-// stats, optionally scoped to a project.
-func (h *Handler) GetDashboardAgentCode(w http.ResponseWriter, r *http.Request) {
-	workspaceID := h.resolveWorkspaceID(r)
-	if _, ok := h.workspaceMember(w, r, workspaceID); !ok {
-		return
-	}
-	projectID, ok := parseProjectIDParam(w, r)
-	if !ok {
-		return
-	}
-	tz := h.resolveViewingTZ(r)
-	since := parseSinceParamInTZ(r, 30, tz)
-
-	rows, err := h.Queries.ListDashboardAgentCode(r.Context(), db.ListDashboardAgentCodeParams{
-		WorkspaceID: parseUUID(workspaceID),
-		Since:       since,
-		ProjectID:   projectID,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list agent code")
-		return
-	}
-
-	resp := make([]DashboardAgentCodeResponse, len(rows))
-	for i, row := range rows {
-		resp[i] = DashboardAgentCodeResponse{
-			AgentID:          uuidToString(row.AgentID),
-			Additions:        row.Additions,
-			Deletions:        row.Deletions,
-			FilesChanged:     row.FilesChanged,
-			TaskCount:        row.TaskCount,
-			PRAdditions:      row.PrAdditions,
-			PRDeletions:      row.PrDeletions,
-			PRChangedFiles:   row.PrChangedFiles,
-			PullRequestCount: row.PullRequestCount,
-		}
-	}
-	writeJSON(w, http.StatusOK, resp)
+// The restricted bucket keeps its failure_reason split: the client derives the
+// bucket's failure rate and class mix from these raw rows exactly like any
+// other agent's, and the succeeded rows (failure_reason == "") are the
+// denominator that keeps the offender list reconciling with the workspace
+// failure total above it.
+func foldRestrictedFailuresByAgent(
+	rows []DashboardFailureByAgentResponse,
+	restricted map[string]struct{},
+) []DashboardFailureByAgentResponse {
+	return foldRestrictedAgents(
+		rows,
+		restricted,
+		func(row DashboardFailureByAgentResponse) string { return row.AgentID },
+		func(row DashboardFailureByAgentResponse) (DashboardFailureByAgentResponse, string) {
+			reason := row.FailureReason
+			row.AgentID = restrictedAgentsRowID
+			return row, reason
+		},
+		func(dst, src DashboardFailureByAgentResponse) DashboardFailureByAgentResponse {
+			dst.TaskCount += src.TaskCount
+			return dst
+		},
+	)
 }

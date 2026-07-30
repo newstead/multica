@@ -21,6 +21,12 @@ const (
 	// config, event capture, delivery outbox, or recall-sample endpoints are
 	// reachable.
 	MemoryGateway = "memory_gateway"
+	// DesktopHangStackCapture gates reading a JS call stack out of a hung
+	// desktop renderer (MUL-5345). Capture holds a debugger channel open on
+	// every renderer, so the desktop client is fail-closed: it stays off unless
+	// this key arrives as an explicit true. That makes publishing the key here
+	// mandatory — a key the client never receives can never be turned on.
+	DesktopHangStackCapture = "desktop_hang_stack_capture"
 	// agentBuilderCompat is no longer a release flag. Keep publishing the key
 	// as enabled so installed desktop clients that still gate the AI creation
 	// entry on this config decision receive the permanently enabled behavior.
@@ -34,6 +40,7 @@ const (
 var frontendPublicFlags = []string{
 	ComposioMCPApps,
 	ResourceLabels,
+	DesktopHangStackCapture,
 }
 
 func ComposioMCPAppsEnabled(ctx context.Context, flags *featureflag.Service) bool {
@@ -46,6 +53,10 @@ func ResourceLabelsEnabled(ctx context.Context, flags *featureflag.Service) bool
 
 func MemoryGatewayEnabled(ctx context.Context, flags *featureflag.Service) bool {
 	return flags.IsEnabled(ctx, MemoryGateway, false)
+}
+
+func DesktopHangStackCaptureEnabled(ctx context.Context, flags *featureflag.Service) bool {
+	return flags.IsEnabled(ctx, DesktopHangStackCapture, false)
 }
 
 func EvaluateFrontendPublicFlags(ctx context.Context, flags *featureflag.Service) map[string]bool {
