@@ -581,6 +581,8 @@ export const AgentSchema: z.ZodType<Agent> = z.object({
   description: z.string().default(""),
   instructions: z.string().default(""),
   avatar_url: z.string().nullable().default(null),
+  role_code: z.string().nullable().optional(),
+  language_codes: z.array(z.string()).nullable().optional().default([]),
   runtime_mode: z.string().catch("daemon") as unknown as z.ZodType<
     Agent["runtime_mode"]
   >,

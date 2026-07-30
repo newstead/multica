@@ -28,13 +28,13 @@ INSERT INTO agent (
     workspace_id, name, description, avatar_url, runtime_mode,
     runtime_config, runtime_id, visibility, max_concurrent_tasks, owner_id,
     instructions, custom_env, custom_args, mcp_config, model, thinking_level,
-    service_tier,
+    service_tier, role_code, language_codes,
     composio_toolkit_allowlist, permission_mode
 ) VALUES (
     $1, $2, $3, $4, $5,
     $6, $7, $8, $9, $10,
     $11, $12, $13, $14, $15, $16,
-    $17,
+    $17, sqlc.narg('role_code'), sqlc.narg('language_codes')::text[],
     sqlc.narg('composio_toolkit_allowlist')::text[],
     COALESCE(sqlc.narg('permission_mode'), 'private')
 )
@@ -113,6 +113,8 @@ UPDATE agent SET
     model = COALESCE(sqlc.narg('model'), model),
     thinking_level = COALESCE(sqlc.narg('thinking_level'), thinking_level),
     service_tier = COALESCE(sqlc.narg('service_tier'), service_tier),
+    role_code = COALESCE(sqlc.narg('role_code'), role_code),
+    language_codes = COALESCE(sqlc.narg('language_codes')::text[], language_codes),
     composio_toolkit_allowlist = COALESCE(sqlc.narg('composio_toolkit_allowlist')::text[], composio_toolkit_allowlist),
     updated_at = now()
 WHERE id = $1
@@ -141,6 +143,20 @@ RETURNING *;
 -- Explicit NULL-clear for service_tier. COALESCE-based UpdateAgent cannot
 -- set the column back to NULL, so the API routes "Runtime default" here.
 UPDATE agent SET service_tier = NULL, updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: ClearAgentRoleCode :one
+-- Explicit NULL-clear for role_code. COALESCE-based UpdateAgent cannot set a
+-- nullable column back to NULL, so the API routes clear requests here.
+UPDATE agent SET role_code = NULL, updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: ClearAgentLanguageCodes :one
+-- Explicit NULL-clear for language_codes. COALESCE-based UpdateAgent cannot set
+-- a nullable array column back to NULL, so the API routes clear requests here.
+UPDATE agent SET language_codes = NULL, updated_at = now()
 WHERE id = $1
 RETURNING *;
 

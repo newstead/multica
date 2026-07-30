@@ -10,10 +10,12 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/analytics"
@@ -34,6 +36,42 @@ import (
 // char_length and the front-end's String.prototype.length-with-counter UX.
 const maxAgentDescriptionLength = 255
 
+const agentIdentityActivityUpdated = "agent_identity_updated"
+
+var validAgentRoleCodes = map[string]struct{}{
+	"TL":  {},
+	"BE":  {},
+	"FE":  {},
+	"FS":  {},
+	"QA":  {},
+	"OPS": {},
+	"ML":  {},
+	"DA":  {},
+	"SRE": {},
+	"SEC": {},
+}
+
+var orderedAgentRoleCodes = []string{"TL", "BE", "FE", "FS", "QA", "OPS", "ML", "DA", "SRE", "SEC"}
+
+var validAgentLanguageCodes = map[string]struct{}{
+	"GO": {},
+	"PY": {},
+	"TS": {},
+	"JS": {},
+	"RS": {},
+	"SH": {},
+	"RB": {},
+	"JV": {},
+	"KT": {},
+	"SW": {},
+	"CS": {},
+	"CP": {},
+	"SC": {},
+	"EL": {},
+}
+
+var orderedAgentLanguageCodes = []string{"GO", "PY", "TS", "JS", "RS", "SH", "RB", "JV", "KT", "SW", "CS", "CP", "SC", "EL"}
+
 type AgentResponse struct {
 	ID            string          `json:"id"`
 	WorkspaceID   string          `json:"workspace_id"`
@@ -42,6 +80,8 @@ type AgentResponse struct {
 	Description   string          `json:"description"`
 	Instructions  string          `json:"instructions"`
 	AvatarURL     *string         `json:"avatar_url"`
+	RoleCode      *string         `json:"role_code"`
+	LanguageCodes []string        `json:"language_codes"`
 	RuntimeMode   string          `json:"runtime_mode"`
 	RuntimeConfig any             `json:"runtime_config"`
 	CustomArgs    []string        `json:"custom_args"`
@@ -163,6 +203,8 @@ func agentToResponse(a db.Agent) AgentResponse {
 		Description:              a.Description,
 		Instructions:             a.Instructions,
 		AvatarURL:                textToPtr(a.AvatarUrl),
+		RoleCode:                 textToPtr(a.RoleCode),
+		LanguageCodes:            a.LanguageCodes,
 		RuntimeMode:              a.RuntimeMode,
 		RuntimeConfig:            rc,
 		CustomArgs:               customArgs,
@@ -935,6 +977,8 @@ type CreateAgentRequest struct {
 	Description   string            `json:"description"`
 	Instructions  string            `json:"instructions"`
 	AvatarURL     *string           `json:"avatar_url"`
+	RoleCode      *string           `json:"role_code"`
+	LanguageCodes []string          `json:"language_codes"`
 	RuntimeID     string            `json:"runtime_id"`
 	RuntimeConfig any               `json:"runtime_config"`
 	CustomEnv     map[string]string `json:"custom_env"`
@@ -1121,6 +1165,26 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		allowlist = nil
 	}
 
+	roleCodeValue := pgtype.Text{}
+	if req.RoleCode != nil {
+		roleCode, valid, err := normaliseAgentRoleCode(*req.RoleCode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if valid {
+			roleCodeValue = pgtype.Text{String: roleCode, Valid: true}
+		}
+	}
+	languageCodes, err := normaliseAgentLanguageCodes(req.LanguageCodes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(languageCodes) == 0 {
+		languageCodes = nil
+	}
+
 	skillUUIDs, ok := parseUUIDSliceOrBadRequest(w, req.SkillIDs, "skill_ids")
 	if !ok {
 		return
@@ -1162,6 +1226,8 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		Model:                    pgtype.Text{String: req.Model, Valid: req.Model != ""},
 		ThinkingLevel:            pgtype.Text{String: req.ThinkingLevel, Valid: req.ThinkingLevel != ""},
 		ServiceTier:              pgtype.Text{String: req.ServiceTier, Valid: req.ServiceTier != ""},
+		RoleCode:                 roleCodeValue,
+		LanguageCodes:            languageCodes,
 		ComposioToolkitAllowlist: allowlist,
 	})
 	if err != nil {
@@ -1186,6 +1252,20 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 			SkillID: skillID,
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to attach agent skill")
+			return
+		}
+	}
+	if roleCodeValue.Valid || len(languageCodes) > 0 {
+		if _, err := qtx.CreateActivity(r.Context(), db.CreateActivityParams{
+			WorkspaceID: created.WorkspaceID,
+			IssueID:     pgtype.UUID{},
+			ActorType:   pgtype.Text{String: "member", Valid: true},
+			ActorID:     parseUUID(ownerID),
+			Action:      agentIdentityActivityUpdated,
+			Details:     agentIdentityAuditDetails(created.ID, created.Name, nil, nil, textToPtr(roleCodeValue), languageCodes),
+		}); err != nil {
+			slog.Error("agent_identity_updated audit write failed; rolling back create", append(logger.RequestAttrs(r), "error", err, "agent_id", uuidToString(created.ID))...)
+			writeError(w, http.StatusInternalServerError, "audit log write failed; agent create rolled back")
 			return
 		}
 	}
@@ -1281,12 +1361,14 @@ func (h *Handler) sendAgentWelcomeChat(ctx context.Context, agent db.Agent, crea
 }
 
 type UpdateAgentRequest struct {
-	Name          *string `json:"name"`
-	Description   *string `json:"description"`
-	Instructions  *string `json:"instructions"`
-	AvatarURL     *string `json:"avatar_url"`
-	RuntimeID     *string `json:"runtime_id"`
-	RuntimeConfig any     `json:"runtime_config"`
+	Name          *string   `json:"name"`
+	Description   *string   `json:"description"`
+	Instructions  *string   `json:"instructions"`
+	AvatarURL     *string   `json:"avatar_url"`
+	RoleCode      *string   `json:"role_code"`
+	LanguageCodes *[]string `json:"language_codes"`
+	RuntimeID     *string   `json:"runtime_id"`
+	RuntimeConfig any       `json:"runtime_config"`
 	// custom_env is intentionally NOT updatable through this endpoint.
 	// Use `PUT /api/agents/{id}/env` for env changes — that path is
 	// owner/admin-only, denies agent actors, and writes a persisted
@@ -1466,6 +1548,53 @@ func normaliseComposioToolkitAllowlist(in []string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+func normaliseAgentRoleCode(raw string) (string, bool, error) {
+	code := strings.ToUpper(strings.TrimSpace(raw))
+	if code == "" {
+		return "", false, nil
+	}
+	if _, ok := validAgentRoleCodes[code]; !ok {
+		return "", false, fmt.Errorf("role_code %q is not a recognised value; valid values: %s", code, strings.Join(orderedAgentRoleCodes, ", "))
+	}
+	return code, true, nil
+}
+
+func normaliseAgentLanguageCodes(in []string) ([]string, error) {
+	if in == nil {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		code := strings.ToUpper(strings.TrimSpace(raw))
+		if code == "" {
+			continue
+		}
+		if _, ok := validAgentLanguageCodes[code]; !ok {
+			return nil, fmt.Errorf("language_codes contains %q, which is not a recognised value; valid values: %s", code, strings.Join(orderedAgentLanguageCodes, ", "))
+		}
+		if _, dup := seen[code]; dup {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func agentIdentityAuditDetails(agentID pgtype.UUID, name string, beforeRole *string, beforeLanguages []string, afterRole *string, afterLanguages []string) []byte {
+	details, _ := json.Marshal(map[string]any{
+		"agent_id":                uuidToString(agentID),
+		"agent_name":              name,
+		"previous_role_code":      beforeRole,
+		"previous_language_codes": beforeLanguages,
+		"role_code":               afterRole,
+		"language_codes":          afterLanguages,
+	})
+	return details
 }
 
 // redactAgentResponseForActor strips secret-bearing fields from an agent
@@ -1767,6 +1896,45 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	identityTouched := false
+	shouldClearRoleCode := false
+	if _, hasRoleCode := rawFields["role_code"]; hasRoleCode {
+		identityTouched = true
+		if req.RoleCode == nil {
+			shouldClearRoleCode = true
+		} else {
+			roleCode, valid, err := normaliseAgentRoleCode(*req.RoleCode)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if valid {
+				params.RoleCode = pgtype.Text{String: roleCode, Valid: true}
+			} else {
+				shouldClearRoleCode = true
+			}
+		}
+	}
+
+	shouldClearLanguageCodes := false
+	if _, hasLanguageCodes := rawFields["language_codes"]; hasLanguageCodes {
+		identityTouched = true
+		if req.LanguageCodes == nil {
+			shouldClearLanguageCodes = true
+		} else {
+			languageCodes, err := normaliseAgentLanguageCodes(*req.LanguageCodes)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if len(languageCodes) == 0 {
+				shouldClearLanguageCodes = true
+			} else {
+				params.LanguageCodes = languageCodes
+			}
+		}
+	}
+
 	// composio_toolkit_allowlist handling (MUL-3869). Tri-state semantics
 	// mirror thinking_level (see above): omitted → no change, null →
 	// ClearAgentComposioToolkitAllowlist, slice → wholesale replace.
@@ -1804,7 +1972,20 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	updated, err := h.Queries.UpdateAgent(r.Context(), params)
+	var tx pgx.Tx
+	queries := h.Queries
+	if identityTouched {
+		var err error
+		tx, err = h.TxStarter.Begin(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to start agent update transaction")
+			return
+		}
+		defer tx.Rollback(r.Context())
+		queries = h.Queries.WithTx(tx)
+	}
+
+	updated, err := queries.UpdateAgent(r.Context(), params)
 	if err != nil {
 		// Unique constraint on (workspace_id, name) — mirror CreateAgent and
 		// return a clear conflict instead of a 500 that leaks the raw
@@ -1830,7 +2011,7 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	// clear the field. COALESCE in UpdateAgent cannot set a column to NULL, so
 	// mcp_config, thinking_level, and service_tier use dedicated clear queries.
 	if shouldClearMcpConfig {
-		updated, err = h.Queries.ClearAgentMcpConfig(r.Context(), updated.ID)
+		updated, err = queries.ClearAgentMcpConfig(r.Context(), updated.ID)
 		if err != nil {
 			slog.Warn("clear agent mcp_config failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
 			writeError(w, http.StatusInternalServerError, "failed to clear mcp_config: "+err.Error())
@@ -1838,7 +2019,7 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if shouldClearThinkingLevel {
-		updated, err = h.Queries.ClearAgentThinkingLevel(r.Context(), updated.ID)
+		updated, err = queries.ClearAgentThinkingLevel(r.Context(), updated.ID)
 		if err != nil {
 			slog.Warn("clear agent thinking_level failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
 			writeError(w, http.StatusInternalServerError, "failed to clear thinking_level: "+err.Error())
@@ -1846,15 +2027,47 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if shouldClearServiceTier {
-		updated, err = h.Queries.ClearAgentServiceTier(r.Context(), updated.ID)
+		updated, err = queries.ClearAgentServiceTier(r.Context(), updated.ID)
 		if err != nil {
 			slog.Warn("clear agent service_tier failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
 			writeError(w, http.StatusInternalServerError, "failed to clear service_tier: "+err.Error())
 			return
 		}
 	}
+	if shouldClearRoleCode {
+		updated, err = queries.ClearAgentRoleCode(r.Context(), updated.ID)
+		if err != nil {
+			slog.Warn("clear agent role_code failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
+			writeError(w, http.StatusInternalServerError, "failed to clear role_code: "+err.Error())
+			return
+		}
+	}
+	if shouldClearLanguageCodes {
+		updated, err = queries.ClearAgentLanguageCodes(r.Context(), updated.ID)
+		if err != nil {
+			slog.Warn("clear agent language_codes failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
+			writeError(w, http.StatusInternalServerError, "failed to clear language_codes: "+err.Error())
+			return
+		}
+	}
+	if identityTouched {
+		actorType, actorID := h.resolveActor(r, requestUserID(r), uuidToString(updated.WorkspaceID))
+		details := agentIdentityAuditDetails(updated.ID, updated.Name, textToPtr(existing.RoleCode), existing.LanguageCodes, textToPtr(updated.RoleCode), updated.LanguageCodes)
+		if _, err := queries.CreateActivity(r.Context(), db.CreateActivityParams{
+			WorkspaceID: updated.WorkspaceID,
+			IssueID:     pgtype.UUID{},
+			ActorType:   pgtype.Text{String: actorType, Valid: actorType != ""},
+			ActorID:     parseUUID(actorID),
+			Action:      agentIdentityActivityUpdated,
+			Details:     details,
+		}); err != nil {
+			slog.Error("agent_identity_updated audit write failed; rolling back update", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
+			writeError(w, http.StatusInternalServerError, "audit log write failed; agent identity update rolled back")
+			return
+		}
+	}
 	if shouldClearComposioAllowlist {
-		updated, err = h.Queries.ClearAgentComposioToolkitAllowlist(r.Context(), updated.ID)
+		updated, err = queries.ClearAgentComposioToolkitAllowlist(r.Context(), updated.ID)
 		if err != nil {
 			slog.Warn("clear agent composio_toolkit_allowlist failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
 			writeError(w, http.StatusInternalServerError, "failed to clear composio_toolkit_allowlist: "+err.Error())
@@ -1866,9 +2079,15 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	// permission. Done after the row update so a permission_mode flip and its
 	// targets land together.
 	if replacePermissionTargets {
-		if err := h.replaceInvocationTargets(r.Context(), updated.ID, parseUUID(requestUserID(r)), resolvedPerm.targets); err != nil {
+		if err := replaceInvocationTargetsWithQueries(r.Context(), queries, updated.ID, parseUUID(requestUserID(r)), resolvedPerm.targets); err != nil {
 			slog.Warn("update agent: persist invocation targets failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
 			writeError(w, http.StatusInternalServerError, "failed to update invocation targets: "+err.Error())
+			return
+		}
+	}
+	if tx != nil {
+		if err := tx.Commit(r.Context()); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to commit agent update")
 			return
 		}
 	}
