@@ -389,8 +389,8 @@ func (h *Handler) GetRuntimeUsageByHour(w http.ResponseWriter, r *http.Request) 
 //   - Runtime detail's sliceWindow filters `date >= today-days` (closed) and
 //     its prior-window delta reaches back to today-2*days, so the today-days
 //     bucket MUST exist or the oldest bar / KPI delta silently loses data.
-//   - The workspace dashboard re-filters client-side with -(days-1); the one
-//     extra day the backend returns is trimmed there — harmless.
+//   - Date-bucketed workspace dashboard endpoints re-filter client-side with
+//     -(days-1); the one extra day the backend returns is trimmed there.
 //
 // Do not "tighten" this to -(days-1): it would break the runtime detail page.
 func sinceFromDays(now time.Time, days int, loc *time.Location) time.Time {
@@ -399,23 +399,43 @@ func sinceFromDays(now time.Time, days int, loc *time.Location) time.Time {
 	return startOfToday.AddDate(0, 0, -days)
 }
 
-// parseSinceParamInTZ parses the "days" query parameter into a cutoff
-// timestamptz. Anchors the cutoff to start-of-day-(N) in the supplied IANA zone so that
-// `days=N` returns full N+1 calendar buckets in that zone (today's partial
-// bucket + N prior full days). If tzName is empty or unparseable, falls back
-// to UTC — never returns an error so handlers stay simple.
-func parseSinceParamInTZ(r *http.Request, defaultDays int, tzName string) pgtype.Timestamptz {
+func parseDashboardDaysParam(r *http.Request, defaultDays int) int {
 	days := defaultDays
 	if d := r.URL.Query().Get("days"); d != "" {
 		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 365 {
 			days = parsed
 		}
 	}
+	return days
+}
+
+func loadViewingLocation(tzName string) *time.Location {
 	loc, err := time.LoadLocation(tzName)
 	if err != nil || loc == nil {
-		loc = time.UTC
+		return time.UTC
 	}
+	return loc
+}
+
+// parseSinceParamInTZ parses the "days" query parameter into a cutoff
+// timestamptz. Anchors the cutoff to start-of-day-(N) in the supplied IANA zone so that
+// `days=N` returns full N+1 calendar buckets in that zone (today's partial
+// bucket + N prior full days). If tzName is empty or unparseable, falls back
+// to UTC — never returns an error so handlers stay simple.
+func parseSinceParamInTZ(r *http.Request, defaultDays int, tzName string) pgtype.Timestamptz {
+	days := parseDashboardDaysParam(r, defaultDays)
+	loc := loadViewingLocation(tzName)
 	return pgtype.Timestamptz{Time: sinceFromDays(time.Now(), days, loc), Valid: true}
+}
+
+// parseExactSinceParamInTZ parses the "days" query parameter into the exact
+// N-calendar-day cutoff in the supplied IANA zone. Use this for endpoints
+// that return no date column and therefore cannot client-trim the N+1 headroom
+// returned by parseSinceParamInTZ.
+func parseExactSinceParamInTZ(r *http.Request, defaultDays int, tzName string) pgtype.Timestamptz {
+	days := parseDashboardDaysParam(r, defaultDays)
+	loc := loadViewingLocation(tzName)
+	return pgtype.Timestamptz{Time: sinceFromDays(time.Now(), days-1, loc), Valid: true}
 }
 
 // resolveViewingTZ resolves the IANA tz to render the response in:
