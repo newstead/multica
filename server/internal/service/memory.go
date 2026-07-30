@@ -64,14 +64,15 @@ type MemoryActor struct {
 }
 
 type MemoryEventEnvelope struct {
-	SchemaVersion int             `json:"schema_version"`
-	EventType     string          `json:"event_type"`
-	CorrelationID string          `json:"correlation_id"`
-	SourceID      string          `json:"source_id"`
-	Scope         memoryScopeJSON `json:"scope"`
-	Actor         memoryActorJSON `json:"actor"`
-	Content       json.RawMessage `json:"content"`
-	Metadata      map[string]any  `json:"metadata,omitempty"`
+	SchemaVersion  int             `json:"schema_version"`
+	EventType      string          `json:"event_type"`
+	TargetProvider string          `json:"target_provider,omitempty"`
+	CorrelationID  string          `json:"correlation_id"`
+	SourceID       string          `json:"source_id"`
+	Scope          memoryScopeJSON `json:"scope"`
+	Actor          memoryActorJSON `json:"actor"`
+	Content        json.RawMessage `json:"content"`
+	Metadata       map[string]any  `json:"metadata,omitempty"`
 }
 
 type memoryScopeJSON struct {
@@ -91,6 +92,7 @@ type MemoryRetainRequest struct {
 	Scope          MemoryScope
 	Actor          MemoryActor
 	EventType      string
+	Provider       string
 	IdempotencyKey string
 	CorrelationID  string
 	SourceID       string
@@ -234,7 +236,10 @@ func (s *MemoryService) Retain(ctx context.Context, req MemoryRetainRequest) (Me
 	if !cfg.Enabled {
 		return MemoryRetainResult{}, ErrMemoryDisabled
 	}
-	providers := deliveryProviders(cfg)
+	providers, err := deliveryProvidersForEvent(cfg, eventType, req.Provider)
+	if err != nil {
+		return MemoryRetainResult{}, err
+	}
 	if len(providers) == 0 {
 		return MemoryRetainResult{}, fmt.Errorf("%w: at least one provider is required when enabled", ErrMemoryConfig)
 	}
@@ -800,10 +805,11 @@ func BuildMemoryEventEnvelope(req MemoryRetainRequest) (MemoryEventEnvelope, []b
 		sourceID = memorySourceID(req)
 	}
 	envelope := MemoryEventEnvelope{
-		SchemaVersion: 1,
-		EventType:     eventType,
-		CorrelationID: correlationID,
-		SourceID:      sourceID,
+		SchemaVersion:  1,
+		EventType:      eventType,
+		TargetProvider: strings.TrimSpace(req.Provider),
+		CorrelationID:  correlationID,
+		SourceID:       sourceID,
 		Scope: memoryScopeJSON{
 			WorkspaceID: uuidString(req.Scope.WorkspaceID),
 			ProjectID:   uuidString(req.Scope.ProjectID),
@@ -1136,6 +1142,29 @@ func deliveryProviders(cfg db.MemoryWorkspaceConfig) []string {
 		providers = append(providers, provider)
 	}
 	return providers
+}
+
+func deliveryProvidersForEvent(cfg db.MemoryWorkspaceConfig, eventType, targetProvider string) ([]string, error) {
+	providers := deliveryProviders(cfg)
+	targetProvider = strings.TrimSpace(targetProvider)
+	if eventType != "history" {
+		if targetProvider != "" {
+			return nil, fmt.Errorf("%w: target provider is only supported for history events", ErrMemoryConfig)
+		}
+		return providers, nil
+	}
+	if targetProvider == "" {
+		return nil, fmt.Errorf("%w: history provider is required", ErrMemoryConfig)
+	}
+	if targetProvider != Mem0ProviderName {
+		return nil, fmt.Errorf("%w: history provider %q is not supported", ErrMemoryConfig, targetProvider)
+	}
+	for _, provider := range providers {
+		if provider == targetProvider {
+			return []string{targetProvider}, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: provider %q is not selected for workspace", ErrMemoryConfig, targetProvider)
 }
 
 func normalizeMemoryEventType(v string) (string, error) {

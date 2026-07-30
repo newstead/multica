@@ -37,6 +37,7 @@ type UpdateMemoryConfigRequest struct {
 
 type MemoryRetainEventRequest struct {
 	EventType      string          `json:"event_type"`
+	Provider       string          `json:"provider"`
 	IdempotencyKey string          `json:"idempotency_key"`
 	CorrelationID  string          `json:"correlation_id"`
 	SourceID       string          `json:"source_id"`
@@ -92,28 +93,28 @@ type MemoryDeliveryResponse struct {
 }
 
 type MemoryMem0BoardDeliveryResponse struct {
-	ID                string         `json:"id"`
-	WorkspaceID       string         `json:"workspace_id"`
-	MemoryEventID     string         `json:"memory_event_id"`
-	ProjectID         *string        `json:"project_id,omitempty"`
-	AgentID           *string        `json:"agent_id,omitempty"`
-	IssueID           *string        `json:"issue_id,omitempty"`
-	TaskID            *string        `json:"task_id,omitempty"`
-	EventType         string         `json:"event_type"`
-	Provider          string         `json:"provider"`
-	Status            string         `json:"status"`
-	AttemptCount      int32          `json:"attempt_count"`
-	DeliveryLagMs     int64          `json:"delivery_lag_ms"`
-	EventCreatedAt    string         `json:"event_created_at"`
-	DeliveryCreatedAt string         `json:"delivery_created_at"`
-	LastAttemptAt     string         `json:"last_attempt_at,omitempty"`
-	TerminalAt        string         `json:"terminal_at,omitempty"`
-	UpdatedAt         string         `json:"updated_at"`
+	ID                string  `json:"id"`
+	WorkspaceID       string  `json:"workspace_id"`
+	MemoryEventID     string  `json:"memory_event_id"`
+	ProjectID         *string `json:"project_id,omitempty"`
+	AgentID           *string `json:"agent_id,omitempty"`
+	IssueID           *string `json:"issue_id,omitempty"`
+	TaskID            *string `json:"task_id,omitempty"`
+	EventType         string  `json:"event_type"`
+	Provider          string  `json:"provider"`
+	Status            string  `json:"status"`
+	AttemptCount      int32   `json:"attempt_count"`
+	DeliveryLagMs     int64   `json:"delivery_lag_ms"`
+	EventCreatedAt    string  `json:"event_created_at"`
+	DeliveryCreatedAt string  `json:"delivery_created_at"`
+	LastAttemptAt     string  `json:"last_attempt_at,omitempty"`
+	TerminalAt        string  `json:"terminal_at,omitempty"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 type MemoryMem0BoardResponse struct {
-	Health        *service.MemoryProviderHealth      `json:"health,omitempty"`
-	HealthError   string                             `json:"health_error,omitempty"`
+	Health        *service.MemoryProviderHealth     `json:"health,omitempty"`
+	HealthError   string                            `json:"health_error,omitempty"`
 	Deliveries    []MemoryMem0BoardDeliveryResponse `json:"deliveries"`
 	RecallSamples []MemoryRecallSampleResponse      `json:"recall_samples"`
 }
@@ -276,6 +277,7 @@ func (h *Handler) CreateMemoryRetainEvent(w http.ResponseWriter, r *http.Request
 		Scope:          scope,
 		Actor:          service.MemoryActor{Type: req.ActorType, ID: actorID},
 		EventType:      strings.TrimSpace(req.EventType),
+		Provider:       strings.TrimSpace(req.Provider),
 		IdempotencyKey: strings.TrimSpace(req.IdempotencyKey),
 		CorrelationID:  strings.TrimSpace(req.CorrelationID),
 		SourceID:       strings.TrimSpace(req.SourceID),

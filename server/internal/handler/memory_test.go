@@ -333,6 +333,7 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
 		Actor:          service.MemoryActor{Type: "system"},
 		EventType:      "history",
+		Provider:       service.Mem0ProviderName,
 		IdempotencyKey: "board-history-ok",
 		Content:        json.RawMessage(`{"memory_id":"handler-memory-1"}`),
 	})
@@ -351,6 +352,7 @@ func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
 		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
 		Actor:          service.MemoryActor{Type: "system"},
 		EventType:      "history",
+		Provider:       service.Mem0ProviderName,
 		IdempotencyKey: "board-history-failed",
 		Content:        json.RawMessage(`{"memory_id":"handler-memory-1"}`),
 	})
