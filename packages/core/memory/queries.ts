@@ -3,6 +3,15 @@ import { api } from "../api";
 
 type NullableFilter = string | null | undefined;
 
+export interface MemoryAuditParams {
+  limit?: number;
+  offset?: number;
+  project_id?: string;
+  agent_id?: string;
+  issue_id?: string;
+  task_id?: string;
+}
+
 export const memoryKeys = {
   all: (workspaceId: string) => ["memory", workspaceId] as const,
   config: (workspaceId: string) => [...memoryKeys.all(workspaceId), "config"] as const,
@@ -44,6 +53,8 @@ export const memoryKeys = {
       issueId ?? null,
       taskId ?? null,
     ] as const,
+  audit: (wsId: string, params: MemoryAuditParams = {}) =>
+    [...memoryKeys.all(wsId), "audit", params] as const,
 };
 
 const STALE_TIME = 60 * 1000;
@@ -134,6 +145,16 @@ export function memoryMem0BoardOptions(
         task_id: taskId ?? undefined,
       }),
     enabled: Boolean(workspaceId),
+    staleTime: STALE_TIME,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function memoryAuditOptions(wsId: string, params: MemoryAuditParams = {}) {
+  return queryOptions({
+    queryKey: memoryKeys.audit(wsId, params),
+    queryFn: () => api.listMemoryAudit(wsId, params),
+    enabled: !!wsId,
     staleTime: STALE_TIME,
     placeholderData: keepPreviousData,
   });

@@ -23,7 +23,8 @@
     "label": "メモリボードのタブ",
     "comparison": "比較",
     "hindsight": "Hindsight",
-    "mem0": "mem0"
+    "mem0": "mem0",
+    "audit": "監査"
   },
   "coverage": {
     "fixture_title": "Deterministic paired fixture mode",
@@ -122,5 +123,62 @@
     "mem0_rank": "mem0 順位",
     "delta": "mem0 - Hindsight",
     "overlap": "重複率"
+  },
+  "audit": {
+    "title": "メモリ監査",
+    "subtitle": "取得済みメモリ、provider 配信状態、修正、無効化、削除、スコープ消去、メタデータエクスポートを確認します。",
+    "refresh": "更新",
+    "export": "エクスポート",
+    "loading": "メモリ監査を読み込み中...",
+    "empty": "フィルターに一致するメモリイベントはありません。",
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "filters": {
+      "project": "プロジェクト ID",
+      "issue": "Issue ID",
+      "agent": "Agent ID",
+      "apply": "適用"
+    },
+    "stats": {
+      "events": "イベント",
+      "delivered": "配信済み",
+      "failed": "失敗"
+    },
+    "scope": {
+      "project": "プロジェクト",
+      "issue": "Issue"
+    },
+    "table": {
+      "created": "作成日時",
+      "source": "ソース",
+      "scope": "スコープ",
+      "event": "イベント",
+      "delivery": "Provider 配信",
+      "actions": "操作",
+      "no_delivery": "Provider 配信なし"
+    },
+    "actions": {
+      "correct": "修正",
+      "invalidate": "無効化",
+      "delete": "削除"
+    },
+    "dialog": {
+      "reason": "理由",
+      "result": "Provider 結果 {{count}}",
+      "correct": {
+        "title": "メモリを修正"
+      },
+      "invalidate": {
+        "title": "メモリを無効化"
+      },
+      "delete": {
+        "title": "メモリを削除"
+      }
+    },
+    "erase": {
+      "workspace": "ワークスペースを消去",
+      "project": "プロジェクトを消去",
+      "issue": "Issue を消去"
+    }
   }
 }

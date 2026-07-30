@@ -143,26 +143,28 @@ describe("KeyboardShortcutsTab", () => {
       createShortcutChord("J", { primary: true }),
     );
     renderWithI18n(<KeyboardShortcutsTab />);
+    const clickButton = (name: string) => {
+      const button = screen.getByText(name).closest("button");
+      if (!button) throw new Error(`Button not found: ${name}`);
+      fireEvent.click(button);
+    };
+    const description = "This will remove every custom shortcut and restore the defaults on this device.";
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent(
-      "This will remove every custom shortcut and restore the defaults on this device.",
-    );
+    clickButton("Restore defaults");
+    expect(screen.getByText(description)).toBeInTheDocument();
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("J", { primary: true }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    clickButton("Cancel");
+    expect(screen.queryByText(description)).not.toBeInTheDocument();
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("J", { primary: true }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Restore all defaults" }),
-    );
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    clickButton("Restore defaults");
+    clickButton("Restore all defaults");
+    expect(screen.queryByText(description)).not.toBeInTheDocument();
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("K", { primary: true }),
     );

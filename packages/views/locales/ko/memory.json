@@ -23,7 +23,8 @@
     "label": "메모리 보드 탭",
     "comparison": "비교",
     "hindsight": "Hindsight",
-    "mem0": "mem0"
+    "mem0": "mem0",
+    "audit": "감사"
   },
   "coverage": {
     "fixture_title": "Deterministic paired fixture mode",
@@ -122,5 +123,62 @@
     "mem0_rank": "mem0 순위",
     "delta": "mem0 - Hindsight",
     "overlap": "중복률"
+  },
+  "audit": {
+    "title": "메모리 감사",
+    "subtitle": "캡처된 메모리, provider 전달 상태, 수정, 무효화, 삭제, 범위 삭제, 메타데이터 내보내기를 검사합니다.",
+    "refresh": "새로고침",
+    "export": "내보내기",
+    "loading": "메모리 감사를 불러오는 중...",
+    "empty": "필터와 일치하는 메모리 이벤트가 없습니다.",
+    "cancel": "취소",
+    "confirm": "확인",
+    "filters": {
+      "project": "프로젝트 ID",
+      "issue": "이슈 ID",
+      "agent": "에이전트 ID",
+      "apply": "적용"
+    },
+    "stats": {
+      "events": "이벤트",
+      "delivered": "전달됨",
+      "failed": "실패"
+    },
+    "scope": {
+      "project": "프로젝트",
+      "issue": "이슈"
+    },
+    "table": {
+      "created": "생성됨",
+      "source": "출처",
+      "scope": "범위",
+      "event": "이벤트",
+      "delivery": "Provider 전달",
+      "actions": "작업",
+      "no_delivery": "Provider 전달 없음"
+    },
+    "actions": {
+      "correct": "수정",
+      "invalidate": "무효화",
+      "delete": "삭제"
+    },
+    "dialog": {
+      "reason": "사유",
+      "result": "Provider 결과 {{count}}",
+      "correct": {
+        "title": "메모리 수정"
+      },
+      "invalidate": {
+        "title": "메모리 무효화"
+      },
+      "delete": {
+        "title": "메모리 삭제"
+      }
+    },
+    "erase": {
+      "workspace": "워크스페이스 지우기",
+      "project": "프로젝트 지우기",
+      "issue": "이슈 지우기"
+    }
   }
 }

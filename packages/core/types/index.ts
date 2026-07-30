@@ -144,6 +144,15 @@ export type {
   GitHubConnectResponse,
 } from "./github";
 export type {
+  MemoryAuditDelivery,
+  MemoryAuditEvent,
+  MemoryAuditListResponse,
+  MemoryMutationRequest,
+  MemoryEraseRequest,
+  MemoryMutationProviderResult,
+  MemoryMutationResponse,
+} from "./memory";
+export type {
   VCSProvider,
   VCSConnection,
   ListVCSConnectionsResponse,

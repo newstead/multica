@@ -695,7 +695,6 @@ func hindsightExplicitDocumentID(event MemoryEventEnvelope, content hindsightEve
 	for _, value := range []string{
 		content.DocumentID,
 		hindsightMetadataString(event.Metadata, "document_id"),
-		hindsightMetadataString(event.Metadata, "provider_memory_id"),
 	} {
 		if value = strings.TrimSpace(value); value != "" {
 			return value
@@ -707,9 +706,7 @@ func hindsightExplicitDocumentID(event MemoryEventEnvelope, content hindsightEve
 func hindsightMemoryID(event MemoryEventEnvelope, content hindsightEventContent) string {
 	for _, value := range []string{
 		content.MemoryID,
-		content.ProviderMemoryID,
 		hindsightMetadataString(event.Metadata, "memory_id"),
-		hindsightMetadataString(event.Metadata, "provider_memory_id"),
 	} {
 		if value = strings.TrimSpace(value); value != "" {
 			return value

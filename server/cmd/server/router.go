@@ -920,6 +920,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/memory/mem0-board", h.GetMemoryMem0Board)
 					r.Post("/memory/recall", h.CreateMemoryRecall)
 					r.Get("/memory/recall-samples", h.ListMemoryRecallSamples)
+					r.Get("/memory/audit", h.ListMemoryAuditEvents)
+					r.Get("/memory/audit/export", h.ExportMemoryAuditEvents)
 					// Custom runtime profiles — listing/reading is member-visible
 					// (the Runtime page renders for everyone; create/edit/delete
 					// are admin-gated below).
@@ -961,6 +963,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					// Memory gateway config and server-owned event capture remain admin-gated while the feature is incubating.
 					r.Put("/memory/config", h.UpdateMemoryConfig)
 					r.Post("/memory/events/retain", h.CreateMemoryRetainEvent)
+					r.Post("/memory/audit/{eventId}/correct", h.CorrectMemoryAuditEvent)
+					r.Post("/memory/audit/{eventId}/invalidate", h.InvalidateMemoryAuditEvent)
+					r.Delete("/memory/audit/{eventId}", h.DeleteMemoryAuditEvent)
+					r.Post("/memory/erase", h.EraseMemoryScope)
 				})
 
 				// Lark integration. Every endpoint here only requires
