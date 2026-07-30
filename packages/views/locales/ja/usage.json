@@ -99,7 +99,8 @@
   "tabs": {
     "overview": "概要",
     "agents": "エージェント",
-    "hindsight": "Hindsight"
+    "hindsight": "Hindsight",
+    "mem0": "mem0"
   },
   "agents": {
     "subtitle": "エージェント別の効率、モデル構成、セッション、コード変更、ボトルネックを表示します。",
@@ -224,6 +225,81 @@
       "no_provenance": "Provenance なし",
       "issue_link": "Issue",
       "latency": "{{value}}ms"
+    }
+  },
+  "memory": {
+    "mem0": {
+      "title": "mem0 メモリ",
+      "subtitle": "選択した範囲の実際の mem0 リコールサンプル、配信監査行、ヘルスです。",
+      "search_placeholder": "リクエスト、ステータス、メモリ ID、エラーで絞り込み",
+      "error_title": "Memory data did not load",
+      "error_body": "The memory gateway may be disabled or unreachable for this workspace.",
+      "unknown": "不明",
+      "yes": "はい",
+      "no": "いいえ",
+      "empty_window": "この期間に mem0 リコールまたは配信行はありません。",
+      "kpi": {
+        "search_latency": "Search latency",
+        "add_latency": "書き込み配信ラグ",
+        "tokens_cost": "トークン/コストなし",
+        "health": "Service health",
+        "searches": "{{count}} searches",
+        "adds": "{{count}} adds",
+        "errors": "{{count}} errors"
+      },
+      "health": {
+        "healthy": "Healthy",
+        "degraded": "Degraded",
+        "unknown": "Unknown",
+        "disabled": "Disabled"
+      },
+      "activity_title": "Request activity",
+      "activity_subtitle": "Add, search, and error volume using the same period and project filters as usage.",
+      "config_title": "Provider scope",
+      "config_admin": "You can manage workspace memory settings.",
+      "config_readonly": "Read-only view. Workspace admins manage memory settings.",
+      "config": {
+        "enabled": "Enabled",
+        "primary": "Primary",
+        "shadow": "Shadow",
+        "read_mode": "Read mode",
+        "memories": "Memories",
+        "entities": "Entities"
+      },
+      "latency_title": "Latency",
+      "latency_subtitle": "検索レイテンシは利用不可です。書き込み行は durable delivery lag を使います。",
+      "storage_title": "ストレージ報告",
+      "storage_subtitle": "最新の報告ストレージ {{size}}。",
+      "no_storage": "現在の API は mem0 ストレージサイズを報告しません。",
+      "outcomes_title": "History and mutation outcomes",
+      "outcomes_subtitle": "検索結果はリコールサンプル、変更結果はプロバイダー配信行から取得します。",
+      "no_outcomes": "この期間にリコールまたは配信結果はありません。",
+      "outcome_counts": "{{ok}} ok · {{error}} error",
+      "operation": {
+        "add": "Add",
+        "search": "Search",
+        "update": "Update",
+        "delete": "Delete",
+        "history": "History",
+        "unknown": "Unknown"
+      },
+      "audit_title": "Request audit",
+      "audit_subtitle": "ステータス、ラグ、来歴 ID を含む最近の mem0 リコールとプロバイダー配信行。",
+      "no_audit": "No mem0 audit rows in this window.",
+      "audit": {
+        "time": "Time",
+        "query": "リクエスト",
+        "results": "Results",
+        "latency": "Latency",
+        "tokens": "Tokens",
+        "status": "Status",
+        "correlation": "Correlation"
+      },
+      "status": {
+        "ok": "OK",
+        "error": "Error",
+        "unknown": "Unknown"
+      }
     }
   }
 }

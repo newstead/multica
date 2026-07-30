@@ -113,11 +113,6 @@ export type {
 } from "./chat";
 export type { StorageAdapter } from "./storage";
 export type {
-  MemoryConfig,
-  MemoryRecallSample,
-  MemoryRecallSamplesResponse,
-} from "./memory";
-export type {
   Project,
   ProjectStatus,
   ProjectPriority,
@@ -237,3 +232,14 @@ export type {
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
 } from "./billing";
+export type {
+  MemoryConfig,
+  MemoryConfigResponse,
+  MemoryMem0BoardDelivery,
+  MemoryMem0BoardResponse,
+  MemoryProvider,
+  MemoryProviderHealth,
+  MemoryReadMode,
+  MemoryRecallSample,
+  MemoryRecallSamplesResponse,
+} from "./memory";

@@ -1,21 +1,23 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
 import { api } from "../api";
 
+type NullableFilter = string | null | undefined;
+
 export const memoryKeys = {
-  all: (wsId: string) => ["memory", wsId] as const,
-  config: (wsId: string) => [...memoryKeys.all(wsId), "config"] as const,
+  all: (workspaceId: string) => ["memory", workspaceId] as const,
+  config: (workspaceId: string) => [...memoryKeys.all(workspaceId), "config"] as const,
   recallSamples: (
-    wsId: string,
+    workspaceId: string,
     params: {
       limit: number;
       offset: number;
       provider?: string;
-      projectId?: string | null;
-      agentId?: string | null;
+      projectId?: NullableFilter;
+      agentId?: NullableFilter;
     },
   ) =>
     [
-      ...memoryKeys.all(wsId),
+      ...memoryKeys.all(workspaceId),
       "recall-samples",
       params.limit,
       params.offset,
@@ -23,49 +25,115 @@ export const memoryKeys = {
       params.projectId ?? null,
       params.agentId ?? null,
     ] as const,
+  mem0Board: (
+    workspaceId: string,
+    limit: number,
+    offset: number,
+    projectId?: NullableFilter,
+    agentId?: NullableFilter,
+    issueId?: NullableFilter,
+    taskId?: NullableFilter,
+  ) =>
+    [
+      ...memoryKeys.all(workspaceId),
+      "mem0-board",
+      limit,
+      offset,
+      projectId ?? null,
+      agentId ?? null,
+      issueId ?? null,
+      taskId ?? null,
+    ] as const,
 };
 
 const STALE_TIME = 60 * 1000;
 
-export function memoryConfigOptions(wsId: string) {
+export function memoryConfigOptions(workspaceId: string) {
   return queryOptions({
-    queryKey: memoryKeys.config(wsId),
-    queryFn: () => api.getMemoryConfig(wsId),
-    enabled: !!wsId,
+    queryKey: memoryKeys.config(workspaceId),
+    queryFn: () => api.getMemoryConfig(workspaceId),
+    enabled: Boolean(workspaceId),
     staleTime: STALE_TIME,
   });
 }
 
 export function memoryRecallSamplesOptions(
-  wsId: string,
+  workspaceId: string,
   params: {
     limit?: number;
     offset?: number;
     provider?: string;
-    projectId?: string | null;
-    agentId?: string | null;
+    projectId?: NullableFilter;
+    agentId?: NullableFilter;
   } = {},
 ) {
   const limit = params.limit ?? 100;
   const offset = params.offset ?? 0;
-  const queryKey = memoryKeys.recallSamples(wsId, {
-    limit,
-    offset,
-    provider: params.provider,
-    projectId: params.projectId,
-    agentId: params.agentId,
-  });
+  const projectId = params.projectId ?? null;
+  const agentId = params.agentId ?? null;
   return queryOptions({
-    queryKey,
+    queryKey: memoryKeys.recallSamples(workspaceId, {
+      limit,
+      offset,
+      provider: params.provider,
+      projectId,
+      agentId,
+    }),
     queryFn: () =>
-      api.getMemoryRecallSamples(wsId, {
+      api.getMemoryRecallSamples(workspaceId, {
         limit,
         offset,
         provider: params.provider,
-        project_id: params.projectId ?? undefined,
-        agent_id: params.agentId ?? undefined,
+        project_id: projectId ?? undefined,
+        agent_id: agentId ?? undefined,
       }),
-    enabled: !!wsId,
+    enabled: Boolean(workspaceId),
+    staleTime: STALE_TIME,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function memoryMem0BoardOptions(
+  workspaceId: string,
+  params: {
+    limit?: number;
+    offset?: number;
+    projectId?: NullableFilter;
+    agentId?: NullableFilter;
+    issueId?: NullableFilter;
+    taskId?: NullableFilter;
+    project_id?: NullableFilter;
+    agent_id?: NullableFilter;
+    issue_id?: NullableFilter;
+    task_id?: NullableFilter;
+  } = {},
+) {
+  const limit = params.limit ?? 25;
+  const offset = params.offset ?? 0;
+  const projectId = params.projectId ?? params.project_id ?? null;
+  const agentId = params.agentId ?? params.agent_id ?? null;
+  const issueId = params.issueId ?? params.issue_id ?? null;
+  const taskId = params.taskId ?? params.task_id ?? null;
+  return queryOptions({
+    queryKey: memoryKeys.mem0Board(
+      workspaceId,
+      limit,
+      offset,
+      projectId,
+      agentId,
+      issueId,
+      taskId,
+    ),
+    queryFn: () =>
+      api.getMemoryMem0Board(workspaceId, {
+        limit,
+        offset,
+        project_id: projectId ?? undefined,
+        agent_id: agentId ?? undefined,
+        issue_id: issueId ?? undefined,
+        task_id: taskId ?? undefined,
+      }),
+    enabled: Boolean(workspaceId),
     staleTime: STALE_TIME,
     placeholderData: keepPreviousData,
   });

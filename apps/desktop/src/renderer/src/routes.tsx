@@ -18,6 +18,7 @@ import {
   AgentsUsagePage,
   DashboardPage,
   HindsightMemoryPage,
+  Mem0UsagePage,
 } from "@multica/views/dashboard";
 import { AutopilotsPage } from "@multica/views/autopilots/components";
 import { MyIssuesPage } from "@multica/views/my-issues";
@@ -215,6 +216,11 @@ export const appRoutes: RouteObject[] = [
           {
             path: "usage/agents",
             element: <AgentsUsagePage />,
+            handle: { title: "Usage" },
+          },
+          {
+            path: "usage/mem0",
+            element: <Mem0UsagePage />,
             handle: { title: "Usage" },
           },
           {

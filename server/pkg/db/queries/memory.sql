@@ -128,6 +128,50 @@ SET status = @status,
 WHERE id = @id AND workspace_id = @workspace_id
 RETURNING *;
 
+
+-- name: ListMemoryMem0DeliveriesByWorkspace :many
+SELECT
+    d.id,
+    d.workspace_id,
+    d.memory_event_id,
+    e.project_id,
+    e.agent_id,
+    e.issue_id,
+    e.task_id,
+    e.event_type,
+    d.provider,
+    d.status,
+    d.attempt_count,
+    d.delivery_lag_ms,
+    e.created_at AS event_created_at,
+    d.created_at AS delivery_created_at,
+    d.last_attempt_at,
+    d.terminal_at,
+    d.updated_at
+FROM memory_provider_delivery d
+JOIN memory_event e
+  ON e.id = d.memory_event_id
+ AND e.workspace_id = d.workspace_id
+WHERE d.workspace_id = $1
+  AND lower(d.provider) = 'mem0'
+  AND ($4::uuid IS NULL OR e.project_id = $4)
+  AND ($5::uuid IS NULL OR e.agent_id = $5)
+  AND ($6::uuid IS NULL OR e.issue_id = $6)
+  AND ($7::uuid IS NULL OR e.task_id = $7)
+ORDER BY COALESCE(d.last_attempt_at, d.updated_at, d.created_at) DESC
+LIMIT $2 OFFSET $3;
+
+-- name: ListMemoryRecallSamplesByWorkspaceProviderAndScope :many
+SELECT * FROM memory_recall_sample
+WHERE workspace_id = $1
+  AND lower(provider) = lower($2)
+  AND ($5::uuid IS NULL OR project_id = $5)
+  AND ($6::uuid IS NULL OR agent_id = $6)
+  AND ($7::uuid IS NULL OR issue_id = $7)
+  AND ($8::uuid IS NULL OR task_id = $8)
+ORDER BY sampled_at DESC
+LIMIT $3 OFFSET $4;
+
 -- name: CreateMemoryRecallSample :one
 INSERT INTO memory_recall_sample (
     workspace_id, project_id, agent_id, issue_id, task_id, provider,

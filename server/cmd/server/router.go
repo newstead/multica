@@ -917,6 +917,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/vcs/connections", h.ListVCSConnections)
 					// Memory gateway read-only state is member-visible; mutation is admin-gated below.
 					r.Get("/memory/config", h.GetMemoryConfig)
+					r.Get("/memory/mem0-board", h.GetMemoryMem0Board)
 					r.Post("/memory/recall", h.CreateMemoryRecall)
 					r.Get("/memory/recall-samples", h.ListMemoryRecallSamples)
 					// Custom runtime profiles — listing/reading is member-visible

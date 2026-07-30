@@ -278,6 +278,156 @@ func TestCreateMemoryRecallEndpointKeepsDualResultsSeparate(t *testing.T) {
 	}
 }
 
+func TestGetMemoryMem0BoardReturnsRealDeliveriesAndRecallSamples(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	cleanupMemoryGatewayTestRows(t, testWorkspaceID)
+	t.Cleanup(func() { cleanupMemoryGatewayTestRows(t, testWorkspaceID) })
+	withFeatureFlag(t, testHandler, featureflags.MemoryGateway, true)
+	enableMemoryConfigForTest(t, testWorkspaceID, "mem0", "")
+
+	provider := &memoryHandlerFakeProvider{name: "mem0", recallResults: json.RawMessage(`[{"id":"recall-memory"}]`)}
+	oldProviders := testHandler.MemoryService.Providers
+	testHandler.MemoryService.Providers = map[string]service.MemoryProvider{"mem0": provider}
+	t.Cleanup(func() { testHandler.MemoryService.Providers = oldProviders })
+
+	projectID := "11111111-2222-3333-4444-555555555555"
+	otherProjectID := "22222222-3333-4444-5555-666666666666"
+	retain, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "board-retain",
+		Content:        json.RawMessage(`{"text":"remember me"}`),
+	})
+	if err != nil {
+		t.Fatalf("retain: %v", err)
+	}
+	if _, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(otherProjectID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "retain",
+		IdempotencyKey: "board-retain-other-project",
+		Content:        json.RawMessage(`{"text":"do not leak me"}`),
+	}); err != nil {
+		t.Fatalf("retain other project: %v", err)
+	}
+	worker := NewMemoryDeliveryWorker(testHandler)
+	worked, err := worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch due delivery")
+	}
+	worked, err = worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext other project: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch other project delivery")
+	}
+
+	historyOK, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "history",
+		Provider:       service.Mem0ProviderName,
+		IdempotencyKey: "board-history-ok",
+		Content:        json.RawMessage(`{"memory_id":"handler-memory-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("history ok event: %v", err)
+	}
+	worked, err = worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext history ok: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch history ok delivery")
+	}
+	provider.historyErr = errors.New("history unavailable raw provider detail")
+	historyFailed, err := testHandler.MemoryService.Retain(context.Background(), service.MemoryRetainRequest{
+		Scope:          service.MemoryScope{WorkspaceID: parseUUID(testWorkspaceID), ProjectID: parseUUID(projectID)},
+		Actor:          service.MemoryActor{Type: "system"},
+		EventType:      "history",
+		Provider:       service.Mem0ProviderName,
+		IdempotencyKey: "board-history-failed",
+		Content:        json.RawMessage(`{"memory_id":"handler-memory-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("history failed event: %v", err)
+	}
+	worked, err = worker.ProcessNext(context.Background())
+	if err != nil {
+		t.Fatalf("ProcessNext history failed: %v", err)
+	}
+	if !worked {
+		t.Fatal("worker did not dispatch history failed delivery")
+	}
+
+	recall := httptest.NewRecorder()
+	testHandler.CreateMemoryRecall(recall, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
+		"provider":       "mem0",
+		"project_id":     projectID,
+		"correlation_id": "board-recall",
+		"query":          "remember",
+	}))
+	if recall.Code != http.StatusOK {
+		t.Fatalf("CreateMemoryRecall: expected 200, got %d: %s", recall.Code, recall.Body.String())
+	}
+	foreignRecall := httptest.NewRecorder()
+	testHandler.CreateMemoryRecall(foreignRecall, memoryHandlerRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/memory/recall", map[string]any{
+		"provider":       "mem0",
+		"project_id":     otherProjectID,
+		"correlation_id": "board-recall-other-project",
+		"query":          "remember",
+	}))
+	if foreignRecall.Code != http.StatusOK {
+		t.Fatalf("CreateMemoryRecall other project: expected 200, got %d: %s", foreignRecall.Code, foreignRecall.Body.String())
+	}
+
+	w := httptest.NewRecorder()
+	testHandler.GetMemoryMem0Board(w, memoryHandlerRequest(http.MethodGet, "/api/workspaces/"+testWorkspaceID+"/memory/mem0-board?project_id="+projectID, nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GetMemoryMem0Board: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "provider_memory_id") || strings.Contains(body, "response") || strings.Contains(body, "handler-memory-1") || strings.Contains(body, "history unavailable raw provider detail") || strings.Contains(body, "do not leak me") {
+		t.Fatalf("GetMemoryMem0Board leaked provider/raw data: %s", body)
+	}
+	var res MemoryMem0BoardResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if res.Health == nil || !res.Health.OK || res.Health.Provider != "mem0" {
+		t.Fatalf("health = %#v, want ok mem0", res.Health)
+	}
+	if len(res.Deliveries) != 3 {
+		t.Fatalf("deliveries = %#v, want retain plus history success/failure", res.Deliveries)
+	}
+	deliveriesByEvent := make(map[string]MemoryMem0BoardDeliveryResponse, len(res.Deliveries))
+	for _, delivery := range res.Deliveries {
+		deliveriesByEvent[delivery.MemoryEventID] = delivery
+	}
+	delivery := deliveriesByEvent[uuidToString(retain.Event.ID)]
+	if delivery.EventType != "retain" || delivery.Status != "delivered" {
+		t.Fatalf("retain delivery = %#v, want delivered retain for event", delivery)
+	}
+	historyOKDelivery := deliveriesByEvent[uuidToString(historyOK.Event.ID)]
+	if historyOKDelivery.EventType != "history" || historyOKDelivery.Status != "delivered" {
+		t.Fatalf("history ok delivery = %#v, want delivered history", historyOKDelivery)
+	}
+	historyFailedDelivery := deliveriesByEvent[uuidToString(historyFailed.Event.ID)]
+	if historyFailedDelivery.EventType != "history" || historyFailedDelivery.Status != "retry" {
+		t.Fatalf("history failed delivery = %#v, want retry history failure", historyFailedDelivery)
+	}
+	if len(res.RecallSamples) != 1 || res.RecallSamples[0].RecallCorrelationID != "board-recall" {
+		t.Fatalf("recall samples = %#v, want board-recall sample", res.RecallSamples)
+	}
+}
+
 func TestCreateMemoryRecallHonorsReleaseFlagRollback(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -304,7 +454,9 @@ func TestCreateMemoryRecallHonorsReleaseFlagRollback(t *testing.T) {
 type memoryHandlerFakeProvider struct {
 	name          string
 	recallResults json.RawMessage
+	historyErr    error
 	retained      []service.MemoryEventEnvelope
+	history       []string
 }
 
 func (p *memoryHandlerFakeProvider) Name() string { return p.name }
@@ -328,6 +480,14 @@ func (p *memoryHandlerFakeProvider) Invalidate(context.Context, service.MemoryEv
 
 func (p *memoryHandlerFakeProvider) Delete(context.Context, service.MemoryEventEnvelope) (service.MemoryProviderResult, error) {
 	return service.MemoryProviderResult{}, nil
+}
+
+func (p *memoryHandlerFakeProvider) History(_ context.Context, _ service.MemoryScope, memoryID string) (json.RawMessage, error) {
+	p.history = append(p.history, memoryID)
+	if p.historyErr != nil {
+		return nil, p.historyErr
+	}
+	return json.RawMessage(`{"events":[{"operation":"UPDATE","redacted":true}]}`), nil
 }
 
 func (p *memoryHandlerFakeProvider) Health(context.Context) (service.MemoryProviderHealth, error) {

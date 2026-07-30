@@ -184,6 +184,7 @@ vi.mock("@multica/core/paths", () => ({
     workspace: () => ({
       usage: () => "/acme/usage",
       usageAgents: () => "/acme/usage/agents",
+      usageMem0: () => "/acme/usage/mem0",
       usageHindsight: () => "/acme/usage/hindsight",
     }),
   },

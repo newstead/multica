@@ -179,6 +179,107 @@ func TestMemoryRetainDuplicateRepairsProviderDeliverySet(t *testing.T) {
 	}
 }
 
+func TestMemoryHistoryRetainTargetsMem0OnlyInDualProviderConfig(t *testing.T) {
+	pool := newMemoryServiceIntegrationPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	queries := db.New(pool)
+	workspaceID := util.MustParseUUID(uuid.NewString())
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cleanupCancel()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_recall_sample WHERE workspace_id = $1`, workspaceID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_provider_delivery WHERE workspace_id = $1`, workspaceID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_event WHERE workspace_id = $1`, workspaceID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM memory_workspace_config WHERE workspace_id = $1`, workspaceID)
+	})
+
+	if _, err := queries.UpsertMemoryWorkspaceConfig(ctx, db.UpsertMemoryWorkspaceConfigParams{
+		WorkspaceID:                  workspaceID,
+		Enabled:                      true,
+		PrimaryProvider:              "hindsight",
+		ShadowProvider:               pgtype.Text{String: Mem0ProviderName, Valid: true},
+		ReadMode:                     "primary",
+		ProviderSettings:             []byte(`{}`),
+		ProviderCredentialsEncrypted: []byte(`{}`),
+	}); err != nil {
+		t.Fatalf("seed memory config: %v", err)
+	}
+
+	svc := NewMemoryService(queries, pool)
+	svc.Clock = func() time.Time { return time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC) }
+	req := MemoryRetainRequest{
+		Scope:          MemoryScope{WorkspaceID: workspaceID},
+		Actor:          MemoryActor{Type: "system"},
+		EventType:      "history",
+		Provider:       Mem0ProviderName,
+		IdempotencyKey: "history-" + uuid.NewString(),
+		Content:        json.RawMessage(`{"memory_id":"mem0-memory-1"}`),
+	}
+
+	res, err := svc.Retain(ctx, req)
+	if err != nil {
+		t.Fatalf("history retain: %v", err)
+	}
+	if got, want := len(res.Deliveries), 1; got != want {
+		t.Fatalf("history deliveries = %d, want %d: %#v", got, want, res.Deliveries)
+	}
+	if res.Deliveries[0].Provider != Mem0ProviderName || res.Deliveries[0].Status != "queued" {
+		t.Fatalf("history delivery = %#v, want queued mem0 only", res.Deliveries[0])
+	}
+	if res.Envelope.TargetProvider != Mem0ProviderName {
+		t.Fatalf("history envelope target provider = %q, want %q", res.Envelope.TargetProvider, Mem0ProviderName)
+	}
+
+	duplicate, err := svc.Retain(ctx, req)
+	if err != nil {
+		t.Fatalf("duplicate history retain: %v", err)
+	}
+	if got, want := len(duplicate.Deliveries), 1; got != want {
+		t.Fatalf("duplicate history deliveries = %d, want %d: %#v", got, want, duplicate.Deliveries)
+	}
+
+	rows, err := pool.Query(ctx, `
+		SELECT provider, status, coalesce(error, '')
+		FROM memory_provider_delivery
+		WHERE workspace_id = $1 AND memory_event_id = $2
+		ORDER BY provider
+	`, workspaceID, res.Event.ID)
+	if err != nil {
+		t.Fatalf("query history deliveries: %v", err)
+	}
+	defer rows.Close()
+
+	type deliveryState struct {
+		provider string
+		status   string
+		error    string
+	}
+	var states []deliveryState
+	for rows.Next() {
+		var state deliveryState
+		if err := rows.Scan(&state.provider, &state.status, &state.error); err != nil {
+			t.Fatalf("scan history delivery: %v", err)
+		}
+		states = append(states, state)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate history deliveries: %v", err)
+	}
+	if len(states) != 1 || states[0].provider != Mem0ProviderName || states[0].status != "queued" || states[0].error != "" {
+		t.Fatalf("history delivery states = %#v, want only queued mem0 and no unsupported-provider error", states)
+	}
+
+	missingProvider := req
+	missingProvider.Provider = ""
+	missingProvider.IdempotencyKey = "history-missing-provider-" + uuid.NewString()
+	_, err = svc.Retain(ctx, missingProvider)
+	if !errors.Is(err, ErrMemoryConfig) {
+		t.Fatalf("history retain without provider error = %v, want ErrMemoryConfig", err)
+	}
+}
+
 func TestMemoryCapturePolicyAllowsOnlyApprovedVisibleSources(t *testing.T) {
 	workspaceID := util.MustParseUUID("11111111-1111-1111-1111-111111111111")
 	commentID := util.MustParseUUID("22222222-2222-2222-2222-222222222222")

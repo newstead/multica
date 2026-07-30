@@ -167,6 +167,7 @@ import type {
   BillingCheckoutSessionStatus,
   CreateBillingPortalSessionResponse,
   MemoryConfig,
+  MemoryMem0BoardResponse,
   MemoryRecallSamplesResponse,
 } from "../types";
 import type { OnboardingCompletionPath } from "../onboarding/types";
@@ -303,8 +304,10 @@ import {
   EMPTY_LIST_GITHUB_REPOSITORIES_RESPONSE,
   EMPTY_MEMORY_CONFIG,
   EMPTY_MEMORY_RECALL_SAMPLES_RESPONSE,
+  EMPTY_MEMORY_MEM0_BOARD_RESPONSE,
   MemoryConfigSchema,
   MemoryRecallSamplesResponseSchema,
+  MemoryMem0BoardResponseSchema,
 } from "./schemas";
 
 /** Identifies the calling client to the server.
@@ -1714,6 +1717,37 @@ export class ApiClient {
       MemoryConfigSchema,
       EMPTY_MEMORY_CONFIG,
       { endpoint: "GET /api/workspaces/:id/memory/config" },
+    );
+  }
+
+  async getMemoryMem0Board(
+    workspaceId: string,
+    params: {
+      limit?: number;
+      offset?: number;
+      project_id?: string;
+      agent_id?: string;
+      issue_id?: string;
+      task_id?: string;
+    } = {},
+  ): Promise<MemoryMem0BoardResponse> {
+    const searchParams = new URLSearchParams();
+    if (params.limit !== undefined) searchParams.set("limit", String(params.limit));
+    if (params.offset !== undefined) searchParams.set("offset", String(params.offset));
+    if (params.project_id) searchParams.set("project_id", params.project_id);
+    if (params.agent_id) searchParams.set("agent_id", params.agent_id);
+    if (params.issue_id) searchParams.set("issue_id", params.issue_id);
+    if (params.task_id) searchParams.set("task_id", params.task_id);
+    const qs = searchParams.toString();
+    const suffix = qs ? "?" + qs : "";
+    const raw = await this.fetch<unknown>(
+      "/api/workspaces/" + encodeURIComponent(workspaceId) + "/memory/mem0-board" + suffix,
+    );
+    return parseWithFallback<MemoryMem0BoardResponse>(
+      raw,
+      MemoryMem0BoardResponseSchema,
+      EMPTY_MEMORY_MEM0_BOARD_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/memory/mem0-board" },
     );
   }
 

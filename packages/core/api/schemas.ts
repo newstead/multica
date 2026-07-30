@@ -48,6 +48,7 @@ import type {
 } from "../types";
 import type {
   MemoryConfig,
+  MemoryMem0BoardResponse,
   MemoryRecallSamplesResponse,
 } from "../types/memory";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
@@ -1017,6 +1018,45 @@ const MemoryRecallSampleSchema = z.object({
   provenance: z.record(z.string(), z.unknown()).default({}),
   sampled_at: z.string().default(""),
 }).loose();
+
+export const MemoryProviderHealthSchema = z.object({
+  provider: z.string().optional().default(""),
+  ok: z.boolean().optional().default(false),
+  details: z.record(z.string(), z.unknown()).optional(),
+}).loose();
+
+export const MemoryMem0BoardDeliverySchema = z.object({
+  id: z.string().optional().default(""),
+  workspace_id: z.string().optional().default(""),
+  memory_event_id: z.string().optional().default(""),
+  project_id: z.string().nullable().optional(),
+  agent_id: z.string().nullable().optional(),
+  issue_id: z.string().nullable().optional(),
+  task_id: z.string().nullable().optional(),
+  event_type: z.string().optional().default(""),
+  provider: z.string().optional().default("mem0"),
+  status: z.string().optional().default("unknown"),
+  attempt_count: z.number().optional().default(0),
+  delivery_lag_ms: z.number().optional().default(0),
+  event_created_at: z.string().optional().default(""),
+  delivery_created_at: z.string().optional().default(""),
+  last_attempt_at: z.string().optional(),
+  terminal_at: z.string().optional(),
+  updated_at: z.string().optional().default(""),
+}).loose();
+
+export const MemoryMem0BoardResponseSchema = z.object({
+  health: MemoryProviderHealthSchema.nullable().optional().default(null),
+  health_error: z.string().optional(),
+  deliveries: z.array(MemoryMem0BoardDeliverySchema).optional().default([]),
+  recall_samples: z.array(MemoryRecallSampleSchema).optional().default([]),
+}).loose();
+
+export const EMPTY_MEMORY_MEM0_BOARD_RESPONSE: MemoryMem0BoardResponse = {
+  health: null,
+  deliveries: [],
+  recall_samples: [],
+};
 
 export const MemoryRecallSamplesResponseSchema = z.object({
   samples: z.array(MemoryRecallSampleSchema).default([]),

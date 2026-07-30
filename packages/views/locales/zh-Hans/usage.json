@@ -99,7 +99,8 @@
   "tabs": {
     "overview": "概览",
     "agents": "智能体",
-    "hindsight": "Hindsight"
+    "hindsight": "Hindsight",
+    "mem0": "mem0"
   },
   "agents": {
     "subtitle": "按智能体查看效率、模型占比、session、代码变更和瓶颈。",
@@ -224,6 +225,81 @@
       "no_provenance": "无 provenance",
       "issue_link": "Issue",
       "latency": "{{value}}ms"
+    }
+  },
+  "memory": {
+    "mem0": {
+      "title": "mem0 记忆",
+      "subtitle": "按当前范围查看真实的 mem0 召回样本、投递审计行和健康状态。",
+      "search_placeholder": "筛选请求、状态、记忆 ID 或错误",
+      "error_title": "Memory data did not load",
+      "error_body": "The memory gateway may be disabled or unreachable for this workspace.",
+      "unknown": "未知",
+      "yes": "是",
+      "no": "否",
+      "empty_window": "此时间窗口内没有 mem0 召回或投递行。",
+      "kpi": {
+        "search_latency": "Search latency",
+        "add_latency": "写入投递滞后",
+        "tokens_cost": "令牌/成本不可用",
+        "health": "Service health",
+        "searches": "{{count}} searches",
+        "adds": "{{count}} adds",
+        "errors": "{{count}} errors"
+      },
+      "health": {
+        "healthy": "Healthy",
+        "degraded": "Degraded",
+        "unknown": "Unknown",
+        "disabled": "Disabled"
+      },
+      "activity_title": "Request activity",
+      "activity_subtitle": "Add, search, and error volume using the same period and project filters as usage.",
+      "config_title": "Provider scope",
+      "config_admin": "You can manage workspace memory settings.",
+      "config_readonly": "Read-only view. Workspace admins manage memory settings.",
+      "config": {
+        "enabled": "Enabled",
+        "primary": "Primary",
+        "shadow": "Shadow",
+        "read_mode": "Read mode",
+        "memories": "Memories",
+        "entities": "Entities"
+      },
+      "latency_title": "Latency",
+      "latency_subtitle": "搜索延迟不可用；写入行使用持久投递滞后。",
+      "storage_title": "存储报告",
+      "storage_subtitle": "最新报告存储 {{size}}。",
+      "no_storage": "当前 API 未报告 mem0 存储大小。",
+      "outcomes_title": "History and mutation outcomes",
+      "outcomes_subtitle": "搜索结果来自召回样本；变更结果来自提供商投递行。",
+      "no_outcomes": "此时间窗口内没有召回或投递结果。",
+      "outcome_counts": "{{ok}} ok · {{error}} error",
+      "operation": {
+        "add": "Add",
+        "search": "Search",
+        "update": "Update",
+        "delete": "Delete",
+        "history": "History",
+        "unknown": "Unknown"
+      },
+      "audit_title": "Request audit",
+      "audit_subtitle": "最近的 mem0 召回和提供商投递行，包含状态、滞后和来源 ID。",
+      "no_audit": "No mem0 audit rows in this window.",
+      "audit": {
+        "time": "Time",
+        "query": "请求",
+        "results": "Results",
+        "latency": "Latency",
+        "tokens": "Tokens",
+        "status": "Status",
+        "correlation": "Correlation"
+      },
+      "status": {
+        "ok": "OK",
+        "error": "Error",
+        "unknown": "Unknown"
+      }
     }
   }
 }
