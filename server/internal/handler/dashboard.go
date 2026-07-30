@@ -183,7 +183,7 @@ func (h *Handler) GetDashboardUsageByAgent(w http.ResponseWriter, r *http.Reques
 	// "By agent" has no date grouping in the SQL — tz only determines
 	// the cutoff boundary, not the bucket axis.
 	tz := h.resolveViewingTZ(r)
-	since := parseSinceParamInTZ(r, 30, tz)
+	since := parseExactSinceParamInTZ(r, 30, tz)
 
 	resp, err := h.listDashboardUsageByAgent(r.Context(), parseUUID(workspaceID), since, projectID)
 	if err != nil {
@@ -430,7 +430,7 @@ func (h *Handler) GetDashboardAgentSessions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	tz := h.resolveViewingTZ(r)
-	since := parseSinceParamInTZ(r, 30, tz)
+	since := parseExactSinceParamInTZ(r, 30, tz)
 
 	rows, err := h.Queries.ListDashboardAgentSessions(r.Context(), db.ListDashboardAgentSessionsParams{
 		WorkspaceID: parseUUID(workspaceID),
@@ -543,7 +543,7 @@ func (h *Handler) GetDashboardAgentCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	tz := h.resolveViewingTZ(r)
-	since := parseSinceParamInTZ(r, 30, tz)
+	since := parseExactSinceParamInTZ(r, 30, tz)
 
 	rows, err := h.Queries.ListDashboardAgentCode(r.Context(), db.ListDashboardAgentCodeParams{
 		WorkspaceID: parseUUID(workspaceID),
