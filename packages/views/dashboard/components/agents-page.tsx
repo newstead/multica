@@ -247,7 +247,12 @@ export function AgentsUsagePage() {
             value={projectValue}
             onChange={setProjectValue}
           />
-          <Segmented value={days} onChange={setDays} options={RANGE_OPTIONS} />
+          <Segmented
+            label={t(($) => $.filter.period_label)}
+            value={days}
+            onChange={setDays}
+            options={RANGE_OPTIONS}
+          />
         </div>
       </PageHeader>
 

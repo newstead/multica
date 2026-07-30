@@ -48,16 +48,22 @@ export function rangesForDim(dim: Dim) {
 export const ALL_PROJECTS = "__all__";
 
 export function Segmented<T extends string | number>({
+  label,
   value,
   onChange,
   options,
 }: {
+  label?: string;
   value: T;
   onChange: (v: T) => void;
   options: readonly { label: string; value: T }[];
 }) {
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5">
+    <div
+      role={label ? "group" : undefined}
+      aria-label={label}
+      className="inline-flex items-center gap-0.5 rounded-md bg-muted p-0.5"
+    >
       {options.map((o) => (
         <button
           key={String(o.value)}
