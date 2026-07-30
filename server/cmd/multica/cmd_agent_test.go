@@ -1766,6 +1766,98 @@ func TestAgentCreateAndUpdateExposeThinkingLevelFlag(t *testing.T) {
 	}
 }
 
+func TestAgentIdentityFlagsAndBodies(t *testing.T) {
+	if agentCreateCmd.Flag("role-code") == nil {
+		t.Error("agent create must expose --role-code")
+	}
+	if agentCreateCmd.Flag("language-code") == nil {
+		t.Error("agent create must expose --language-code")
+	}
+	if agentUpdateCmd.Flag("role-code") == nil {
+		t.Error("agent update must expose --role-code")
+	}
+	if agentUpdateCmd.Flag("language-code") == nil {
+		t.Error("agent update must expose --language-code")
+	}
+
+	t.Run("create sends identity metadata", func(t *testing.T) {
+		var gotBody map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Errorf("decode request body: %v", err)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"id": "agent-123"})
+		}))
+		defer srv.Close()
+
+		t.Setenv("MULTICA_SERVER_URL", srv.URL)
+		t.Setenv("MULTICA_WORKSPACE_ID", "ws-1")
+		t.Setenv("MULTICA_TOKEN", "mat_test_token")
+		t.Setenv("MULTICA_AGENT_ID", "")
+		t.Setenv("MULTICA_TASK_ID", "")
+
+		cmd := &cobra.Command{Use: "create"}
+		cmd.Flags().String("name", "", "")
+		cmd.Flags().String("runtime-id", "", "")
+		cmd.Flags().String("role-code", "", "")
+		cmd.Flags().StringSlice("language-code", nil, "")
+		cmd.Flags().String("output", "json", "")
+		cmd.Flags().String("profile", "", "")
+		_ = cmd.Flags().Set("name", "TestAgent")
+		_ = cmd.Flags().Set("runtime-id", "runtime-1")
+		_ = cmd.Flags().Set("role-code", "BE")
+		_ = cmd.Flags().Set("language-code", "GO")
+		_ = cmd.Flags().Set("language-code", "PY")
+
+		if err := runAgentCreate(cmd, nil); err != nil {
+			t.Fatalf("runAgentCreate: %v", err)
+		}
+		if gotBody["role_code"] != "BE" {
+			t.Fatalf("role_code body = %v, want BE", gotBody["role_code"])
+		}
+		langs, ok := gotBody["language_codes"].([]any)
+		if !ok || !reflect.DeepEqual(langs, []any{"GO", "PY"}) {
+			t.Fatalf("language_codes body = %#v, want [GO PY]", gotBody["language_codes"])
+		}
+	})
+
+	t.Run("update sends identity metadata clear", func(t *testing.T) {
+		var gotBody map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				t.Errorf("decode request body: %v", err)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"id": "agent-123"})
+		}))
+		defer srv.Close()
+
+		t.Setenv("MULTICA_SERVER_URL", srv.URL)
+		t.Setenv("MULTICA_WORKSPACE_ID", "ws-1")
+		t.Setenv("MULTICA_TOKEN", "mat_test_token")
+		t.Setenv("MULTICA_AGENT_ID", "")
+		t.Setenv("MULTICA_TASK_ID", "")
+
+		cmd := &cobra.Command{Use: "update"}
+		cmd.Flags().String("role-code", "", "")
+		cmd.Flags().StringSlice("language-code", nil, "")
+		cmd.Flags().String("output", "json", "")
+		cmd.Flags().String("profile", "", "")
+		_ = cmd.Flags().Set("role-code", "")
+		_ = cmd.Flags().Set("language-code", "")
+
+		if err := runAgentUpdate(cmd, []string{"agent-123"}); err != nil {
+			t.Fatalf("runAgentUpdate: %v", err)
+		}
+		if gotBody["role_code"] != "" {
+			t.Fatalf("role_code body = %v, want empty clear", gotBody["role_code"])
+		}
+		langs, ok := gotBody["language_codes"].([]any)
+		if !ok || len(langs) != 0 {
+			t.Fatalf("language_codes body = %#v, want empty clear list", gotBody["language_codes"])
+		}
+	})
+}
+
 func TestAgentServiceTierFlagsAndBodies(t *testing.T) {
 	if agentCreateCmd.Flag("service-tier") == nil {
 		t.Error("agent create must expose --service-tier")
