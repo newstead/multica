@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryAuditEvent, MemoryMutationResponse } from "@multica/core/types";
@@ -122,7 +122,7 @@ describe("MemoryPage", () => {
 
     expect(confirm).toBeDisabled();
 
-    await user.type(within(dialog).getByPlaceholderText("DELETE"), "DELETE");
+    fireEvent.change(within(dialog).getByPlaceholderText("DELETE"), { target: { value: "DELETE" } });
     await user.click(confirm);
 
     expect(deleteMemory).toHaveBeenCalledWith({
@@ -157,9 +157,9 @@ describe("MemoryPage", () => {
     expect(projectErase).toBeDisabled();
     expect(issueErase).toBeDisabled();
 
-    await user.type(screen.getByPlaceholderText("Project ID"), "project-12345678");
-    await user.type(screen.getByPlaceholderText("Issue ID"), "issue-12345678");
-    await user.type(screen.getByPlaceholderText("ERASE"), "ERASE");
+    fireEvent.change(screen.getByPlaceholderText("Project ID"), { target: { value: "project-12345678" } });
+    fireEvent.change(screen.getByPlaceholderText("Issue ID"), { target: { value: "issue-12345678" } });
+    fireEvent.change(screen.getByPlaceholderText("ERASE"), { target: { value: "ERASE" } });
 
     expect(projectErase).toBeEnabled();
     expect(issueErase).toBeEnabled();
