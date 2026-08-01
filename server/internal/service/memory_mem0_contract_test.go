@@ -349,7 +349,7 @@ func TestMem0ProviderRetryResponseAndTokenBounds(t *testing.T) {
 
 	var healthAttempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/configure" {
+		if r.URL.Path == "/health" {
 			attempt := healthAttempts.Add(1)
 			if attempt < 3 {
 				http.Error(w, `{"detail":"temporarily unavailable"}`, http.StatusServiceUnavailable)
@@ -427,7 +427,7 @@ func TestMem0ProviderHealthForWorkspaceSendsCanonicalWorkspaceHeader(t *testing.
 
 	var gotWorkspaceID string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/configure" {
+		if r.URL.Path != "/health" {
 			http.NotFound(w, r)
 			return
 		}
