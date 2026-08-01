@@ -12,14 +12,22 @@ func TestMemoryMetricsExposeBoundedAggregateContract(t *testing.T) {
 	m := NewMemoryMetrics()
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(m.Collectors()...)
-	if got := testutil.ToFloat64(m.requests.WithLabelValues("hindsight", "dual_write", "global", "capture", "partial", "none")); got != 0 {
-		t.Fatalf("preinitialized request counter = %v, want 0", got)
-	}
+	m.RecordRequest("hindsight", "dual_write", "capture", "partial")
 	m.RecordRequest("hindsight", "dual_write", "capture", "ok")
 	if got := testutil.ToFloat64(m.requests.WithLabelValues("hindsight", "dual_write", "global", "capture", "ok", "none")); got != 1 {
 		t.Fatalf("recorded request counter = %v, want 1", got)
 	}
+	m.ObserveDualWriteLag(0.125)
+	m.RecordRecallComparison("match")
+	m.RecordRecallComparison("divergent")
+	m.RecordRecallFeedback("useful")
+	m.RecordRecallFeedback("not_useful")
+	m.RecordRecallTokens(5, 8)
+	m.RecordRecallCost(0.02)
+	m.SetStorageBytes("hindsight", 1024)
+	m.SetStorageBytes("mem0", 2048)
 	m.RecordHealth("hindsight", true)
+	m.RecordHealth("mem0", false)
 	if got := testutil.ToFloat64(m.providerHealth.WithLabelValues("hindsight", "dual_write", "global", "health", "ok")); got != 1 {
 		t.Fatalf("healthy availability = %v, want 1", got)
 	}

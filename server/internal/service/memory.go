@@ -39,6 +39,12 @@ type MemoryProvider interface {
 // user, workspace, project, request, or memory identifiers as metric labels.
 type MemoryTelemetry interface {
 	RecordRequest(provider, mode, operation, result string)
+	ObserveDualWriteLag(seconds float64)
+	RecordRecallComparison(comparison string)
+	RecordRecallFeedback(outcome string)
+	RecordRecallTokens(input, output int)
+	RecordRecallCost(usd float64)
+	SetStorageBytes(provider string, bytes float64)
 	RecordHealth(provider string, healthy bool)
 }
 
@@ -251,14 +257,13 @@ func (s *MemoryService) Retain(ctx context.Context, req MemoryRetainRequest) (Me
 	if len(providers) == 0 {
 		return MemoryRetainResult{}, fmt.Errorf("%w: at least one provider is required when enabled", ErrMemoryConfig)
 	}
-	for _, provider := range providers {
-		mode := "primary"
-		if len(providers) > 1 {
-			mode = "dual_write"
-		}
-		if s.Telemetry != nil {
-			s.Telemetry.RecordRequest(provider, mode, "capture", "ok")
-		}
+	if req.Metadata == nil {
+		req.Metadata = map[string]any{}
+	}
+	if len(providers) > 1 {
+		req.Metadata["telemetry_delivery_mode"] = "dual_write"
+	} else {
+		req.Metadata["telemetry_delivery_mode"] = "primary"
 	}
 
 	key := strings.TrimSpace(req.IdempotencyKey)
@@ -335,7 +340,26 @@ func (s *MemoryService) RetainApprovedSource(ctx context.Context, src MemoryCapt
 	if errors.Is(err, ErrMemoryDisabled) {
 		return MemoryRetainResult{}, true, nil
 	}
+	if err == nil && s.Telemetry != nil && strings.TrimSpace(src.SourceType) == MemorySourceExplicitFeedback {
+		if outcome := explicitRecallFeedbackOutcome(src.Metadata); outcome != "" {
+			s.Telemetry.RecordRecallFeedback(outcome)
+		}
+	}
 	return res, true, err
+}
+
+// explicitRecallFeedbackOutcome accepts only the two user-visible feedback
+// selections. The free-form feedback body never becomes a metric label.
+func explicitRecallFeedbackOutcome(metadata map[string]any) string {
+	if metadata == nil {
+		return ""
+	}
+	outcome, _ := metadata["recall_feedback_outcome"].(string)
+	outcome = strings.TrimSpace(outcome)
+	if outcome == "useful" || outcome == "not_useful" {
+		return outcome
+	}
+	return ""
 }
 
 func BuildApprovedMemoryRetainRequest(src MemoryCaptureSource) (MemoryRetainRequest, bool) {
@@ -553,7 +577,7 @@ func (s *MemoryService) dispatchMemoryProviderDelivery(ctx context.Context, deli
 	}
 	var envelope MemoryEventEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		updated, updateErr := s.recordMemoryDeliveryFailure(ctx, delivery, eventCreatedAt, fmt.Errorf("decode memory envelope: %w", err))
+		updated, updateErr := s.recordMemoryDeliveryFailure(ctx, delivery, eventCreatedAt, MemoryEventEnvelope{}, fmt.Errorf("decode memory envelope: %w", err))
 		result.Delivery = updated
 		result.Error = err.Error()
 		if updateErr != nil {
@@ -564,7 +588,7 @@ func (s *MemoryService) dispatchMemoryProviderDelivery(ctx context.Context, deli
 	provider := s.memoryProvider(delivery.Provider)
 	if provider == nil {
 		err := fmt.Errorf("%w: provider %q is not registered", ErrMemoryConfig, delivery.Provider)
-		updated, updateErr := s.recordMemoryDeliveryFailure(ctx, delivery, eventCreatedAt, err)
+		updated, updateErr := s.recordMemoryDeliveryFailure(ctx, delivery, eventCreatedAt, envelope, err)
 		result.Delivery = updated
 		result.Error = err.Error()
 		if updateErr != nil {
@@ -575,7 +599,7 @@ func (s *MemoryService) dispatchMemoryProviderDelivery(ctx context.Context, deli
 
 	providerResult, err := callMemoryProvider(ctx, provider, eventType, envelope)
 	if err != nil {
-		updated, updateErr := s.recordMemoryDeliveryFailure(ctx, delivery, eventCreatedAt, err)
+		updated, updateErr := s.recordMemoryDeliveryFailure(ctx, delivery, eventCreatedAt, envelope, err)
 		result.Delivery = updated
 		result.Error = err.Error()
 		if updateErr != nil {
@@ -583,12 +607,12 @@ func (s *MemoryService) dispatchMemoryProviderDelivery(ctx context.Context, deli
 		}
 		return result, nil
 	}
-	updated, err := s.recordMemoryDeliverySuccess(ctx, delivery, eventCreatedAt, providerResult)
+	updated, err := s.recordMemoryDeliverySuccess(ctx, delivery, eventCreatedAt, envelope, providerResult)
 	result.Delivery = updated
 	return result, err
 }
 
-func (s *MemoryService) recordMemoryDeliverySuccess(ctx context.Context, delivery db.MemoryProviderDelivery, eventCreatedAt pgtype.Timestamptz, result MemoryProviderResult) (db.MemoryProviderDelivery, error) {
+func (s *MemoryService) recordMemoryDeliverySuccess(ctx context.Context, delivery db.MemoryProviderDelivery, eventCreatedAt pgtype.Timestamptz, envelope MemoryEventEnvelope, result MemoryProviderResult) (db.MemoryProviderDelivery, error) {
 	response := result.Response
 	if len(response) == 0 {
 		response = json.RawMessage(`{}`)
@@ -607,10 +631,21 @@ func (s *MemoryService) recordMemoryDeliverySuccess(ctx context.Context, deliver
 		DeliveryLagMs:    deliveryLagMillis(eventCreatedAt, now),
 		Error:            pgtype.Text{},
 	})
+	if err == nil && s.Telemetry != nil {
+		mode := memoryTelemetryDeliveryMode(envelope)
+		s.Telemetry.RecordRequest(delivery.Provider, mode, "capture", "ok")
+		if mode == "dual_write" {
+			s.Telemetry.ObserveDualWriteLag(float64(deliveryLagMillis(eventCreatedAt, now)) / 1000)
+			if storageBytes, ok := providerStorageBytes(result.Response); ok {
+				s.Telemetry.SetStorageBytes(delivery.Provider, storageBytes)
+			}
+		}
+		s.Telemetry.RecordHealth(delivery.Provider, true)
+	}
 	return updated, err
 }
 
-func (s *MemoryService) recordMemoryDeliveryFailure(ctx context.Context, delivery db.MemoryProviderDelivery, eventCreatedAt pgtype.Timestamptz, failure error) (db.MemoryProviderDelivery, error) {
+func (s *MemoryService) recordMemoryDeliveryFailure(ctx context.Context, delivery db.MemoryProviderDelivery, eventCreatedAt pgtype.Timestamptz, envelope MemoryEventEnvelope, failure error) (db.MemoryProviderDelivery, error) {
 	attemptCount := delivery.AttemptCount + 1
 	status, nextAttemptAt, terminalAt := s.DeliveryFailureState(attemptCount)
 	now := s.now()
@@ -630,6 +665,15 @@ func (s *MemoryService) recordMemoryDeliveryFailure(ctx context.Context, deliver
 		DeliveryLagMs:    deliveryLagMillis(eventCreatedAt, now),
 		Error:            textValue(failure.Error()),
 	})
+	if err == nil && s.Telemetry != nil {
+		mode := memoryTelemetryDeliveryMode(envelope)
+		result := "error"
+		if mode == "dual_write" {
+			result = "partial"
+		}
+		s.Telemetry.RecordRequest(delivery.Provider, mode, "capture", result)
+		s.Telemetry.RecordHealth(delivery.Provider, false)
+	}
 	return updated, err
 }
 
@@ -703,6 +747,7 @@ func (s *MemoryService) Recall(ctx context.Context, req MemoryRecallRequest) (Me
 		if out.Primary == nil && out.Shadow == nil && len(out.Errors) > 0 {
 			return out, fmt.Errorf("%w: all recall providers failed", ErrMemoryConfig)
 		}
+		s.recordPairedRecallTelemetry(req, out)
 		return out, nil
 	}
 	if err != nil {
@@ -719,6 +764,9 @@ func (s *MemoryService) recallProvider(ctx context.Context, req MemoryRecallRequ
 	}
 	result, err := provider.Recall(ctx, req)
 	if err != nil {
+		if s.Telemetry != nil {
+			s.Telemetry.RecordHealth(providerName, false)
+		}
 		return nil, err
 	}
 	if strings.TrimSpace(result.Provider) == "" {
@@ -728,7 +776,68 @@ func (s *MemoryService) recallProvider(ctx context.Context, req MemoryRecallRequ
 	if err != nil {
 		return nil, err
 	}
+	if s.Telemetry != nil {
+		s.Telemetry.RecordHealth(providerName, true)
+	}
 	return &MemoryProviderRecall{Provider: providerName, Result: result, Sample: sample}, nil
+}
+
+func (s *MemoryService) recordPairedRecallTelemetry(req MemoryRecallRequest, result MemoryRecallReadResult) {
+	if s == nil || s.Telemetry == nil || result.Primary == nil || result.Shadow == nil {
+		return
+	}
+	comparison := "divergent"
+	if jsonEqual(result.Primary.Result.Results, result.Shadow.Result.Results) {
+		comparison = "match"
+	}
+	s.Telemetry.RecordRecallComparison(comparison)
+	s.Telemetry.RecordRecallTokens(memoryApproxTokenCount(req.Query), memoryApproxTokenCount(string(result.Primary.Result.Results))+memoryApproxTokenCount(string(result.Shadow.Result.Results)))
+	if primaryCost, ok := providerEstimatedCost(result.Primary.Result.Provenance); ok {
+		if shadowCost, ok := providerEstimatedCost(result.Shadow.Result.Provenance); ok {
+			s.Telemetry.RecordRecallCost(primaryCost + shadowCost)
+		}
+	}
+}
+
+func jsonEqual(left, right json.RawMessage) bool {
+	var a, b any
+	if json.Unmarshal(left, &a) != nil || json.Unmarshal(right, &b) != nil {
+		return false
+	}
+	leftNormalized, leftErr := json.Marshal(a)
+	rightNormalized, rightErr := json.Marshal(b)
+	return leftErr == nil && rightErr == nil && string(leftNormalized) == string(rightNormalized)
+}
+
+func memoryTelemetryDeliveryMode(envelope MemoryEventEnvelope) string {
+	if envelope.Metadata != nil && envelope.Metadata["telemetry_delivery_mode"] == "dual_write" {
+		return "dual_write"
+	}
+	return "primary"
+}
+
+func providerStorageBytes(raw json.RawMessage) (float64, bool) {
+	var values map[string]any
+	if json.Unmarshal(raw, &values) != nil {
+		return 0, false
+	}
+	return aggregateMetricNumber(values["storage_bytes"])
+}
+
+func providerEstimatedCost(raw json.RawMessage) (float64, bool) {
+	var values map[string]any
+	if json.Unmarshal(raw, &values) != nil {
+		return 0, false
+	}
+	return aggregateMetricNumber(values["estimated_cost_usd"])
+}
+
+func aggregateMetricNumber(value any) (float64, bool) {
+	number, ok := value.(float64)
+	if !ok || number < 0 || number != number {
+		return 0, false
+	}
+	return number, true
 }
 
 func (s *MemoryService) runInTx(ctx context.Context, fn func(*db.Queries) error) error {

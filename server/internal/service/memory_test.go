@@ -56,6 +56,27 @@ func TestMemoryDeliveryFailureStateTerminalAfterMaxAttempts(t *testing.T) {
 	}
 }
 
+func TestAggregateTelemetryHelpersAcceptOnlyBoundedValues(t *testing.T) {
+	if got := explicitRecallFeedbackOutcome(map[string]any{"recall_feedback_outcome": "useful"}); got != "useful" {
+		t.Fatalf("feedback outcome = %q, want useful", got)
+	}
+	if got := explicitRecallFeedbackOutcome(map[string]any{"recall_feedback_outcome": "free-form preference"}); got != "" {
+		t.Fatalf("unsafe feedback outcome = %q, want empty", got)
+	}
+	if got, ok := providerStorageBytes(json.RawMessage(`{"storage_bytes":2048}`)); !ok || got != 2048 {
+		t.Fatalf("storage measurement = %v, %v; want 2048, true", got, ok)
+	}
+	if _, ok := providerStorageBytes(json.RawMessage(`{"storage_bytes":"2048"}`)); ok {
+		t.Fatal("string storage measurement must be rejected")
+	}
+	if got, ok := providerEstimatedCost(json.RawMessage(`{"estimated_cost_usd":0.125}`)); !ok || got != 0.125 {
+		t.Fatalf("cost measurement = %v, %v; want 0.125, true", got, ok)
+	}
+	if _, ok := providerEstimatedCost(json.RawMessage(`{"estimated_cost_usd":-0.1}`)); ok {
+		t.Fatal("negative cost measurement must be rejected")
+	}
+}
+
 func TestMemoryRetainDuplicateRepairsProviderDeliverySet(t *testing.T) {
 	pool := newMemoryServiceIntegrationPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
