@@ -177,8 +177,8 @@ func writeContextFiles(workDir, provider string, ctx TaskContextForEnv, manifest
 			if err != nil {
 				return fmt.Errorf("resolve skills dir: %w", err)
 			}
-			// Codex skills are written to codex-home in Prepare; skip here.
-			if provider != "codex" {
+			// Codex-compatible skills are written to codex-home in Prepare; skip here.
+			if !isCodexCompatibleProvider(provider) {
 				if err := writeSkillFiles(skillsDir, ctx.AgentSkills, manifest); err != nil {
 					return fmt.Errorf("write skill files: %w", err)
 				}

@@ -138,7 +138,7 @@ func localSkillRootsForProvider(provider string) ([]localSkillRoot, bool, error)
 		// https://www.codebuddy.ai/docs/cli/skills ("User-level Skills:
 		// ~/.codebuddy/skills/").
 		providerRoot = filepath.Join(home, ".codebuddy", "skills")
-	case "codex":
+	case "codex", "deepseek":
 		codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME"))
 		if codexHome == "" {
 			codexHome = filepath.Join(home, ".codex")
@@ -494,7 +494,7 @@ func enumerateLocalSkills(
 				Provider:    provider,
 				Root:        root.kind,
 				Plugin:      root.plugin,
-				CanDisable:  provider == "codex" || provider == "claude",
+				CanDisable:  isCodexCompatibleProvider(provider) || provider == "claude",
 				// `files` is the supporting bundle (collectLocalSkillFiles
 				// intentionally excludes SKILL.md so the bundle's `Content`
 				// field can carry it without duplication on import). For the

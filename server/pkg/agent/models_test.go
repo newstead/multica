@@ -13,9 +13,10 @@ import (
 func TestStaticModelCatalogsHaveValidEntries(t *testing.T) {
 	t.Parallel()
 	catalogs := map[string][]Model{
-		"claude": claudeStaticModels(),
-		"codex":  codexStaticModels(),
-		"cursor": cursorStaticModels(),
+		"claude":   claudeStaticModels(),
+		"codex":    codexStaticModels(),
+		"deepseek": deepseekStaticModels(),
+		"cursor":   cursorStaticModels(),
 	}
 	for provider, models := range catalogs {
 		if len(models) == 0 {
@@ -29,6 +30,20 @@ func TestStaticModelCatalogsHaveValidEntries(t *testing.T) {
 				t.Errorf("%s static catalog[%d] has empty Label", provider, i)
 			}
 		}
+	}
+}
+
+func TestListModelsDeepSeekDefaultsToV4Flash(t *testing.T) {
+	got, err := ListModels(context.Background(), "deepseek", "")
+	if err != nil {
+		t.Fatalf("ListModels(deepseek) error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ListModels(deepseek) = %+v, want one default model", got)
+	}
+	model := got[0]
+	if model.ID != "deepseek-v4-flash" || model.Label != "DeepSeek V4 Flash" || model.Provider != "deepseek" || !model.Default {
+		t.Fatalf("deepseek model = %+v, want deepseek-v4-flash default", model)
 	}
 }
 
@@ -216,6 +231,18 @@ func TestModelKnownIncompatibleWithProvider(t *testing.T) {
 			name:     "claude model is incompatible with codex",
 			provider: "codex",
 			model:    "claude-sonnet-4-6",
+			want:     true,
+		},
+		{
+			name:     "deepseek default accepted by deepseek",
+			provider: "deepseek",
+			model:    "deepseek-v4-flash",
+			want:     false,
+		},
+		{
+			name:     "deepseek model is incompatible with codex",
+			provider: "codex",
+			model:    "deepseek-v4-flash",
 			want:     true,
 		},
 		{

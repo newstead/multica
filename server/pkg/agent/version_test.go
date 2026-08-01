@@ -167,6 +167,8 @@ func TestCheckMinVersion(t *testing.T) {
 		{"codex", "codex-cli 0.100.0", false},
 		{"codex", "codex-cli 0.99.0", true},
 		{"codex", "codex-cli 0.50.0", true},
+		{"deepseek", "codex-cli 0.145.0", false},
+		{"deepseek", "codex-cli 0.144.0", true},
 		{"grok", "grok 0.2.93 (f00f96316d4b) [stable]", false},
 		{"grok", "0.2.89", false},
 		{"grok", "0.2.0", true},

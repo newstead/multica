@@ -34,6 +34,17 @@ func TestNewReturnsCodexBackend(t *testing.T) {
 	}
 }
 
+func TestNewReturnsDeepSeekCodexBackend(t *testing.T) {
+	t.Parallel()
+	b, err := New("deepseek", Config{ExecutablePath: "/nonexistent/codex"})
+	if err != nil {
+		t.Fatalf("New(deepseek) error: %v", err)
+	}
+	if _, ok := b.(*codexBackend); !ok {
+		t.Fatalf("expected *codexBackend, got %T", b)
+	}
+}
+
 func TestNewReturnsCodebuddyBackend(t *testing.T) {
 	t.Parallel()
 	b, err := New("codebuddy", Config{ExecutablePath: "/nonexistent/codebuddy"})

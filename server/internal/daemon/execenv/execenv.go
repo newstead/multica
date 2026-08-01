@@ -253,6 +253,10 @@ func PredictRootDir(workspacesRoot, workspaceID, taskID string) string {
 	return filepath.Join(workspacesRoot, workspaceID, shortID(taskID))
 }
 
+func isCodexCompatibleProvider(provider string) bool {
+	return provider == "codex" || provider == "deepseek"
+}
+
 // Prepare creates an isolated execution environment for a task.
 // The workdir starts empty (no repo checkouts). The agent checks out repos
 // on demand via `multica repo checkout <url>`.
@@ -341,8 +345,8 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		}
 	}
 
-	// For Codex, set up a per-task CODEX_HOME seeded from ~/.codex/ with skills.
-	if params.Provider == "codex" {
+	// For Codex-compatible providers, set up a per-task CODEX_HOME seeded from ~/.codex/ with skills.
+	if isCodexCompatibleProvider(params.Provider) {
 		codexHome := filepath.Join(envRoot, codexHomeDirName)
 		// Under the Linux workspace-write sandbox the real HOME is read-only;
 		// give the task a writable HOME and grant write access to it in the
@@ -352,7 +356,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 			return nil, fmt.Errorf("execenv: prepare task home: %w", err)
 		}
 		env.TaskHome = taskHome
-		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, IsLocalDirectory: params.LocalWorkDir != "", SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task.AgentID, params.Task.IssueID), WritableRoots: writableRoots, CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
+		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, IsLocalDirectory: params.LocalWorkDir != "", SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task.AgentID, params.Task.IssueID), WritableRoots: writableRoots, CodexCustomArgs: params.CodexCustomArgs, DeepSeekProvider: params.Provider == "deepseek"}, logger); err != nil {
 			return nil, fmt.Errorf("execenv: prepare codex-home: %w", err)
 		}
 		if err := hydrateCodexSkills(codexHome, params.Task.AgentSkills, params.Task.DisabledRuntimeSkills, logger); err != nil {
@@ -563,10 +567,11 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 		logger.Warn("execenv: refresh context files failed", "error", err)
 	}
 
-	// Restore CodexHome for Codex provider — the per-task codex-home directory
-	// lives alongside the workdir. Re-run prepareCodexHomeWithOpts to ensure
-	// config (especially sandbox/network access) is up to date.
-	if params.Provider == "codex" {
+	// Restore CodexHome for Codex-compatible providers — the per-task
+	// codex-home directory lives alongside the workdir. Re-run
+	// prepareCodexHomeWithOpts to ensure config (especially sandbox/network
+	// access and provider routing) is up to date.
+	if isCodexCompatibleProvider(params.Provider) {
 		codexHome := filepath.Join(env.RootDir, codexHomeDirName)
 		// Refresh the per-task writable HOME (re-seed credential symlinks in
 		// case the user's real home changed) and recompute the sandbox
@@ -576,7 +581,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 			logger.Warn("execenv: refresh task home failed", "error", err)
 		}
 		env.TaskHome = taskHome
-		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, ResumeSessionID: params.ResumeSessionID, IsLocalDirectory: params.LocalDirectory, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task.AgentID, params.Task.IssueID), WritableRoots: writableRoots, CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
+		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, ResumeSessionID: params.ResumeSessionID, IsLocalDirectory: params.LocalDirectory, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task.AgentID, params.Task.IssueID), WritableRoots: writableRoots, CodexCustomArgs: params.CodexCustomArgs, DeepSeekProvider: params.Provider == "deepseek"}, logger); err != nil {
 			logger.Warn("execenv: refresh codex-home failed", "error", err)
 		} else {
 			env.CodexHome = codexHome

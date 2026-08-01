@@ -1,7 +1,7 @@
 // Package agent provides a unified interface for executing prompts via
-// coding agents (Claude Code, CodeBuddy, Codex, Copilot, OpenCode, DevEco Code,
-// OpenClaw, Hermes, Pi, Cursor, Kimi, Kiro, Antigravity, Qoder, Trae, Grok,
-// Qwen Code). It
+// coding agents (Claude Code, CodeBuddy, Codex, DeepSeek, Copilot, OpenCode,
+// DevEco Code, OpenClaw, Hermes, Pi, Cursor, Kimi, Kiro, Antigravity, Qoder,
+// Trae, Grok, Qwen Code). It
 // mirrors the happy-cli AgentBackend pattern, translated to idiomatic Go.
 package agent
 
@@ -56,7 +56,7 @@ type ExecOptions struct {
 	// the backend surfaces a continuity notice to the user instead of silently
 	// restarting. Currently honoured by the codex backend (MUL-4424).
 	ResumeExpected bool
-	ExtraArgs      []string        // daemon-wide default CLI arguments appended before CustomArgs; currently read by claude and codex backends only
+	ExtraArgs      []string        // daemon-wide default CLI arguments appended before CustomArgs; currently read by claude, codex/deepseek, codebuddy, and qwen backends only
 	CustomArgs     []string        // per-agent CLI arguments appended after ExtraArgs
 	McpConfig      json.RawMessage // if non-nil, MCP server config to pass via --mcp-config
 	// ThinkingLevel is the runtime-native reasoning/effort value (e.g.
@@ -218,13 +218,14 @@ type Config struct {
 }
 
 // New creates a Backend for the given agent type.
-// Supported types: "claude", "codebuddy", "codex", "copilot", "opencode", "deveco", "openclaw", "hermes", "pi", "cursor", "kimi", "kiro", "antigravity", "qoder", "traecli", "grok", "qwen".
+// Supported types: "claude", "codebuddy", "codex", "deepseek", "copilot", "opencode", "deveco", "openclaw", "hermes", "pi", "cursor", "kimi", "kiro", "antigravity", "qoder", "traecli", "grok", "qwen".
 //
 // SupportedTypes is the canonical whitelist of agent types eligible to back a
 // custom runtime profile. It MUST stay in lockstep with the
 // runtime_profile.protocol_family CHECK constraint (migration 120, widened by
 // migration 134 to add qoder, migration 136 to add traecli, migration 175 to
-// add deveco, migration 179 to add grok, and migration 202 to add qwen): a
+// add deveco, migration 179 to add grok, migration 202 to add qwen, and
+// migration 228 to add deepseek): a
 // custom runtime profile may only
 // be based on a backend Multica officially supports.
 // qoder is exposed here so Qoder CN (`qoderclicn`) users can point the Qoder
@@ -233,11 +234,14 @@ type Config struct {
 // header and provider branding but was previously missing from this whitelist,
 // so the family picker rejected it (#4945). grok is the xAI Grok Build CLI
 // ACP backend (`grok agent --always-approve stdio`). qwen is Qwen Code's
-// native `qwen -p <prompt> --output-format stream-json` backend.
+// native `qwen -p <prompt> --output-format stream-json` backend. deepseek is
+// routed through Codex app-server with a managed OpenAI-compatible provider
+// config that points at a Responses-compatible DeepSeek adapter.
 var SupportedTypes = []string{
 	"claude",
 	"codebuddy",
 	"codex",
+	"deepseek",
 	"copilot",
 	"opencode",
 	"deveco",
@@ -305,6 +309,8 @@ func New(agentType string, cfg Config) (Backend, error) {
 		return &codebuddyBackend{cfg: cfg}, nil
 	case "codex":
 		return &codexBackend{cfg: cfg}, nil
+	case "deepseek":
+		return &codexBackend{cfg: cfg}, nil
 	case "copilot":
 		return &copilotBackend{cfg: cfg}, nil
 	case "opencode":
@@ -334,7 +340,7 @@ func New(agentType string, cfg Config) (Backend, error) {
 	case "qwen":
 		return &qwenBackend{cfg: cfg}, nil
 	default:
-		return nil, fmt.Errorf("unknown agent type: %q (supported: claude, codebuddy, codex, copilot, opencode, deveco, openclaw, hermes, pi, cursor, kimi, kiro, antigravity, qoder, traecli, grok, qwen)", agentType)
+		return nil, fmt.Errorf("unknown agent type: %q (supported: claude, codebuddy, codex, deepseek, copilot, opencode, deveco, openclaw, hermes, pi, cursor, kimi, kiro, antigravity, qoder, traecli, grok, qwen)", agentType)
 	}
 }
 
@@ -354,6 +360,7 @@ var launchHeaders = map[string]string{
 	"claude":      "claude (stream-json)",
 	"codebuddy":   "codebuddy (stream-json)",
 	"codex":       "codex app-server",
+	"deepseek":    "codex app-server (DeepSeek)",
 	"copilot":     "copilot (json)",
 	"cursor":      "cursor-agent (stream-json)",
 	"deveco":      "deveco run (json)",
