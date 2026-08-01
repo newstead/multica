@@ -91,7 +91,7 @@ func loadRuntimeMcpServerConfigs(provider string) (map[string]any, bool, error) 
 	switch provider {
 	case "claude", "codebuddy":
 		path, key, format = filepath.Join(home, ".claude.json"), "mcpServers", "json"
-	case "codex":
+	case "codex", "deepseek":
 		codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME"))
 		if codexHome == "" {
 			codexHome = filepath.Join(home, ".codex")
@@ -153,7 +153,7 @@ func loadRuntimeMcpServerConfigs(provider string) (map[string]any, bool, error) 
 
 func normalizeRuntimeMcpEntry(provider string, value any) any {
 	entry, ok := value.(map[string]any)
-	if !ok || provider != "codex" {
+	if !ok || !isCodexCompatibleProvider(provider) {
 		return value
 	}
 	// Multica's canonical remote shape calls these `headers`; Codex stores
@@ -215,7 +215,7 @@ func listRuntimeLocalMcpServers(provider string) ([]runtimeLocalMcpServerSummary
 	switch provider {
 	case "claude", "codebuddy":
 		path, key, source, format = filepath.Join(home, ".claude.json"), "mcpServers", "User config", "json"
-	case "codex":
+	case "codex", "deepseek":
 		codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME"))
 		if codexHome == "" {
 			codexHome = filepath.Join(home, ".codex")

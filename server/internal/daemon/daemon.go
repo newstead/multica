@@ -77,8 +77,12 @@ const (
 	defaultTaskPrepareTimeout = 5 * time.Minute
 )
 
+func isCodexCompatibleProvider(provider string) bool {
+	return provider == "codex" || provider == "deepseek"
+}
+
 func repoCheckoutModeFor(provider, goos string) string {
-	if provider == "codex" && goos == "linux" {
+	if isCodexCompatibleProvider(provider) && goos == "linux" {
 		return repoCheckoutModeIsolated
 	}
 	return ""
@@ -3881,9 +3885,10 @@ func gcMetaForTask(task Task) (execenv.GCMeta, bool) {
 // name when simple title-casing would read awkwardly. Providers not listed
 // here fall back to capitalizing the key (claude → "Claude", codex → "Codex").
 var runtimeDisplayNameOverrides = map[string]string{
-	"traecli": "Trae",
-	"grok":    "Grok",
-	"qwen":    "Qwen Code",
+	"traecli":  "Trae",
+	"deepseek": "DeepSeek",
+	"grok":     "Grok",
+	"qwen":     "Qwen Code",
 }
 
 // providerDisplayName returns the human-facing runtime name for a provider key.
@@ -4038,7 +4043,7 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 // (PriorSessionResumed) instead of pretending the conversation continues.
 // No-op for non-Codex providers or when there is nothing to resume.
 func gateCodexResumeToRolloutPresence(task *Task, taskCtx *execenv.TaskContextForEnv, provider, codexHome string, taskLog *slog.Logger) {
-	if provider != "codex" || task.PriorSessionID == "" || codexHome == "" {
+	if !isCodexCompatibleProvider(provider) || task.PriorSessionID == "" || codexHome == "" {
 		return
 	}
 	if execenv.CodexResumeRolloutPresent(codexHome, task.PriorSessionID) {
@@ -4499,7 +4504,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// the profile's own command, which the daemon never pins or version-detects.
 	// Non-codex providers carry the value through without consuming it.
 	codexVersion := d.agentVersion("codex")
-	if provider == "codex" && resolvedVersion != "" {
+	if isCodexCompatibleProvider(provider) {
+		codexVersion = d.agentVersion(provider)
+	}
+	if isCodexCompatibleProvider(provider) && resolvedVersion != "" {
 		codexVersion = resolvedVersion
 	}
 	openclawBin := ""
@@ -4560,7 +4568,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// that never lands in config.toml — even when it arrives shell-quoted —
 	// instead of silently downgrading a user's isolation opt-in (MUL-4957).
 	var codexSandboxArgs []string
-	if provider == "codex" {
+	if isCodexCompatibleProvider(provider) {
 		extraArgs := append(append([]string{}, profileFixedArgs...), defaultArgsForProvider(d.cfg, provider)...)
 		codexSandboxArgs = agent.NormalizeCodexLaunchArgs(extraArgs, agentCustomArgs, effectiveMcpConfig, d.logger)
 	}
@@ -4596,7 +4604,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// task, starting before Prepare/Reuse mounts it — so a prune that samples the
 	// store's stale (pre-remount) mtime cannot reclaim it out from under a resume
 	// of a long-idle issue (MUL-4424). No-op for non-Codex tasks / no stable key.
-	if provider == "codex" {
+	if isCodexCompatibleProvider(provider) {
 		if store := execenv.CodexSessionStorePath(d.cfg.Profile, task.AgentID, task.IssueID); store != "" {
 			d.markActiveCodexStore(store)
 			defer d.unmarkActiveCodexStore(store)
@@ -6274,7 +6282,7 @@ func codexShellAuthorizedCustomEnvNames(customEnv map[string]string) []string {
 // Failure is fatal: launching with an unowned or malformed policy could either
 // drop the task-scoped token again or expose inherited daemon credentials.
 func configureCodexTaskShellEnvironment(provider, codexHome string, inherited []string, agentEnv, agentCustomEnv map[string]string, logger *slog.Logger) error {
-	if provider != "codex" {
+	if !isCodexCompatibleProvider(provider) {
 		return nil
 	}
 	if strings.TrimSpace(codexHome) == "" {
@@ -6294,7 +6302,7 @@ func defaultArgsForProvider(cfg Config, provider string) []string {
 	switch provider {
 	case "claude":
 		args = cfg.ClaudeArgs
-	case "codex":
+	case "codex", "deepseek":
 		args = cfg.CodexArgs
 	case "codebuddy":
 		args = cfg.CodebuddyArgs

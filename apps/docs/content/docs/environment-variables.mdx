@@ -197,8 +197,10 @@ The daemon runs on the user's local machine, and its config is read from local e
 | `MULTICA_OPENCODE_IDLE_WATCHDOG` | `10m` | OpenCode-specific no-message window for missing first tokens or stalled streams. `0` falls back to `MULTICA_AGENT_IDLE_WATCHDOG`; larger values cannot extend that global bound |
 | `MULTICA_AGENT_TOOL_WATCHDOG` | `2h` | Silence budget while a tool call is in flight. `0` disables the stuck-tool backstop |
 | `MULTICA_<PROVIDER>_PATH` | matches the CLI name | Path to each AI coding tool's executable (for example `MULTICA_CLAUDE_PATH`) |
-| `MULTICA_<PROVIDER>_MODEL` | empty | Default model for each AI coding tool |
-| `MULTICA_<PROVIDER>_ARGS` | empty | Daemon-wide default CLI arguments for a backend, applied to every task before each agent's own `custom_args`. Supported for `MULTICA_CLAUDE_ARGS`, `MULTICA_CODEX_ARGS`, and `MULTICA_CODEBUDDY_ARGS` |
+| `MULTICA_<PROVIDER>_MODEL` | empty | Default model for each AI coding tool. DeepSeek defaults to `deepseek-v4-flash` when unset |
+| `MULTICA_DEEPSEEK_BASE_URL` | empty | Required Responses-compatible adapter/router base URL for DeepSeek via Codex. Current Codex cannot use DeepSeek's official Chat Completions endpoint directly |
+| `DEEPSEEK_API_KEY` | empty | DeepSeek API key sent by Codex to the configured adapter via `env_key = "DEEPSEEK_API_KEY"`. Prefer setting it as agent custom env when only some agents need DeepSeek |
+| `MULTICA_<PROVIDER>_ARGS` | empty | Daemon-wide default CLI arguments for a backend, applied to every task before each agent's own `custom_args`. Supported for `MULTICA_CLAUDE_ARGS`, `MULTICA_CODEX_ARGS`, `MULTICA_CODEBUDDY_ARGS`, and `MULTICA_QWEN_ARGS`; DeepSeek uses `MULTICA_CODEX_ARGS` because it launches through Codex app-server |
 
 For a full explanation of how each parameter affects daemon behavior, see [Daemon and runtimes](/daemon-runtimes).
 
