@@ -1,11 +1,11 @@
 ---
 title: Install an agent runtime
-description: Multica drives whichever AI coding tools you have on your machine. This page shows you how to install each of the 17 supported tools so the daemon can detect them.
+description: Multica drives whichever AI coding tools you have on your machine. This page shows you how to install each of the 18 supported tools so the daemon can detect them.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-A **runtime** in Multica is the daemon on your machine paired with one AI coding tool the daemon found on your `PATH`. If the onboarding "Connect a runtime" step shows **No supported tools detected**, it means the daemon scanned `PATH` and didn't find any of the 17 tools it knows how to drive. Install one (or several) of the tools below, then come back to the step and re-scan — the runtime will show up within a few seconds.
+A **runtime** in Multica is the daemon on your machine paired with one AI coding tool the daemon found on your `PATH`. If the onboarding "Connect a runtime" step shows **No supported tools detected**, it means the daemon scanned `PATH` and didn't find any of the 18 tools it knows how to drive. Install one (or several) of the tools below, then come back to the step and re-scan — the runtime will show up within a few seconds.
 
 This page is the install-side companion to:
 
@@ -31,9 +31,9 @@ multica daemon restart
 
 Or, in the desktop app, just relaunch the app. The daemon re-scans `PATH` on every start.
 
-## The 17 supported tools
+## The 18 supported tools
 
-Listed roughly from most to least common. Pick whichever ones you already have credentials for — you don't need all 17.
+Listed roughly from most to least common. Pick whichever ones you already have credentials for — you don't need all 18.
 
 ### Claude Code (Anthropic)
 
@@ -55,6 +55,17 @@ JSON-RPC 2.0 transport with finer-grained approval gates. MCP config is written 
 | Daemon looks for | `codex` |
 | Install | Follow the official guide at [github.com/openai/codex](https://github.com/openai/codex). The standard route is the npm package `@openai/codex`. |
 | Authentication | `codex login` (browser-based) or `OPENAI_API_KEY`. |
+
+### DeepSeek
+
+DeepSeek is exposed as its own Multica provider but runs through Codex app-server. Current Codex custom providers require a Responses-compatible API, while DeepSeek's official API is Chat Completions, so install Codex first and configure a Responses-compatible adapter/router for DeepSeek.
+
+| | |
+|---|---|
+| Daemon looks for | `codex` by default (`MULTICA_DEEPSEEK_PATH` may point at a different Codex-compatible binary) |
+| Install | Install Codex from [github.com/openai/codex](https://github.com/openai/codex). |
+| Authentication | Set `DEEPSEEK_API_KEY` where the daemon can pass it to the agent run. Codex sends it to the configured adapter via the generated provider config; agent custom env is preferred so the key stays scoped to DeepSeek agents. |
+| Notes | `MULTICA_DEEPSEEK_BASE_URL` is required and must point at an adapter/router that accepts Codex Responses requests, forwards to DeepSeek Chat Completions with `deepseek-v4-flash` unless `MULTICA_DEEPSEEK_MODEL` overrides it, and returns Responses-format output to Codex. |
 
 ### Cursor (Anysphere)
 

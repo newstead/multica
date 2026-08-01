@@ -112,6 +112,8 @@ func ListModels(ctx context.Context, providerType, executablePath string) ([]Mod
 		return cachedDiscovery(discoveryCacheKey(providerType, executablePath), func() ([]Model, error) {
 			return discoverCodexModels(ctx, executablePath), nil
 		})
+	case "deepseek":
+		return deepseekStaticModels(), nil
 	case "antigravity":
 		// agy 1.0.6 added a `--model` flag plus an `agy models` catalog
 		// command (MUL-3125). Enumerate it on demand like the other
@@ -236,6 +238,8 @@ func acceptedModelIDsForProvider(providerType string) (map[string]bool, bool) {
 		return modelIDSet(claudeStaticModels()), true
 	case providerType == "codex":
 		return modelIDSet(codexStaticModels()), true
+	case providerType == "deepseek":
+		return modelIDSet(deepseekStaticModels()), true
 	default:
 		return nil, false
 	}
@@ -255,7 +259,8 @@ func isRuntimeSpecificModelID(model string) bool {
 	}
 	return modelHasKnownPrefix(model) ||
 		modelIDSet(claudeStaticModels())[model] ||
-		modelIDSet(codexStaticModels())[model]
+		modelIDSet(codexStaticModels())[model] ||
+		modelIDSet(deepseekStaticModels())[model]
 }
 
 func modelHasKnownPrefix(model string) bool {
@@ -334,6 +339,12 @@ func claudeStaticModels() []Model {
 // + thinking picker contract as dynamic discovery. Service tiers are
 // intentionally NOT guessed here: they are runtime/version/account-sensitive,
 // so a discovery failure hides the speed picker and fails the override closed.
+func deepseekStaticModels() []Model {
+	return []Model{
+		{ID: "deepseek-v4-flash", Label: "DeepSeek V4 Flash", Provider: "deepseek", Default: true},
+	}
+}
+
 func codexStaticModels() []Model {
 	// `Default` here is NOT a user-facing "default model" badge — the picker
 	// stopped rendering that (Multica follows the CLI config when the model is

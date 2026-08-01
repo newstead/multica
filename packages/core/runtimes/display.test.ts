@@ -63,8 +63,15 @@ describe("runtimeDisplayLabel", () => {
   });
 
   it("uses the daemon's provider display name for overridden slugs", () => {
-    // Trae and Qwen use display names that differ from title-cased slugs;
-    // aliases must match the daemon's no-alias names.
+    // DeepSeek, Trae, and Qwen use display names that differ from title-cased
+    // slugs; aliases must match the daemon's no-alias names.
+    expect(
+      runtimeDisplayLabel({
+        name: "DeepSeek (host)",
+        custom_name: "box",
+        provider: "deepseek",
+      }),
+    ).toBe("box (DeepSeek)");
     expect(
       runtimeDisplayLabel({
         name: "Trae (host)",

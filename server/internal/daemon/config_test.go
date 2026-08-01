@@ -250,6 +250,39 @@ func stageFakeAgent(t *testing.T) string {
 	return binDir
 }
 
+func TestLoadConfig_DiscoversDeepSeekViaCodexWithDefaultModel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell fixture is unavailable on Windows")
+	}
+	binDir := stageFakeAgent(t)
+	codex := filepath.Join(binDir, "codex")
+	if err := os.WriteFile(codex, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake codex: %v", err)
+	}
+	// Avoid consulting an inherited interactive shell for all deliberately
+	// absent providers; this test is about ordinary PATH discovery.
+	t.Setenv("SHELL", "/usr/bin/fish")
+
+	cfg, err := LoadConfig(Overrides{
+		ServerURL:      "http://localhost:0",
+		WorkspacesRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	entry, ok := cfg.Agents["deepseek"]
+	if !ok {
+		t.Fatalf("deepseek was not discovered: %v", cfg.Agents)
+	}
+	wantPath, err := filepath.EvalSymlinks(codex)
+	if err != nil {
+		t.Fatalf("eval symlinks for codex: %v", err)
+	}
+	if entry.Path != wantPath || entry.Command != "codex" || entry.Model != "deepseek-v4-flash" {
+		t.Fatalf("deepseek entry = %+v, want path=%q command=codex model=deepseek-v4-flash", entry, wantPath)
+	}
+}
+
 func TestLoadConfig_DiscoversQwenCode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell fixture is unavailable on Windows")
@@ -920,6 +953,7 @@ func pinNonCodexAgentsToMissingPaths(t *testing.T) {
 	missingDir := t.TempDir()
 	for _, name := range []string{
 		"MULTICA_CLAUDE_PATH",
+		"MULTICA_DEEPSEEK_PATH",
 		"MULTICA_OPENCODE_PATH",
 		"MULTICA_OPENCLAW_PATH",
 		"MULTICA_HERMES_PATH",
