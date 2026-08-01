@@ -50,6 +50,10 @@ vi.mock("@multica/core/inbox/queries", () => ({
   useInboxUnreadCount: () => 2,
 }));
 
+vi.mock("@multica/core/projects/queries", () => ({
+  projectListOptions: () => ({ queryKey: ["projects", "workspace-1", "list"] }),
+}));
+
 vi.mock("@multica/core/inbox/mutations", () => {
   const mutation = () => ({ mutate: vi.fn() });
   return {
@@ -110,6 +114,7 @@ function item(overrides: Partial<InboxItem> = {}): InboxItem {
     type: "new_comment",
     severity: "info",
     issue_id: "issue-1",
+    project_id: null,
     title: "Issue title",
     body: null,
     issue_status: null,

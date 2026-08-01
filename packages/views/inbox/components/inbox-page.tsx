@@ -14,6 +14,7 @@ import {
   deduplicateArchivedInboxItems,
   useInboxUnreadCount,
 } from "@multica/core/inbox/queries";
+import { projectListOptions } from "@multica/core/projects/queries";
 import {
   useMarkInboxRead,
   useArchiveInbox,
@@ -39,7 +40,7 @@ import {
   ListChecks,
   ArrowLeft,
 } from "lucide-react";
-import type { InboxItem } from "@multica/core/types";
+import type { InboxItem, Project } from "@multica/core/types";
 import { Button } from "@multica/ui/components/ui/button";
 import {
   ResizablePanelGroup,
@@ -64,6 +65,8 @@ import { useTypeLabels } from "./inbox-detail-label";
 import { getInboxDisplayTitle, isQuickCreateOutcome } from "./inbox-display";
 import { useT } from "../../i18n";
 
+const EMPTY_PROJECTS: Project[] = [];
+
 export function InboxPage() {
   const { t } = useT("inbox");
   const { searchParams, replace } = useNavigation();
@@ -86,6 +89,16 @@ export function InboxPage() {
   const wsId = useWorkspaceId();
   const { data: rawItems = [], isLoading: loading } = useQuery(inboxListOptions(wsId));
   const items = useMemo(() => deduplicateInboxItems(rawItems), [rawItems]);
+
+  // Project lookup for the inbox row's green project badge — same
+  // list-query + id-keyed map pattern the issue surface uses. Rows whose
+  // issue has no project (or whose project id resolves to nothing) render
+  // no badge at all.
+  const { data: projects = EMPTY_PROJECTS } = useQuery(projectListOptions(wsId));
+  const projectMap = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
 
   // Fetched in both views, not just the archived one: the main list's entry
   // into the archive is labelled with this count, so it has to be known before
@@ -413,6 +426,7 @@ export function InboxPage() {
       view={view}
       selectedKey={selectedKey}
       archivedCount={archivedItems.length}
+      projectMap={projectMap}
       onSelect={handleSelect}
       onAction={isArchivedView ? handleUnarchive : handleArchive}
       onOpenArchived={openArchived}
