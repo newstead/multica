@@ -415,9 +415,6 @@ func (p *HindsightProvider) retainDocument(
 	if !response.Success {
 		return MemoryProviderResult{}, fmt.Errorf("hindsight %s response reported failure", operation)
 	}
-	if response.OperationID != "" && response.OperationID != operationID {
-		return MemoryProviderResult{}, fmt.Errorf("hindsight %s returned a mismatched operation_id", operation)
-	}
 	return MemoryProviderResult{ProviderMemoryID: documentID, Response: raw}, nil
 }
 

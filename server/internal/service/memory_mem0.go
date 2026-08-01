@@ -83,11 +83,12 @@ type Mem0Provider struct {
 }
 
 type Mem0ScopeMapping struct {
-	UserID   string         `json:"user_id"`
-	AgentID  string         `json:"agent_id,omitempty"`
-	RunID    string         `json:"run_id,omitempty"`
-	Filters  map[string]any `json:"filters"`
-	Metadata map[string]any `json:"metadata"`
+	WorkspaceID string         `json:"workspace_id"`
+	UserID      string         `json:"user_id"`
+	AgentID     string         `json:"agent_id,omitempty"`
+	RunID       string         `json:"run_id,omitempty"`
+	Filters     map[string]any `json:"filters"`
+	Metadata    map[string]any `json:"metadata"`
 }
 
 type Mem0HTTPError struct {
@@ -219,7 +220,8 @@ func MapMem0Scope(scope MemoryScope) (Mem0ScopeMapping, error) {
 	}
 	workspaceID := uuidString(scope.WorkspaceID)
 	mapping := Mem0ScopeMapping{
-		UserID: "multica:workspace:" + workspaceID,
+		WorkspaceID: workspaceID,
+		UserID:      "multica:workspace:" + workspaceID,
 		Filters: map[string]any{
 			"user_id":               "multica:workspace:" + workspaceID,
 			"multica_scope_version": mem0ScopeVersion,
@@ -327,7 +329,7 @@ func (p *Mem0Provider) Retain(ctx context.Context, event MemoryEventEnvelope) (M
 			return existing, nil
 		}
 
-		raw, _, requestErr := p.doOnce(ctx, "retain", http.MethodPost, "/memories", nil, payload, idempotencyKey)
+		raw, _, requestErr := p.doOnce(ctx, "retain", http.MethodPost, "/memories", nil, payload, idempotencyKey, mapping.WorkspaceID)
 		if requestErr == nil {
 			memoryID := firstMemoryID(raw)
 			result := MemoryProviderResult{ProviderMemoryID: memoryID, Response: raw}
@@ -353,7 +355,7 @@ func (p *Mem0Provider) findRetained(ctx context.Context, mapping Mem0ScopeMappin
 		"filters": filters,
 		"top_k":   1,
 	}
-	raw, _, err := p.doOnce(ctx, "retain idempotency preflight", http.MethodPost, "/search", nil, payload, idempotencyKey)
+	raw, _, err := p.doOnce(ctx, "retain idempotency preflight", http.MethodPost, "/search", nil, payload, idempotencyKey, mapping.WorkspaceID)
 	if err != nil {
 		return MemoryProviderResult{}, false, err
 	}
@@ -392,7 +394,7 @@ func (p *Mem0Provider) Recall(ctx context.Context, req MemoryRecallRequest) (Mem
 		"top_k":   limit,
 		"explain": true,
 	}
-	raw, requestID, err := p.do(ctx, "recall", http.MethodPost, "/search", nil, payload, "")
+	raw, requestID, err := p.do(ctx, "recall", http.MethodPost, "/search", nil, payload, "", mapping.WorkspaceID)
 	if err != nil {
 		return MemoryRecallResult{}, err
 	}
@@ -501,7 +503,7 @@ func (p *Mem0Provider) History(ctx context.Context, scope MemoryScope, memoryID 
 	if _, _, err := p.getScopedMemory(ctx, mapping, memoryID); err != nil {
 		return nil, err
 	}
-	raw, _, err := p.do(ctx, "history", http.MethodGet, mem0MemoryPath(memoryID)+"/history", nil, nil, "")
+	raw, _, err := p.do(ctx, "history", http.MethodGet, mem0MemoryPath(memoryID)+"/history", nil, nil, "", mapping.WorkspaceID)
 	return raw, err
 }
 
@@ -539,7 +541,7 @@ func (p *Mem0Provider) Update(ctx context.Context, event MemoryEventEnvelope) (M
 	if len(payload) == 0 {
 		return MemoryProviderResult{}, fmt.Errorf("%w: update requires text or metadata", ErrMem0Config)
 	}
-	raw, _, err := p.do(ctx, "update", http.MethodPut, mem0MemoryPath(memoryID), nil, payload, "")
+	raw, _, err := p.do(ctx, "update", http.MethodPut, mem0MemoryPath(memoryID), nil, payload, "", mapping.WorkspaceID)
 	if err != nil {
 		return MemoryProviderResult{}, err
 	}
@@ -571,7 +573,7 @@ func (p *Mem0Provider) Invalidate(ctx context.Context, event MemoryEventEnvelope
 	}
 	merged["multica_invalidated"] = true
 	merged["multica_invalidated_at"] = p.clock().UTC().Format(time.RFC3339Nano)
-	raw, _, err := p.do(ctx, "invalidate", http.MethodPut, mem0MemoryPath(memoryID), nil, map[string]any{"metadata": merged}, "")
+	raw, _, err := p.do(ctx, "invalidate", http.MethodPut, mem0MemoryPath(memoryID), nil, map[string]any{"metadata": merged}, "", mapping.WorkspaceID)
 	if err != nil {
 		return MemoryProviderResult{}, err
 	}
@@ -594,7 +596,7 @@ func (p *Mem0Provider) Delete(ctx context.Context, event MemoryEventEnvelope) (M
 	if _, _, err := p.getScopedMemory(ctx, mapping, memoryID); err != nil {
 		return MemoryProviderResult{}, err
 	}
-	raw, _, err := p.do(ctx, "delete", http.MethodDelete, mem0MemoryPath(memoryID), nil, nil, "")
+	raw, _, err := p.do(ctx, "delete", http.MethodDelete, mem0MemoryPath(memoryID), nil, nil, "", mapping.WorkspaceID)
 	if err != nil {
 		return MemoryProviderResult{}, err
 	}
@@ -602,7 +604,7 @@ func (p *Mem0Provider) Delete(ctx context.Context, event MemoryEventEnvelope) (M
 }
 
 func (p *Mem0Provider) Health(ctx context.Context) (MemoryProviderHealth, error) {
-	_, requestID, err := p.do(ctx, "health", http.MethodGet, "/configure", nil, nil, "")
+	_, requestID, err := p.do(ctx, "health", http.MethodGet, "/configure", nil, nil, "", "")
 	health := MemoryProviderHealth{
 		Provider: Mem0ProviderName,
 		OK:       err == nil,
@@ -618,7 +620,7 @@ func (p *Mem0Provider) getScopedMemory(ctx context.Context, mapping Mem0ScopeMap
 	if strings.TrimSpace(memoryID) == "" {
 		return mem0Memory{}, nil, fmt.Errorf("%w: provider memory ID is required", ErrMem0Config)
 	}
-	raw, _, err := p.do(ctx, "get", http.MethodGet, mem0MemoryPath(memoryID), nil, nil, "")
+	raw, _, err := p.do(ctx, "get", http.MethodGet, mem0MemoryPath(memoryID), nil, nil, "", mapping.WorkspaceID)
 	if err != nil {
 		return mem0Memory{}, nil, err
 	}
@@ -632,10 +634,10 @@ func (p *Mem0Provider) getScopedMemory(ctx context.Context, mapping Mem0ScopeMap
 	return memory, raw, nil
 }
 
-func (p *Mem0Provider) do(ctx context.Context, operation, method, requestPath string, query url.Values, body any, idempotencyKey string) (json.RawMessage, string, error) {
+func (p *Mem0Provider) do(ctx context.Context, operation, method, requestPath string, query url.Values, body any, idempotencyKey, workspaceID string) (json.RawMessage, string, error) {
 	var lastErr error
 	for attempt := 1; attempt <= p.maxAttempts; attempt++ {
-		raw, requestID, err := p.doOnce(ctx, operation, method, requestPath, query, body, idempotencyKey)
+		raw, requestID, err := p.doOnce(ctx, operation, method, requestPath, query, body, idempotencyKey, workspaceID)
 		if err == nil {
 			return raw, requestID, nil
 		}
@@ -650,7 +652,7 @@ func (p *Mem0Provider) do(ctx context.Context, operation, method, requestPath st
 	return nil, "", lastErr
 }
 
-func (p *Mem0Provider) doOnce(ctx context.Context, operation, method, requestPath string, query url.Values, body any, idempotencyKey string) (json.RawMessage, string, error) {
+func (p *Mem0Provider) doOnce(ctx context.Context, operation, method, requestPath string, query url.Values, body any, idempotencyKey, workspaceID string) (json.RawMessage, string, error) {
 	var requestBody io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -674,6 +676,9 @@ func (p *Mem0Provider) doOnce(ctx context.Context, operation, method, requestPat
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("X-API-Key", p.apiKey)
+	if workspaceID != "" {
+		request.Header.Set("X-Workspace-ID", workspaceID)
+	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

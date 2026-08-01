@@ -32,6 +32,9 @@ func TestMapMem0ScopeExactContract(t *testing.T) {
 	if mapped.UserID != "multica:workspace:"+mem0TestWorkspaceID {
 		t.Fatalf("user_id = %q", mapped.UserID)
 	}
+	if mapped.WorkspaceID != mem0TestWorkspaceID {
+		t.Fatalf("workspace_id = %q", mapped.WorkspaceID)
+	}
 	if mapped.AgentID != "multica:agent:"+mem0TestAgentID {
 		t.Fatalf("agent_id = %q", mapped.AgentID)
 	}
@@ -64,6 +67,11 @@ func TestMem0ProviderAuthenticatedAddRecallAndIsolation(t *testing.T) {
 		if got := r.Header.Get("X-API-Key"); got != "m0sk-test" {
 			t.Errorf("X-API-Key = %q", got)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if got := r.Header.Get("X-Workspace-ID"); got != mem0TestWorkspaceID {
+			t.Errorf("X-Workspace-ID = %q, want %q", got, mem0TestWorkspaceID)
+			http.Error(w, "missing workspace", http.StatusBadRequest)
 			return
 		}
 		if got := r.Header.Get("Authorization"); got != "" {
