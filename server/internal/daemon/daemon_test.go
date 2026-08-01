@@ -1221,6 +1221,63 @@ func newRepoReadyTestDaemon(t *testing.T, handler http.HandlerFunc) *Daemon {
 	return d
 }
 
+func TestGateDeepSeekResume(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		provider        string
+		sessionID       string
+		wantSession     string
+		wantResumed     bool
+		wantUnavailable bool
+	}{
+		{
+			name:            "deepseek drops prior codex session",
+			provider:        "deepseek",
+			sessionID:       "thr-tool-history",
+			wantSession:     "",
+			wantResumed:     false,
+			wantUnavailable: true,
+		},
+		{
+			name:            "codex keeps prior session",
+			provider:        "codex",
+			sessionID:       "thr-codex",
+			wantSession:     "thr-codex",
+			wantResumed:     true,
+			wantUnavailable: false,
+		},
+		{
+			name:            "deepseek without prior session is noop",
+			provider:        "deepseek",
+			sessionID:       "",
+			wantSession:     "",
+			wantResumed:     false,
+			wantUnavailable: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task := Task{PriorSessionID: tt.sessionID}
+			taskCtx := execenv.TaskContextForEnv{PriorSessionResumed: tt.sessionID != ""}
+
+			gateDeepSeekResume(&task, &taskCtx, tt.provider, slog.Default())
+
+			if task.PriorSessionID != tt.wantSession {
+				t.Fatalf("PriorSessionID = %q, want %q", task.PriorSessionID, tt.wantSession)
+			}
+			if taskCtx.PriorSessionResumed != tt.wantResumed {
+				t.Fatalf("PriorSessionResumed = %v, want %v", taskCtx.PriorSessionResumed, tt.wantResumed)
+			}
+			if taskCtx.PriorSessionResumeUnavailable != tt.wantUnavailable {
+				t.Fatalf("PriorSessionResumeUnavailable = %v, want %v", taskCtx.PriorSessionResumeUnavailable, tt.wantUnavailable)
+			}
+		})
+	}
+}
+
 func TestGateCodexResumeToRolloutPresence(t *testing.T) {
 	t.Parallel()
 
