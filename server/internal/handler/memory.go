@@ -492,7 +492,7 @@ func (h *Handler) GetMemoryMem0Board(w http.ResponseWriter, r *http.Request) {
 	for _, row := range recallRows {
 		recallSamples = append(recallSamples, memoryRecallSampleToResponse(row))
 	}
-	health, healthErr := h.memoryProviderHealth(r.Context(), service.Mem0ProviderName)
+	health, healthErr := h.memoryProviderHealth(r.Context(), service.Mem0ProviderName, uuidToString(wsUUID))
 	writeJSON(w, http.StatusOK, MemoryMem0BoardResponse{
 		Health:        health,
 		HealthError:   healthErr,
@@ -1374,7 +1374,11 @@ func memoryEventToResponse(event db.MemoryEvent) MemoryEventResponse {
 	}
 }
 
-func (h *Handler) memoryProviderHealth(ctx context.Context, providerName string) (*service.MemoryProviderHealth, string) {
+type workspaceMemoryHealthProvider interface {
+	HealthForWorkspace(context.Context, string) (service.MemoryProviderHealth, error)
+}
+
+func (h *Handler) memoryProviderHealth(ctx context.Context, providerName string, workspaceIDs ...string) (*service.MemoryProviderHealth, string) {
 	if h == nil || h.MemoryService == nil {
 		return nil, "memory service not configured"
 	}
@@ -1382,7 +1386,19 @@ func (h *Handler) memoryProviderHealth(ctx context.Context, providerName string)
 		if !strings.EqualFold(name, providerName) {
 			continue
 		}
-		health, err := provider.Health(ctx)
+		var (
+			health service.MemoryProviderHealth
+			err    error
+		)
+		if len(workspaceIDs) > 0 && strings.TrimSpace(workspaceIDs[0]) != "" {
+			if scoped, ok := provider.(workspaceMemoryHealthProvider); ok {
+				health, err = scoped.HealthForWorkspace(ctx, workspaceIDs[0])
+			} else {
+				health, err = provider.Health(ctx)
+			}
+		} else {
+			health, err = provider.Health(ctx)
+		}
 		if strings.TrimSpace(health.Provider) == "" {
 			health.Provider = providerName
 		}

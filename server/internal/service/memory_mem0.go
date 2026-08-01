@@ -604,7 +604,15 @@ func (p *Mem0Provider) Delete(ctx context.Context, event MemoryEventEnvelope) (M
 }
 
 func (p *Mem0Provider) Health(ctx context.Context) (MemoryProviderHealth, error) {
-	_, requestID, err := p.do(ctx, "health", http.MethodGet, "/configure", nil, nil, "", "")
+	return p.health(ctx, "")
+}
+
+func (p *Mem0Provider) HealthForWorkspace(ctx context.Context, workspaceID string) (MemoryProviderHealth, error) {
+	return p.health(ctx, strings.TrimSpace(workspaceID))
+}
+
+func (p *Mem0Provider) health(ctx context.Context, workspaceID string) (MemoryProviderHealth, error) {
+	_, requestID, err := p.do(ctx, "health", http.MethodGet, "/configure", nil, nil, "", workspaceID)
 	health := MemoryProviderHealth{
 		Provider: Mem0ProviderName,
 		OK:       err == nil,

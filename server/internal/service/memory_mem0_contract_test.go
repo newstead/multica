@@ -422,6 +422,34 @@ func TestMem0ProviderRetryResponseAndTokenBounds(t *testing.T) {
 	}
 }
 
+func TestMem0ProviderHealthForWorkspaceSendsCanonicalWorkspaceHeader(t *testing.T) {
+	t.Parallel()
+
+	var gotWorkspaceID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/configure" {
+			http.NotFound(w, r)
+			return
+		}
+		gotWorkspaceID = r.Header.Get("X-Workspace-ID")
+		if gotWorkspaceID != mem0TestWorkspaceID {
+			http.Error(w, `{"detail":"X-Workspace-ID must be a canonical UUID"}`, http.StatusBadRequest)
+			return
+		}
+		writeMem0TestJSON(t, w, map[string]any{"version": "v1.1"})
+	}))
+	defer server.Close()
+
+	provider := newMem0TestProvider(t, server.URL, Mem0ProviderConfig{MaxAttempts: 1})
+	health, err := provider.HealthForWorkspace(context.Background(), mem0TestWorkspaceID)
+	if err != nil || !health.OK {
+		t.Fatalf("HealthForWorkspace = %#v, err %v", health, err)
+	}
+	if gotWorkspaceID != mem0TestWorkspaceID {
+		t.Fatalf("X-Workspace-ID = %q, want %q", gotWorkspaceID, mem0TestWorkspaceID)
+	}
+}
+
 func TestMem0ProviderRecallBudgetsSerializedPayloadWithLargeMetadata(t *testing.T) {
 	t.Parallel()
 
