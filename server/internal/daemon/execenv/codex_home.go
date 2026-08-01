@@ -520,6 +520,19 @@ func codexSessionStoreKey(profile, agentID, issueID string) string {
 	return filepath.Join(codexSessionStoreNamespace(profile), agent, issue)
 }
 
+// codexSessionStoreKeyForProvider returns the persistent Codex session store key
+// only for providers that can safely consume Codex rollout history. DeepSeek is
+// implemented through Codex app-server, but its downstream Chat Completions
+// adapter rejects some prior Codex tool_call histories even when no explicit
+// --resume is requested, so DeepSeek tasks must use a fresh task-local sessions
+// directory instead of the per-issue Codex store.
+func codexSessionStoreKeyForProvider(provider, profile, agentID, issueID string) string {
+	if provider == "deepseek" {
+		return ""
+	}
+	return codexSessionStoreKey(profile, agentID, issueID)
+}
+
 // sanitizeCodexPathSegment reduces s to the characters a UUID uses (hex plus
 // dashes/underscores), dropping everything else so the result is always a single
 // safe path segment — no separators, no "..", no drive letters.

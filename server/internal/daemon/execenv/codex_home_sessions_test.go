@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+func TestCodexSessionStoreKeyForProviderSkipsDeepSeek(t *testing.T) {
+	key := codexSessionStoreKeyForProvider("codex", "", "agent-1", "issue-1")
+	if key == "" {
+		t.Fatal("codex provider should keep the per-issue session store key")
+	}
+	if got := codexSessionStoreKeyForProvider("deepseek", "", "agent-1", "issue-1"); got != "" {
+		t.Fatalf("deepseek provider session store key = %q, want empty", got)
+	}
+}
+
 // seedFakeRollout writes a fake Codex rollout for sessionID under
 // sharedSessions/YYYY/MM/DD, mirroring Codex's real layout, and returns its path.
 func seedFakeRollout(t *testing.T, sharedSessions, y, m, d, sessionID string, size int) string {
