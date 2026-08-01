@@ -136,6 +136,44 @@ func TestHindsightRetainContractUsesWorkspaceBankStrictTagsAndIdempotency(t *tes
 	}
 }
 
+func TestHindsightRetainAcceptsProviderGeneratedOperationID(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Items []struct {
+				DocumentID string `json:"document_id"`
+			} `json:"items"`
+			OperationID string `json:"operation_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if request.OperationID == "" {
+			t.Error("request operation_id is empty")
+		}
+		if len(request.Items) != 1 || request.Items[0].DocumentID == "" {
+			t.Errorf("document_id missing: %#v", request.Items)
+		}
+		writeHindsightJSON(t, w, map[string]any{
+			"success":      true,
+			"operation_id": "provider-generated-operation",
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	provider := newTestHindsightProvider(t, server.URL, HindsightConfig{})
+	result, err := provider.Retain(context.Background(), hindsightTestEvent(`{"text":"remember this"}`))
+	if err != nil {
+		t.Fatalf("Retain: %v", err)
+	}
+	if result.ProviderMemoryID == "" {
+		t.Fatal("ProviderMemoryID is empty")
+	}
+}
+
 func TestHindsightRecallEnforcesWorkspaceIsolationAndProvenance(t *testing.T) {
 	t.Parallel()
 
