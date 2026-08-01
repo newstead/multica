@@ -31,6 +31,7 @@ type Registry struct {
 	HTTP         *HTTPMetrics
 	Business     *BusinessMetrics
 	ChannelMedia *ChannelMediaReconcilerMetrics
+	Memory       *MemoryMetrics
 	// Sampler is non-nil only when RegistryOptions.BusinessSampler was
 	// supplied with a valid Pool. Exposed so the cmd/server entrypoint
 	// can plumb the same instance into health checks if it ever wants to.
@@ -57,6 +58,8 @@ func NewRegistry(opts RegistryOptions) *Registry {
 
 	channelMedia := NewChannelMediaReconcilerMetrics()
 	reg.MustRegister(channelMedia.Collectors()...)
+	memory := NewMemoryMetrics()
+	reg.MustRegister(memory.Collectors()...)
 
 	if opts.Pool != nil {
 		reg.MustRegister(NewDBCollector(opts.Pool))
@@ -78,6 +81,7 @@ func NewRegistry(opts RegistryOptions) *Registry {
 		HTTP:         httpMetrics,
 		Business:     businessMetrics,
 		ChannelMedia: channelMedia,
+		Memory:       memory,
 		Sampler:      sampler,
 	}
 }

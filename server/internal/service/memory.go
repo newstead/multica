@@ -35,6 +35,12 @@ type MemoryProvider interface {
 	Health(ctx context.Context) (MemoryProviderHealth, error)
 }
 
+// MemoryTelemetry accepts only bounded enums. Implementations must never use
+// user, workspace, project, request, or memory identifiers as metric labels.
+type MemoryTelemetry interface {
+	RecordRequest(provider, mode, operation, result string)
+}
+
 type MemoryHistoryProvider interface {
 	History(ctx context.Context, scope MemoryScope, memoryID string) (json.RawMessage, error)
 }
@@ -189,6 +195,7 @@ type MemoryService struct {
 	MaxDeliveryAttempts  int32
 	BaseBackoff          time.Duration
 	DeliveryLeaseTimeout time.Duration
+	Telemetry            MemoryTelemetry
 }
 
 func NewMemoryService(queries *db.Queries, txStarter ...TxStarter) *MemoryService {
@@ -242,6 +249,15 @@ func (s *MemoryService) Retain(ctx context.Context, req MemoryRetainRequest) (Me
 	}
 	if len(providers) == 0 {
 		return MemoryRetainResult{}, fmt.Errorf("%w: at least one provider is required when enabled", ErrMemoryConfig)
+	}
+	for _, provider := range providers {
+		mode := "primary"
+		if len(providers) > 1 {
+			mode = "dual_write"
+		}
+		if s.Telemetry != nil {
+			s.Telemetry.RecordRequest(provider, mode, "capture", "ok")
+		}
 	}
 
 	key := strings.TrimSpace(req.IdempotencyKey)
