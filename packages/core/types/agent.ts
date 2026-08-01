@@ -107,6 +107,7 @@ export const RUNTIME_PROFILE_PROTOCOL_FAMILIES = [
   "claude",
   "codebuddy",
   "codex",
+  "deepseek",
   "copilot",
   "opencode",
   "deveco",
