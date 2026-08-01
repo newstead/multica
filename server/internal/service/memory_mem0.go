@@ -612,7 +612,7 @@ func (p *Mem0Provider) HealthForWorkspace(ctx context.Context, workspaceID strin
 }
 
 func (p *Mem0Provider) health(ctx context.Context, workspaceID string) (MemoryProviderHealth, error) {
-	_, requestID, err := p.do(ctx, "health", http.MethodGet, "/configure", nil, nil, "", workspaceID)
+	_, requestID, err := p.do(ctx, "health", http.MethodGet, "/health", nil, nil, "", workspaceID)
 	health := MemoryProviderHealth{
 		Provider: Mem0ProviderName,
 		OK:       err == nil,
