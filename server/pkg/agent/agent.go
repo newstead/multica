@@ -225,7 +225,7 @@ type Config struct {
 // ACP backend (`grok agent --always-approve stdio`). qwen is Qwen Code's
 // native `qwen -p <prompt> --output-format stream-json` backend. deepseek is
 // routed through Codex app-server with a managed OpenAI-compatible provider
-// config that points at the DeepSeek API.
+// config that points at a Responses-compatible DeepSeek adapter.
 var SupportedTypes = []string{
 	"claude",
 	"codebuddy",

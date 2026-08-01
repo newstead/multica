@@ -210,8 +210,8 @@ Agent-specific overrides:
 | `MULTICA_CODEX_ARGS` | Default extra arguments for Codex runs |
 | `MULTICA_DEEPSEEK_PATH` | Custom path to the Codex-compatible binary used for DeepSeek (defaults to `codex`) |
 | `MULTICA_DEEPSEEK_MODEL` | Override the DeepSeek model used (defaults to `deepseek-v4-flash`) |
-| `MULTICA_DEEPSEEK_BASE_URL` | Override the DeepSeek OpenAI-compatible API base URL (defaults to `https://api.deepseek.com`) |
-| `DEEPSEEK_API_KEY` | DeepSeek API key consumed by Codex through the generated per-task config |
+| `MULTICA_DEEPSEEK_BASE_URL` | Required Responses-compatible adapter/router base URL for DeepSeek via Codex (no default; do not point it at `https://api.deepseek.com`) |
+| `DEEPSEEK_API_KEY` | DeepSeek API key sent by Codex to the configured adapter through the generated per-task config |
 | `MULTICA_COPILOT_PATH` | Custom path to the `copilot` binary |
 | `MULTICA_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
 | `MULTICA_OPENCODE_PATH` | Custom path to the `opencode` binary |
@@ -242,7 +242,7 @@ Agent-specific overrides:
 
 If a previously generated `~/.multica/hooks` wrapper is first on `PATH` and calls the same command name again, the daemon skips that hooks directory during built-in agent discovery and records the real binary path behind it. If your interactive shell still recurses when you run `claude`, `codex`, or `hermes` manually, remove the hooks entry from your shell startup file or replace the wrapper body with an absolute `exec /path/to/real-binary "$@"`.
 
-The daemon launches DeepSeek through Codex app-server. It writes a per-task `$CODEX_HOME/config.toml` that pins `model_provider = "deepseek"`, sets the base URL from `MULTICA_DEEPSEEK_BASE_URL` (default `https://api.deepseek.com`), and points Codex at `DEEPSEEK_API_KEY`; Codex auth and normal Codex provider settings are not reused for DeepSeek.
+The daemon launches DeepSeek through Codex app-server. Current Codex custom providers use the Responses wire protocol, while DeepSeek's official `https://api.deepseek.com` API is Chat Completions, so Multica requires `MULTICA_DEEPSEEK_BASE_URL` to point at a Responses-compatible adapter/router. The generated per-task `$CODEX_HOME/config.toml` pins `model_provider = "deepseek"`, writes `wire_api = "responses"`, sets `base_url` from `MULTICA_DEEPSEEK_BASE_URL`, and points Codex at `DEEPSEEK_API_KEY`; Codex auth and normal Codex provider settings are not reused for DeepSeek. The adapter should accept Codex Responses requests, authenticate with the DeepSeek key Codex sends, forward to DeepSeek Chat Completions using `deepseek-v4-flash` unless `MULTICA_DEEPSEEK_MODEL` overrides it, and return Responses-format output to Codex.
 
 The daemon launches Qoder as `qodercli --yolo --acp`, matching Qoder’s ACP “bypass permissions” mode so tool runs do not block on interactive approval in headless runs.
 The daemon launches Qwen Code as `qwen -p <prompt> --output-format stream-json`. It writes the task brief to `QWEN.md`; when an agent has managed `mcp_config`, the daemon writes a 0600 per-run JSON file and passes it through `--mcp-config <path>`, then removes it after the process exits. A null config preserves Qwen Code native MCP settings.

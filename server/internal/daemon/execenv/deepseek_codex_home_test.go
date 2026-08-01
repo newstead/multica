@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 func TestEnsureDeepSeekCodexProviderConfigPinsDeepSeek(t *testing.T) {
@@ -47,7 +49,7 @@ func TestEnsureDeepSeekCodexProviderConfigPinsDeepSeek(t *testing.T) {
 		`name = "DeepSeek"`,
 		`base_url = "https://router.example/deepseek"`,
 		`env_key = "DEEPSEEK_API_KEY"`,
-		`wire_api = "chat"`,
+		`wire_api = "responses"`,
 		deepseekCodexProviderEndMark,
 		`[model_providers.other]`,
 		`base_url = "https://other.example"`,
@@ -78,5 +80,65 @@ func TestEnsureDeepSeekCodexProviderConfigPinsDeepSeek(t *testing.T) {
 	}
 	if string(second) != content {
 		t.Fatalf("second ensure was not idempotent:\nfirst:\n%s\nsecond:\n%s", content, string(second))
+	}
+}
+
+func TestEnsureDeepSeekCodexProviderConfigRequiresResponsesAdapterBaseURL(t *testing.T) {
+	t.Setenv(deepseekCodexBaseURLEnv, "")
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	err := ensureDeepSeekCodexProviderConfig(configPath)
+	if err == nil {
+		t.Fatal("ensure deepseek provider config succeeded without adapter base URL")
+	}
+	for _, want := range []string{deepseekCodexBaseURLEnv, "Responses-compatible adapter/router", "official DeepSeek Chat Completions endpoint"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+}
+
+func TestEnsureDeepSeekCodexProviderConfigMatchesSupportedCodexResponsesSchema(t *testing.T) {
+	t.Setenv(deepseekCodexBaseURLEnv, "https://router.example/v1")
+
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	if err := ensureDeepSeekCodexProviderConfig(configPath); err != nil {
+		t.Fatalf("ensure deepseek provider config: %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+
+	var cfg struct {
+		ModelProvider  string `toml:"model_provider"`
+		ModelProviders map[string]struct {
+			Name    string `toml:"name"`
+			BaseURL string `toml:"base_url"`
+			EnvKey  string `toml:"env_key"`
+			WireAPI string `toml:"wire_api"`
+		} `toml:"model_providers"`
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("parse generated config as TOML: %v\n%s", err, string(data))
+	}
+	if cfg.ModelProvider != deepseekCodexProviderName {
+		t.Fatalf("model_provider = %q, want %q", cfg.ModelProvider, deepseekCodexProviderName)
+	}
+	provider, ok := cfg.ModelProviders[deepseekCodexProviderName]
+	if !ok {
+		t.Fatalf("generated config missing model_providers.%s: %+v", deepseekCodexProviderName, cfg.ModelProviders)
+	}
+	if provider.Name != "DeepSeek" {
+		t.Fatalf("provider name = %q, want DeepSeek", provider.Name)
+	}
+	if provider.BaseURL != "https://router.example/v1" {
+		t.Fatalf("provider base_url = %q, want router URL", provider.BaseURL)
+	}
+	if provider.EnvKey != deepseekCodexAPIKeyEnv {
+		t.Fatalf("provider env_key = %q, want %q", provider.EnvKey, deepseekCodexAPIKeyEnv)
+	}
+	if provider.WireAPI != "responses" {
+		t.Fatalf("provider wire_api = %q, want responses", provider.WireAPI)
 	}
 }

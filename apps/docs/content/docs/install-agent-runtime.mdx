@@ -58,14 +58,14 @@ JSON-RPC 2.0 transport with finer-grained approval gates. MCP config is written 
 
 ### DeepSeek
 
-DeepSeek is exposed as its own Multica provider but runs through Codex app-server using DeepSeek's OpenAI-compatible endpoint. Install Codex first, then configure DeepSeek credentials on the agent or daemon environment.
+DeepSeek is exposed as its own Multica provider but runs through Codex app-server. Current Codex custom providers require a Responses-compatible API, while DeepSeek's official API is Chat Completions, so install Codex first and configure a Responses-compatible adapter/router for DeepSeek.
 
 | | |
 |---|---|
 | Daemon looks for | `codex` by default (`MULTICA_DEEPSEEK_PATH` may point at a different Codex-compatible binary) |
 | Install | Install Codex from [github.com/openai/codex](https://github.com/openai/codex). |
-| Authentication | Set `DEEPSEEK_API_KEY` where the daemon can pass it to the agent run. Agent custom env is preferred so the key stays scoped to DeepSeek agents. |
-| Notes | Default model: `deepseek-v4-flash`. Override the daemon-wide default with `MULTICA_DEEPSEEK_MODEL`; override the endpoint with `MULTICA_DEEPSEEK_BASE_URL` only for a compatible proxy or alternate DeepSeek API base. |
+| Authentication | Set `DEEPSEEK_API_KEY` where the daemon can pass it to the agent run. Codex sends it to the configured adapter via the generated provider config; agent custom env is preferred so the key stays scoped to DeepSeek agents. |
+| Notes | `MULTICA_DEEPSEEK_BASE_URL` is required and must point at an adapter/router that accepts Codex Responses requests, forwards to DeepSeek Chat Completions with `deepseek-v4-flash` unless `MULTICA_DEEPSEEK_MODEL` overrides it, and returns Responses-format output to Codex. |
 
 ### Cursor (Anysphere)
 
