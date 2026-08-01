@@ -3725,6 +3725,24 @@ func providerNeedsInlineSystemPrompt(provider string) bool {
 	}
 }
 
+// gateDeepSeekResume clears Codex thread resume for DeepSeek-backed tasks.
+// DeepSeek is launched through Codex app-server, but its Responses-compatible
+// adapter ultimately targets DeepSeek/LiteLLM Chat Completions. Prior Codex
+// threads can contain OpenAI-style tool_call history that DeepSeek rejects when
+// the matching tool messages are not present in exactly the expected shape.
+// Starting a fresh thread avoids sending those provider-incompatible prior
+// turns while preserving the user-visible continuity disclosure.
+func gateDeepSeekResume(task *Task, taskCtx *execenv.TaskContextForEnv, provider string, taskLog *slog.Logger) {
+	if provider != "deepseek" || task.PriorSessionID == "" {
+		return
+	}
+	taskLog.Warn("dropping prior codex session for deepseek: prior tool_call history is not provider-compatible",
+		"session_id", task.PriorSessionID)
+	task.PriorSessionID = ""
+	taskCtx.PriorSessionResumed = false
+	taskCtx.PriorSessionResumeUnavailable = true
+}
+
 // gateResumeToReusedWorkdir clears the task's prior session unless the task
 // runs in the exact workdir the session was recorded against, and reports
 // whether that workdir was reused. CLI backends key their session stores to
@@ -4187,6 +4205,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		WorkspaceContext:                 task.WorkspaceContext,
 		ConnectedApps:                    task.ConnectedApps,
 	}
+	gateDeepSeekResume(&task, &taskCtx, provider, taskLog)
 
 	// Mark candidate env roots as active before any env work so the GC loop
 	// can't reclaim artifacts inside them mid-execution. We mark both the
