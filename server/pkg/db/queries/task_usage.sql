@@ -251,6 +251,8 @@ ORDER BY atq.agent_id, 2;
 -- name: ListDashboardAgentSessions :many
 -- Per-agent terminal task counts, failure reason breakdown, queue wait
 -- percentiles, and run duration percentiles for the workspace dashboard.
+-- Failed rows with NULL / empty failure_reason are exposed as
+-- 'unclassified', matching the failure rollup endpoints.
 -- The window is anchored on completed_at, matching the existing runtime
 -- dashboard queries.
 WITH terminal_tasks AS (
@@ -305,11 +307,11 @@ agent_rollup AS (
 failure_counts AS (
     SELECT
         agent_id,
-        COALESCE(NULLIF(failure_reason, ''), 'unknown') AS failure_reason,
+        COALESCE(NULLIF(failure_reason, ''), 'unclassified') AS failure_reason,
         COUNT(*)::int AS count
     FROM terminal_tasks
     WHERE status = 'failed'
-    GROUP BY agent_id, COALESCE(NULLIF(failure_reason, ''), 'unknown')
+    GROUP BY agent_id, COALESCE(NULLIF(failure_reason, ''), 'unclassified')
 ),
 ranked_failure_counts AS (
     SELECT
