@@ -839,6 +839,22 @@ describe("InboxItemListSchema", () => {
     ).toHaveLength(1);
   });
 
+  it("parses project_id when present, null, and absent", () => {
+    const parsed = parseWithFallback(
+      [
+        row({ project_id: "proj-1" }),
+        row({ project_id: null }),
+        row(),
+      ],
+      InboxItemListSchema,
+      EMPTY_INBOX_ITEMS,
+      ENDPOINT,
+    );
+    expect(parsed).toHaveLength(3);
+    expect(parsed[0]).toMatchObject({ project_id: "proj-1" });
+    expect(parsed[1]).toMatchObject({ project_id: null });
+  });
+
   it("returns the empty fallback for a non-array body", () => {
     expect(
       parseWithFallback({ items: [] }, InboxItemListSchema, EMPTY_INBOX_ITEMS, ENDPOINT),

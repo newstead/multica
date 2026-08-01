@@ -47,6 +47,7 @@ export interface InboxItem {
   type: InboxItemType;
   severity: InboxSeverity;
   issue_id: string | null;
+  project_id: string | null;
   title: string;
   body: string | null;
   issue_status: IssueStatus | null;

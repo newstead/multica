@@ -26,6 +26,7 @@ function makeItem(
     type: "mentioned",
     severity: "info",
     issue_id: issueId,
+    project_id: null,
     title: `item ${id}`,
     body: null,
     issue_status: null,

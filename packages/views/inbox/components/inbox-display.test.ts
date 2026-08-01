@@ -18,6 +18,7 @@ function item(overrides: Partial<InboxItem>): InboxItem {
     type: "new_comment",
     severity: "info",
     issue_id: "issue-1",
+    project_id: null,
     title: "Issue title",
     body: null,
     issue_status: null,

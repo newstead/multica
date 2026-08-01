@@ -6,9 +6,10 @@ import {
 } from "../../issues/components/issue-agent-activity-indicator";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { Archive, ArchiveRestore } from "lucide-react";
-import type { InboxItem } from "@multica/core/types";
+import type { InboxItem, Project } from "@multica/core/types";
 import type { InboxView } from "./inbox-view";
 import { InboxDetailLabel } from "./inbox-detail-label";
+import { ProjectIcon } from "../../projects/components/project-icon";
 import { getInboxDisplayTitle } from "./inbox-display";
 import { useT } from "../../i18n";
 
@@ -33,12 +34,17 @@ export function InboxListItem({
   item,
   view,
   isSelected,
+  project,
   onClick,
   onAction,
 }: {
   item: InboxItem;
   view: InboxView;
   isSelected: boolean;
+  // Resolved project for the row's green context badge. Undefined when the
+  // item has no project_id or the id resolves to nothing — the badge is then
+  // simply not rendered, with no layout shift.
+  project?: Project;
   onClick: () => void;
   // Archive in the main list, unarchive in the archived one — the row action is
   // always the reversal of the current view, so the two lists share this row.
@@ -110,9 +116,20 @@ export function InboxListItem({
           </div>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className={`min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs ${showUnread ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
-            <InboxDetailLabel item={item} />
-          </p>
+          <div className={`flex min-w-0 items-center gap-1.5 text-xs ${showUnread ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+            {/* Green-accent project badge: keeps mixed inbox rows' project
+                provenance visible. Capped + shrink-0 + truncated so it can
+                never crowd out the detail label or the first line's title. */}
+            {project && (
+              <span className="inline-flex max-w-[140px] shrink-0 items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+                <ProjectIcon project={project} size="sm" />
+                <span className="truncate">{project.title}</span>
+              </span>
+            )}
+            <p className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+              <InboxDetailLabel item={item} />
+            </p>
+          </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {/* Badge only, no hover card (MUL-5189). "An agent is on this"
                 is worth showing while triaging; the card behind it adds only

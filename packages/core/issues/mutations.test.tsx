@@ -81,6 +81,7 @@ function makeInboxItem(
     type: "status_changed",
     severity: "info",
     issue_id: issueId,
+    project_id: null,
     title: `Inbox ${id}`,
     body: null,
     issue_status: "todo",

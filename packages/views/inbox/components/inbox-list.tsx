@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Virtuoso } from "react-virtuoso";
 import { Archive, ChevronRight, Inbox } from "lucide-react";
-import type { InboxItem } from "@multica/core/types";
+import type { InboxItem, Project } from "@multica/core/types";
 import type { InboxView } from "./inbox-view";
 import { InboxListItem } from "./inbox-list-item";
 import { VirtuosoSeed, VIRTUOSO_SEED_COUNT } from "../../common/virtuoso-seed";
@@ -35,6 +35,7 @@ export function InboxList({
   view,
   selectedKey,
   archivedCount,
+  projectMap,
   onSelect,
   onAction,
   onOpenArchived,
@@ -45,6 +46,9 @@ export function InboxList({
   // Deduplicated archived-issue count. Only read in the main view, to label the
   // entry into the archive; the entry hides at zero.
   archivedCount: number;
+  // Resolves each row's `project_id` to its project for the green context
+  // badge. Ids missing from the map render no badge.
+  projectMap: ReadonlyMap<string, Project>;
   onSelect: (item: InboxItem) => void;
   onAction: (id: string) => void;
   onOpenArchived: () => void;
@@ -110,6 +114,7 @@ export function InboxList({
       item={item}
       view={view}
       isSelected={(item.issue_id ?? item.id) === selectedKey}
+      project={item.project_id ? projectMap.get(item.project_id) : undefined}
       onClick={() => onSelect(item)}
       onAction={() => onAction(item.id)}
     />

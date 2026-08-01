@@ -341,6 +341,7 @@ describe("applyIssueChange", () => {
         type: "status_changed",
         severity: "info",
         issue_id: "issue-1",
+        project_id: null,
         title: "Inbox",
         body: null,
         issue_status: "todo",

@@ -21,6 +21,7 @@ type InboxItemResponse struct {
 	Type          string          `json:"type"`
 	Severity      string          `json:"severity"`
 	IssueID       *string         `json:"issue_id"`
+	ProjectID     *string         `json:"project_id"`
 	Title         string          `json:"title"`
 	Body          *string         `json:"body"`
 	Read          bool            `json:"read"`
@@ -61,6 +62,7 @@ func inboxRowToResponse(r db.ListInboxItemsRow) InboxItemResponse {
 		Type:          r.Type,
 		Severity:      r.Severity,
 		IssueID:       uuidToPtr(r.IssueID),
+		ProjectID:     uuidToPtr(r.ProjectID),
 		Title:         r.Title,
 		Body:          textToPtr(r.Body),
 		Read:          r.Read,
@@ -89,6 +91,7 @@ func (h *Handler) enrichInboxResponse(ctx context.Context, resp InboxItemRespons
 	if err == nil {
 		s := issue.Status
 		resp.IssueStatus = &s
+		resp.ProjectID = uuidToPtr(issue.ProjectID)
 	}
 	return resp
 }
