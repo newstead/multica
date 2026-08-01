@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { InboxItem } from "@multica/core/types";
+import type { InboxItem, Project } from "@multica/core/types";
 import { InboxListItem } from "./inbox-list-item";
 
 vi.mock("../../issues/components", () => ({ StatusIcon: () => null }));
@@ -51,6 +51,7 @@ function item(overrides: Partial<InboxItem> = {}): InboxItem {
     type: "new_comment",
     severity: "info",
     issue_id: "issue-1",
+    project_id: null,
     title: "Issue title",
     body: null,
     issue_status: null,
@@ -62,16 +63,43 @@ function item(overrides: Partial<InboxItem> = {}): InboxItem {
   };
 }
 
-function renderRow(props: { item: InboxItem; view: "inbox" | "archived" }) {
+function renderRow(props: {
+  item: InboxItem;
+  view: "inbox" | "archived";
+  project?: Project;
+}) {
   return render(
     <InboxListItem
       item={props.item}
       view={props.view}
       isSelected={false}
+      project={props.project}
       onClick={vi.fn()}
       onAction={vi.fn()}
     />,
   );
+}
+
+function project(overrides: Partial<Project> = {}): Project {
+  return {
+    id: "proj-1",
+    workspace_id: "workspace-1",
+    title: "Launch",
+    description: null,
+    icon: null,
+    status: "in_progress",
+    priority: "none",
+    lead_type: null,
+    lead_id: null,
+    start_date: null,
+    due_date: null,
+    created_at: "2026-06-01T00:00:00Z",
+    updated_at: "2026-06-01T00:00:00Z",
+    issue_count: 0,
+    done_count: 0,
+    resource_count: 0,
+    ...overrides,
+  };
 }
 
 const unreadDot = (container: HTMLElement) => container.querySelector(".bg-brand");
@@ -135,5 +163,48 @@ describe("InboxListItem issue activity", () => {
     });
 
     expect(queryByTestId("issue-agent-activity")).toBeNull();
+  });
+});
+
+describe("InboxListItem project badge", () => {
+  it("renders the green-accent project badge when a project is provided", () => {
+    const { getByText, container } = renderRow({
+      item: item({ project_id: "proj-1" }),
+      view: "inbox",
+      project: project(),
+    });
+
+    expect(getByText("Launch")).not.toBeNull();
+    const badge = container.querySelector(".bg-success\\/10");
+    expect(badge).not.toBeNull();
+    expect(badge?.className).toContain("text-success");
+  });
+
+  it("caps and truncates the badge so it cannot crowd out title or detail", () => {
+    const { container } = renderRow({
+      item: item({ project_id: "proj-1" }),
+      view: "inbox",
+      project: project({ title: "A very long project title that must truncate" }),
+    });
+
+    const badge = container.querySelector(".bg-success\\/10");
+    expect(badge?.className).toContain("max-w-[140px]");
+    expect(badge?.className).toContain("shrink-0");
+    expect(badge?.querySelector(".truncate")).not.toBeNull();
+  });
+
+  it("renders no badge when the item has no project", () => {
+    const { container } = renderRow({ item: item(), view: "inbox" });
+
+    expect(container.querySelector(".bg-success\\/10")).toBeNull();
+  });
+
+  it("renders no badge when project_id is set but unresolved", () => {
+    const { container } = renderRow({
+      item: item({ project_id: "proj-missing" }),
+      view: "inbox",
+    });
+
+    expect(container.querySelector(".bg-success\\/10")).toBeNull();
   });
 });

@@ -36,6 +36,7 @@ function item(overrides: Partial<InboxItem> = {}): InboxItem {
     type: "new_comment",
     severity: "info",
     issue_id: null,
+    project_id: null,
     title: "Quick create needs a check",
     body: null,
     issue_status: null,

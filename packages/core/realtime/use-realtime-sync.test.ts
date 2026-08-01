@@ -650,6 +650,7 @@ describe("handleInboxNew", () => {
       type: "mentioned",
       severity: "info",
       issue_id: "issue-1",
+      project_id: null,
       title: "Mentioned you",
       body: "in a comment",
       issue_status: null,
