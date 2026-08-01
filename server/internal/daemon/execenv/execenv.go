@@ -211,6 +211,11 @@ type Environment struct {
 	// non-sandboxed providers, where the real HOME stays in place. See
 	// task_home.go and MUL-4856.
 	TaskHome string
+	// GoModCache and GoBuildCache are daemon-shared cache directories exported
+	// as GOMODCACHE and GOCACHE for every task. They live outside the task env
+	// root so module downloads and build cache entries are reused across tasks.
+	GoModCache   string
+	GoBuildCache string
 	// OpenclawConfigPath is the path to the per-task synthesized OpenClaw
 	// config (set only for openclaw provider). The daemon exports this as
 	// OPENCLAW_CONFIG_PATH on the openclaw subprocess so its native skill
@@ -281,7 +286,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 
 	// Remove existing env if present (defensive — task IDs are unique).
 	if _, err := os.Stat(envRoot); err == nil {
-		if err := os.RemoveAll(envRoot); err != nil {
+		if err := RemoveAllWritable(envRoot); err != nil {
 			return nil, fmt.Errorf("execenv: remove existing env: %w", err)
 		}
 	}
@@ -309,6 +314,12 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		LocalDirectory: params.LocalWorkDir != "",
 		logger:         logger,
 	}
+	goCaches, err := prepareSharedGoCache(params.WorkspacesRoot)
+	if err != nil {
+		return nil, err
+	}
+	env.GoModCache = goCaches.ModCache
+	env.GoBuildCache = goCaches.BuildCache
 
 	// Write context files into workdir (skills go to provider-native paths).
 	// Track every file/dir we create in a manifest so CleanupSidecars can
@@ -351,6 +362,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		if err != nil {
 			return nil, fmt.Errorf("execenv: prepare task home: %w", err)
 		}
+		writableRoots = append(writableRoots, goCacheWritableRoots(goCaches)...)
 		env.TaskHome = taskHome
 		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, IsLocalDirectory: params.LocalWorkDir != "", SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task.AgentID, params.Task.IssueID), WritableRoots: writableRoots, CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
 			return nil, fmt.Errorf("execenv: prepare codex-home: %w", err)
@@ -513,6 +525,15 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 		LocalDirectory: params.LocalDirectory,
 		logger:         logger,
 	}
+	if params.WorkspacesRoot != "" {
+		goCaches, err := prepareSharedGoCache(params.WorkspacesRoot)
+		if err != nil {
+			logger.Warn("execenv: prepare shared go cache on reuse failed; forcing fresh prepare", "error", err)
+			return nil
+		}
+		env.GoModCache = goCaches.ModCache
+		env.GoBuildCache = goCaches.BuildCache
+	}
 
 	// Roll back the previous dispatch's sidecar writes before refreshing.
 	// On reuse the workdir still holds the prior run's issue_context.md and
@@ -575,6 +596,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 		if err != nil {
 			logger.Warn("execenv: refresh task home failed", "error", err)
 		}
+		writableRoots = append(writableRoots, goCacheWritableRoots(GoCachePaths{ModCache: env.GoModCache, BuildCache: env.GoBuildCache})...)
 		env.TaskHome = taskHome
 		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, ResumeSessionID: params.ResumeSessionID, IsLocalDirectory: params.LocalDirectory, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task.AgentID, params.Task.IssueID), WritableRoots: writableRoots, CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
 			logger.Warn("execenv: refresh codex-home failed", "error", err)
@@ -685,7 +707,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 // they use for workspace skills).
 func hydrateCodexSkills(codexHome string, workspaceSkills []SkillContextForEnv, disabledRuntimeSkills []RuntimeSkillRefForEnv, logger *slog.Logger) error {
 	skillsDir := filepath.Join(codexHome, "skills")
-	if err := os.RemoveAll(skillsDir); err != nil {
+	if err := RemoveAllWritable(skillsDir); err != nil {
 		return fmt.Errorf("clear codex skills dir: %w", err)
 	}
 	if err := seedUserCodexSkills(codexHome, workspaceSkills, logger); err != nil {
@@ -854,7 +876,7 @@ func (env *Environment) Cleanup(removeAll bool) error {
 		// scratch; safe to remove when the caller asked for a full
 		// teardown.
 		if removeAll && env.RootDir != "" {
-			if err := os.RemoveAll(env.RootDir); err != nil {
+			if err := RemoveAllWritable(env.RootDir); err != nil {
 				env.logger.Warn("execenv: cleanup local_directory envRoot failed", "error", err)
 				return err
 			}
@@ -863,7 +885,7 @@ func (env *Environment) Cleanup(removeAll bool) error {
 	}
 
 	if removeAll {
-		if err := os.RemoveAll(env.RootDir); err != nil {
+		if err := RemoveAllWritable(env.RootDir); err != nil {
 			env.logger.Warn("execenv: cleanup removeAll failed", "error", err)
 			return err
 		}
@@ -871,7 +893,7 @@ func (env *Environment) Cleanup(removeAll bool) error {
 	}
 
 	// Partial cleanup: remove workdir, keep output/ and logs/.
-	if err := os.RemoveAll(env.WorkDir); err != nil {
+	if err := RemoveAllWritable(env.WorkDir); err != nil {
 		env.logger.Warn("execenv: cleanup workdir failed", "error", err)
 		return err
 	}
