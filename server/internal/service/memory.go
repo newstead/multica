@@ -39,6 +39,7 @@ type MemoryProvider interface {
 // user, workspace, project, request, or memory identifiers as metric labels.
 type MemoryTelemetry interface {
 	RecordRequest(provider, mode, operation, result string)
+	RecordHealth(provider string, healthy bool)
 }
 
 type MemoryHistoryProvider interface {

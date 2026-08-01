@@ -1402,6 +1402,9 @@ func (h *Handler) memoryProviderHealth(ctx context.Context, providerName string,
 		if strings.TrimSpace(health.Provider) == "" {
 			health.Provider = providerName
 		}
+		if h.MemoryService.Telemetry != nil {
+			h.MemoryService.Telemetry.RecordHealth(providerName, err == nil && health.OK)
+		}
 		if err != nil {
 			return &health, err.Error()
 		}

@@ -34,6 +34,7 @@ func NewMemoryMetrics() *MemoryMetrics {
 	for _, provider := range []string{"hindsight", "mem0"} {
 		m.requests.WithLabelValues(provider, "dual_write", "global", "capture", "partial", "none")
 		m.storage.WithLabelValues(provider, "dual_write", "global", "backup", "ok")
+		m.providerHealth.WithLabelValues(provider, "dual_write", "global", "health", "ok")
 		m.providerHealth.WithLabelValues(provider, "dual_write", "global", "health", "error")
 	}
 	m.dualWriteLag.WithLabelValues("dual", "dual_write", "global", "upsert", "ok", "none")
@@ -59,4 +60,18 @@ func (m *MemoryMetrics) RecordRequest(provider, mode, operation, result string) 
 		return
 	}
 	m.requests.WithLabelValues(provider, mode, "global", operation, result, "none").Inc()
+}
+
+// RecordHealth records the current provider availability with two bounded
+// result series. The collector reads result=ok: 1 means healthy, 0 unhealthy.
+func (m *MemoryMetrics) RecordHealth(provider string, healthy bool) {
+	if m == nil {
+		return
+	}
+	ok := 0.0
+	if healthy {
+		ok = 1
+	}
+	m.providerHealth.WithLabelValues(provider, "dual_write", "global", "health", "ok").Set(ok)
+	m.providerHealth.WithLabelValues(provider, "dual_write", "global", "health", "error").Set(1 - ok)
 }

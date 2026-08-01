@@ -19,6 +19,14 @@ func TestMemoryMetricsExposeBoundedAggregateContract(t *testing.T) {
 	if got := testutil.ToFloat64(m.requests.WithLabelValues("hindsight", "dual_write", "global", "capture", "ok", "none")); got != 1 {
 		t.Fatalf("recorded request counter = %v, want 1", got)
 	}
+	m.RecordHealth("hindsight", true)
+	if got := testutil.ToFloat64(m.providerHealth.WithLabelValues("hindsight", "dual_write", "global", "health", "ok")); got != 1 {
+		t.Fatalf("healthy availability = %v, want 1", got)
+	}
+	m.RecordHealth("hindsight", false)
+	if got := testutil.ToFloat64(m.providerHealth.WithLabelValues("hindsight", "dual_write", "global", "health", "ok")); got != 0 {
+		t.Fatalf("unhealthy availability = %v, want 0", got)
+	}
 	families, err := reg.Gather()
 	if err != nil {
 		t.Fatal(err)
