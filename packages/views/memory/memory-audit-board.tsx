@@ -68,7 +68,7 @@ function ProviderResults({ results }: { results: MemoryMutationProviderResult[] 
   const { t: rawT } = useT("memory");
   const t = rawT as MemoryT;
   return (
-    <div className="grid gap-2 text-sm">
+    <div className="grid gap-2 text-body">
       <div className="text-muted-foreground">{t("audit.dialog.result", { count: resultSummary(results) })}</div>
       <div className="grid gap-1">
         {results.map((result, index) => (
@@ -76,9 +76,9 @@ function ProviderResults({ results }: { results: MemoryMutationProviderResult[] 
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={statusTone(result.status)}>{result.provider}</Badge>
               <span>{result.status}</span>
-              <span className="text-xs text-muted-foreground">{compactId(result.provider_memory_id)}</span>
+              <span className="text-caption text-muted-foreground">{compactId(result.provider_memory_id)}</span>
             </div>
-            {result.error ? <div className="text-xs text-destructive">{result.error}</div> : null}
+            {result.error ? <div className="text-caption text-destructive">{result.error}</div> : null}
           </div>
         ))}
       </div>
@@ -190,8 +190,8 @@ export function MemoryAuditBoard() {
     <section className="rounded-md border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-medium">{t("audit.title")}</h2>
-          <p className="text-xs text-muted-foreground">{t("audit.subtitle")}</p>
+          <h2 className="text-body font-medium">{t("audit.title")}</h2>
+          <p className="text-caption text-muted-foreground">{t("audit.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => audit.refetch()} disabled={audit.isFetching}>
@@ -226,10 +226,10 @@ export function MemoryAuditBoard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 border-b border-border text-sm">
-        <div className="px-4 py-3"><div className="text-muted-foreground">{t("audit.stats.events")}</div><div className="text-lg font-medium">{totals.events}</div></div>
-        <div className="px-4 py-3"><div className="text-muted-foreground">{t("audit.stats.delivered")}</div><div className="text-lg font-medium">{totals.delivered}</div></div>
-        <div className="px-4 py-3"><div className="text-muted-foreground">{t("audit.stats.failed")}</div><div className="text-lg font-medium">{totals.failed}</div></div>
+      <div className="grid grid-cols-3 border-b border-border text-body">
+        <div className="px-4 py-3"><div className="text-muted-foreground">{t("audit.stats.events")}</div><div className="text-title font-medium">{totals.events}</div></div>
+        <div className="px-4 py-3"><div className="text-muted-foreground">{t("audit.stats.delivered")}</div><div className="text-title font-medium">{totals.delivered}</div></div>
+        <div className="px-4 py-3"><div className="text-muted-foreground">{t("audit.stats.failed")}</div><div className="text-title font-medium">{totals.failed}</div></div>
       </div>
 
       {!action && lastResults ? <div className="border-b border-border px-4 py-2"><ProviderResults results={lastResults} /></div> : null}
@@ -249,20 +249,20 @@ export function MemoryAuditBoard() {
           <TableBody>
             {events.map((event) => (
               <TableRow key={event.id}>
-                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatDate(event.created_at)}</TableCell>
+                <TableCell className="whitespace-nowrap text-caption text-muted-foreground">{formatDate(event.created_at)}</TableCell>
                 <TableCell>
                   <div className="font-medium">{event.source_type ?? event.event_type}</div>
-                  <div className="text-xs text-muted-foreground">{compactId(event.source_id ?? event.id)}</div>
+                  <div className="text-caption text-muted-foreground">{compactId(event.source_id ?? event.id)}</div>
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
+                <TableCell className="text-caption text-muted-foreground">
                   <div>{t("audit.scope.project")} {compactId(event.project_id)}</div>
                   <div>{t("audit.scope.issue")} {compactId(event.issue_id)}</div>
                 </TableCell>
                 <TableCell><Badge variant="outline">{event.event_type}</Badge></TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
-                    {event.deliveries.length === 0 ? <span className="text-xs text-muted-foreground">{t("audit.table.no_delivery")}</span> : event.deliveries.map((delivery) => (
-                      <div key={delivery.id} className="flex flex-wrap items-center gap-2 text-xs">
+                    {event.deliveries.length === 0 ? <span className="text-caption text-muted-foreground">{t("audit.table.no_delivery")}</span> : event.deliveries.map((delivery) => (
+                      <div key={delivery.id} className="flex flex-wrap items-center gap-2 text-caption">
                         <Badge variant={statusTone(delivery.status)}>{delivery.provider}</Badge>
                         <span>{delivery.status}</span>
                         <span className="text-muted-foreground">{compactId(delivery.provider_memory_id)}</span>
@@ -288,7 +288,7 @@ export function MemoryAuditBoard() {
             ))}
           </TableBody>
         </Table>
-        {events.length === 0 && <div className="py-12 text-center text-sm text-muted-foreground">{audit.isLoading ? t("audit.loading") : t("audit.empty")}</div>}
+        {events.length === 0 && <div className="py-12 text-center text-body text-muted-foreground">{audit.isLoading ? t("audit.loading") : t("audit.empty")}</div>}
       </div>
 
       <Dialog open={!!action} onOpenChange={(open) => { if (!open) closeAction(); }}>

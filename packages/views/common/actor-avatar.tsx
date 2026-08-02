@@ -449,11 +449,11 @@ function AgentIdentityAvatarFrame({
           ? ROLE_CLASS[badge.roleCode]
           : "border-border bg-muted text-muted-foreground",
         variant === "corner-tag" &&
-          "absolute -bottom-0.5 -right-1 rounded px-0.5 text-[8px] leading-3 shadow-sm",
+          "absolute -bottom-0.5 -right-1 rounded px-0.5 text-micro leading-3 shadow-sm",
         variant === "chip-below" &&
-          "absolute -bottom-3 left-1/2 -translate-x-1/2 rounded px-0.5 text-[8px] leading-3 shadow-sm",
+          "absolute -bottom-3 left-1/2 -translate-x-1/2 rounded px-0.5 text-micro leading-3 shadow-sm",
         variant === "inline-row" &&
-          "ml-1 inline-flex h-4 max-w-20 items-center rounded px-1 text-[10px] leading-none",
+          "ml-1 inline-flex h-4 max-w-20 items-center rounded px-1 text-micro leading-none",
       )}
     >
       {badge.text}

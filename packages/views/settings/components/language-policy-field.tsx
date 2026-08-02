@@ -108,7 +108,7 @@ export function LanguagePolicyRow({
       <div>
         <LanguagePolicyField value={value} disabled={disabled} onChange={onChange} />
         {!value ? (
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-caption text-muted-foreground">
             {t(($) => $.agent_language_policy.default_hint)}
           </p>
         ) : null}

@@ -82,7 +82,7 @@ export function Segmented<T extends string | number>({
           type="button"
           aria-pressed={o.value === value}
           onClick={() => onChange(o.value)}
-          className={`rounded-sm px-2.5 py-1 text-xs font-medium transition-colors ${
+          className={`rounded-sm px-2.5 py-1 text-caption font-medium transition-colors ${
             o.value === value
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
@@ -141,16 +141,16 @@ function UsageTabsView({
   return (
     <Tabs value={value} onValueChange={onChange}>
       <TabsList className="h-8">
-        <TabsTrigger value="overview" className="px-2.5 text-xs">
+        <TabsTrigger value="overview" className="px-2.5 text-caption">
           {t(($) => $.tabs.overview)}
         </TabsTrigger>
-        <TabsTrigger value="agents" className="px-2.5 text-xs">
+        <TabsTrigger value="agents" className="px-2.5 text-caption">
           {t(($) => $.tabs.agents)}
         </TabsTrigger>
-        <TabsTrigger value="mem0" className="px-2.5 text-xs">
+        <TabsTrigger value="mem0" className="px-2.5 text-caption">
           {t(($) => $.tabs.mem0)}
         </TabsTrigger>
-        <TabsTrigger value="hindsight" className="px-2.5 text-xs">
+        <TabsTrigger value="hindsight" className="px-2.5 text-caption">
           {t(($) => $.tabs.hindsight)}
         </TabsTrigger>
       </TabsList>

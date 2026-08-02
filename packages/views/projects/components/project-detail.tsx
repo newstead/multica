@@ -472,7 +472,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       <div>
         <button
           type="button"
-          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${languagePolicyOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
+          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors mb-2 hover:bg-accent/70 ${languagePolicyOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
           onClick={() => setLanguagePolicyOpen((open) => !open)}
         >
           {ts(($) => $.agent_language_policy.title)}
@@ -484,7 +484,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               value={project.language_policy ?? null}
               onChange={(next) => handleUpdateField({ language_policy: next })}
             />
-            <p className="px-2 text-xs leading-5 text-muted-foreground">
+            <p className="px-2 text-caption leading-5 text-muted-foreground">
               {ts(($) => $.agent_language_policy.hint)}
             </p>
           </div>

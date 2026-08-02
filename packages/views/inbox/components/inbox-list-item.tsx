@@ -94,7 +94,7 @@ export function InboxListItem({
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
             )}
             <span
-              className={`truncate text-sm ${showUnread ? "font-medium" : "text-muted-foreground"}`}
+              className={`truncate text-body ${showUnread ? "font-medium" : "text-muted-foreground"}`}
             >
               {displayTitle}
             </span>
@@ -125,12 +125,12 @@ export function InboxListItem({
           </div>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <div className={`flex min-w-0 items-center gap-1.5 text-xs ${showUnread ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+          <div className={`flex min-w-0 items-center gap-1.5 text-caption ${showUnread ? "text-muted-foreground" : "text-muted-foreground"}`}>
             {/* Green-accent project badge: keeps mixed inbox rows' project
                 provenance visible. Capped + shrink-0 + truncated so it can
                 never crowd out the detail label or the first line's title. */}
             {project && (
-              <span className="inline-flex max-w-[140px] shrink-0 items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+              <span className="inline-flex max-w-[140px] shrink-0 items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-micro font-medium text-success">
                 <ProjectIcon project={project} size="sm" />
                 <span className="truncate">{project.title}</span>
               </span>
@@ -151,7 +151,7 @@ export function InboxListItem({
                 hoverCard={false}
               />
             )}
-            <span className={`text-xs ${showUnread ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+            <span className={`text-caption ${showUnread ? "text-muted-foreground" : "text-muted-foreground"}`}>
               {timeAgo(item.created_at)}
             </span>
           </div>
