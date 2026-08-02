@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"math"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -16,7 +17,7 @@ type MemoryMetrics struct {
 	pairedRecall   *prometheus.CounterVec
 	feedback       *prometheus.CounterVec
 	tokens         *prometheus.CounterVec
-	cost           *prometheus.GaugeVec
+	cost           *providerCumulativeCost
 	storage        *prometheus.GaugeVec
 	providerHealth *prometheus.GaugeVec
 }
@@ -29,10 +30,10 @@ func NewMemoryMetrics() *MemoryMetrics {
 		pairedRecall: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_paired_recall_total", Help: "Aggregate primary/shadow recall comparisons."}, append(labels, "comparison")),
 		feedback:     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_recall_feedback_total", Help: "Aggregate recall feedback."}, append(labels, "outcome")),
 		tokens:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_tokens_total", Help: "MultMemory provider token usage."}, append(labels, "token_type")),
-		// Cost is a provider-reported cumulative total, not a locally inferred
-		// per-request estimate. A gauge keeps the source authoritative while the
-		// soak collector calculates its full-window increase.
-		cost:           prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "multmemory_cost_usd_total", Help: "Provider-reported cumulative variable USD cost."}, labels),
+		// Cost is a provider-owned cumulative counter. The source publishes the
+		// absolute total, rather than an inferred local delta, so restarts do not
+		// create or lose variable-cost evidence.
+		cost:           newProviderCumulativeCost(),
 		storage:        prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "multmemory_storage_bytes", Help: "Provider storage measurement when configured."}, []string{"provider", "mode", "scope_hash", "operation", "result"}),
 		providerHealth: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "multmemory_provider_health", Help: "Provider health; one is healthy."}, []string{"provider", "mode", "scope_hash", "operation", "result"}),
 	}
@@ -124,7 +125,7 @@ func (m *MemoryMetrics) SetProviderCostUSDTotal(provider string, usd float64) {
 	if m == nil || !memoryProvider(provider) || !finiteNonNegative(usd) {
 		return
 	}
-	m.cost.WithLabelValues(provider, "dual_write", "global", "recall", "ok", "none").Set(usd)
+	m.cost.Set(provider, usd)
 }
 
 // SetStorageBytes records a provider-reported aggregate storage measurement.
@@ -168,4 +169,56 @@ func memoryResult(result string) bool {
 
 func finiteNonNegative(value float64) bool {
 	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0
+}
+
+// providerCumulativeCost exports provider-owned totals as Prometheus counters
+// while retaining the source's absolute value. CounterVec only supports Add,
+// which would turn a service restart into an invented delta; this collector
+// deliberately uses Set semantics and CounterValue exposition instead.
+type providerCumulativeCost struct {
+	desc   *prometheus.Desc
+	mu     sync.RWMutex
+	values map[string]float64
+}
+
+func newProviderCumulativeCost() *providerCumulativeCost {
+	return &providerCumulativeCost{
+		desc: prometheus.NewDesc(
+			"multmemory_cost_usd_total",
+			"Provider-reported cumulative variable USD cost.",
+			[]string{"provider", "mode", "scope_hash", "operation", "result", "model"},
+			nil,
+		),
+		values: map[string]float64{},
+	}
+}
+
+func (c *providerCumulativeCost) Set(provider string, usd float64) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.values[provider] = usd
+	c.mu.Unlock()
+}
+
+func (c *providerCumulativeCost) Describe(ch chan<- *prometheus.Desc) {
+	if c != nil {
+		ch <- c.desc
+	}
+}
+
+func (c *providerCumulativeCost) Collect(ch chan<- prometheus.Metric) {
+	if c == nil {
+		return
+	}
+	c.mu.RLock()
+	values := make(map[string]float64, len(c.values))
+	for provider, usd := range c.values {
+		values[provider] = usd
+	}
+	c.mu.RUnlock()
+	for provider, usd := range values {
+		ch <- prometheus.MustNewConstMetric(c.desc, prometheus.CounterValue, usd, provider, "dual_write", "global", "recall", "ok", "none")
+	}
 }

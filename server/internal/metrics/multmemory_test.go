@@ -6,6 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func TestMemoryMetricsExposeBoundedAggregateContract(t *testing.T) {
@@ -51,6 +52,14 @@ func TestMemoryMetricsExposeBoundedAggregateContract(t *testing.T) {
 			continue
 		}
 		want[family.GetName()] = true
+		if family.GetName() == "multmemory_cost_usd_total" {
+			if family.GetType() != dto.MetricType_COUNTER {
+				t.Fatalf("provider cost metric type = %s, want COUNTER", family.GetType())
+			}
+			if len(family.Metric) != 2 || family.Metric[0].GetCounter() == nil || family.Metric[1].GetCounter() == nil {
+				t.Fatal("provider cost must expose only the two sourced counter series")
+			}
+		}
 		for _, metric := range family.Metric {
 			for _, pair := range metric.Label {
 				value := pair.GetValue()

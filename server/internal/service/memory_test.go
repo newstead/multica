@@ -82,6 +82,12 @@ func TestAggregateTelemetryHelpersAcceptOnlyBoundedValues(t *testing.T) {
 	if _, err := parseProviderAggregateTelemetry(json.RawMessage(`{"storage_bytes":2048}`)); err == nil {
 		t.Fatal("aggregate telemetry without provider cost must fail closed")
 	}
+	if _, err := parseProviderAggregateTelemetry(json.RawMessage(`{"storage_bytes":2048,"variable_cost_usd_total":0.125,"memory_id":"unsafe"}`)); err == nil {
+		t.Fatal("aggregate telemetry with an unsafe extra field must fail closed")
+	}
+	if _, err := parseProviderAggregateTelemetry(json.RawMessage(`{"storage_bytes":2048,"variable_cost_usd_total":0.125,"content":"unsafe"}`)); err == nil {
+		t.Fatal("row-shaped aggregate telemetry must fail closed")
+	}
 	if _, err := aggregateTelemetryPath("https://not-private-path.test/metrics"); err == nil {
 		t.Fatal("aggregate telemetry URL must be rejected; only a configured private relative path is allowed")
 	}

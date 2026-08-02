@@ -900,12 +900,22 @@ func providerEstimatedCost(raw json.RawMessage) (float64, bool) {
 }
 
 func parseProviderAggregateTelemetry(raw json.RawMessage) (MemoryProviderAggregateTelemetry, error) {
-	var values map[string]any
-	if json.Unmarshal(raw, &values) != nil {
+	var values map[string]json.RawMessage
+	if json.Unmarshal(raw, &values) != nil || len(values) != 2 {
 		return MemoryProviderAggregateTelemetry{}, errors.New("invalid aggregate telemetry response")
 	}
-	storageBytes, storageOK := aggregateMetricNumber(values["storage_bytes"])
-	variableCostUSDTotal, costOK := aggregateMetricNumber(values["variable_cost_usd_total"])
+	storageRaw, storagePresent := values["storage_bytes"]
+	costRaw, costPresent := values["variable_cost_usd_total"]
+	if !storagePresent || !costPresent {
+		return MemoryProviderAggregateTelemetry{}, errors.New("invalid aggregate telemetry response")
+	}
+	var storageValue any
+	var costValue any
+	if json.Unmarshal(storageRaw, &storageValue) != nil || json.Unmarshal(costRaw, &costValue) != nil {
+		return MemoryProviderAggregateTelemetry{}, errors.New("invalid aggregate telemetry response")
+	}
+	storageBytes, storageOK := aggregateMetricNumber(storageValue)
+	variableCostUSDTotal, costOK := aggregateMetricNumber(costValue)
 	if !storageOK || !costOK {
 		return MemoryProviderAggregateTelemetry{}, errors.New("invalid aggregate telemetry response")
 	}
