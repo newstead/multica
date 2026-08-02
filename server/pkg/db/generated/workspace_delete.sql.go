@@ -403,6 +403,33 @@ func (q *Queries) DeleteWorkspaceLeafData(ctx context.Context, workspaceID pgtyp
 	return err
 }
 
+const deleteWorkspaceMemory = `-- name: DeleteWorkspaceMemory :exec
+WITH deleted_memory_events AS (
+    DELETE FROM memory_event WHERE workspace_id = $1
+),
+deleted_memory_deliveries AS (
+    DELETE FROM memory_provider_delivery WHERE workspace_id = $1
+),
+deleted_memory_recall_samples AS (
+    DELETE FROM memory_recall_sample WHERE workspace_id = $1
+),
+deleted_memory_telemetry AS (
+    DELETE FROM memory_dual_write_telemetry WHERE workspace_id = $1
+)
+DELETE FROM memory_workspace_config
+WHERE memory_workspace_config.workspace_id = $1
+`
+
+// MultMemory tables (memory gateway) carry no FK to workspace by design, so
+// they are not cascaded away with the workspace row. Sweep the workspace's
+// memory state explicitly: the auditable event ledger, the provider delivery
+// outbox, recall provenance samples, the workspace memory config, and the
+// dual-write telemetry.
+func (q *Queries) DeleteWorkspaceMemory(ctx context.Context, workspaceID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceMemory, workspaceID)
+	return err
+}
+
 const deleteWorkspacePullRequests = `-- name: DeleteWorkspacePullRequests :exec
 WITH deleted_github_prs AS (
     DELETE FROM github_pull_request
