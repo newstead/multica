@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -292,7 +293,7 @@ func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 	releaseFirst := make(chan struct{})
 	secondFetched := make(chan struct{})
 	applied := make(chan struct{}, 1)
-	fetchCalls := 0
+	var fetchCalls atomic.Int32
 
 	m := NewManager(enabledClient(t), q, pool, func(context.Context, pgtype.UUID) {
 		select {
@@ -304,8 +305,8 @@ func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 	m.sweepInterval = time.Hour
 	m.jitter = func() time.Duration { return 0 }
 	m.fetch = func(context.Context, *Client, int64, string, string, int32) (*PRSnapshot, error) {
-		fetchCalls++
-		if fetchCalls == 1 {
+		call := fetchCalls.Add(1)
+		if call == 1 {
 			close(firstStarted)
 			<-releaseFirst
 			return &PRSnapshot{
