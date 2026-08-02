@@ -12,8 +12,12 @@
  *   - `user.language` — UI locale only, never a runtime policy;
  *   - `agent.language_codes` — programming languages for identity badges.
  *
- * The UI and server validation restrict values to this supported list;
- * invalid/empty codes are treated as unset and inherit up the chain.
+ * AGENT_LANGUAGE_POLICY_VALUES is the canonical single source of truth for
+ * supported codes: the UI select imports it directly and the server
+ * allow-list/CHECK constraints mirror it (guarded by
+ * TestSupportedLanguagePoliciesMatchCore and the core pin test in
+ * language-policy.test.ts). Invalid/empty codes are treated as unset and
+ * inherit up the chain.
  */
 export const AGENT_LANGUAGE_POLICY_VALUES = [
   "ru",

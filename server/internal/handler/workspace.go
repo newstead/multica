@@ -185,7 +185,7 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.LanguagePolicy != nil && !validateLanguagePolicy(*req.LanguagePolicy) {
-		writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+		writeError(w, http.StatusBadRequest, languagePolicyHint)
 		return
 	}
 
@@ -332,7 +332,7 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 			clearLanguagePolicy = true
 		} else {
 			if !validateLanguagePolicy(*req.LanguagePolicy) {
-				writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+				writeError(w, http.StatusBadRequest, languagePolicyHint)
 				return
 			}
 			params.LanguagePolicy = normaliseLanguagePolicy(req.LanguagePolicy)

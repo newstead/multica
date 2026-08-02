@@ -66,11 +66,3 @@ SELECT project_id,
 FROM issue
 WHERE project_id = ANY(sqlc.arg('project_ids')::uuid[])
 GROUP BY project_id;
-
--- name: ClearProjectLanguagePolicy :one
--- Explicit NULL-clear for language_policy. UpdateProject sets the column
--- directly from a narg, so the API routes "no policy" requests here to keep
--- absent-key (preserve) and explicit-null (clear) distinguishable.
-UPDATE project SET language_policy = NULL, updated_at = now()
-WHERE id = $1
-RETURNING *;

@@ -220,6 +220,12 @@ func languagePolicyDisplayName(lang string) string {
 		return "Russian"
 	case "en":
 		return "English"
+	case "zh-Hans":
+		return "Simplified Chinese"
+	case "ja":
+		return "Japanese"
+	case "ko":
+		return "Korean"
 	default:
 		return ""
 	}

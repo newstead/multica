@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@multica/ui/components/ui/select";
+import { AGENT_LANGUAGE_POLICY_VALUES } from "@multica/core/types";
 import { useT } from "../../i18n";
 import { SettingsRow } from "./settings-layout";
 
@@ -47,11 +48,13 @@ export function LanguagePolicyField({
       value: UNSET_SENTINEL,
       label: t(($) => $.agent_language_policy.default_label),
     },
-    { value: "ru", label: t(($) => $.agent_language_policy.options.ru) },
-    { value: "en", label: t(($) => $.agent_language_policy.options.en) },
-    { value: "zh-Hans", label: t(($) => $.agent_language_policy.options["zh-Hans"]) },
-    { value: "ja", label: t(($) => $.agent_language_policy.options.ja) },
-    { value: "ko", label: t(($) => $.agent_language_policy.options.ko) },
+    // Single source of truth: the supported codes come from core
+    // (AGENT_LANGUAGE_POLICY_VALUES); only the display labels are localised
+    // here. Adding a code to core without an i18n label is a type error.
+    ...AGENT_LANGUAGE_POLICY_VALUES.map((code) => ({
+      value: code,
+      label: t(($) => $.agent_language_policy.options[code]),
+    })),
   ];
 
   return (

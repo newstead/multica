@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -42,15 +46,42 @@ func TestResolveLanguagePolicy(t *testing.T) {
 }
 
 func TestValidateLanguagePolicy(t *testing.T) {
-	for _, v := range []string{"ru", "en"} {
+	for _, v := range []string{"ru", "en", "zh-Hans", "ja", "ko"} {
 		if !validateLanguagePolicy(v) {
 			t.Errorf("validateLanguagePolicy(%q) = false, want true", v)
 		}
 	}
-	for _, v := range []string{"", "RU", "fr", "zh-Hans", "ru-ru"} {
+	for _, v := range []string{"", "RU", "fr", "zh-hans", "ZH-HANS", "ru-ru"} {
 		if validateLanguagePolicy(v) {
 			t.Errorf("validateLanguagePolicy(%q) = true, want false", v)
 		}
+	}
+}
+
+// TestSupportedLanguagePoliciesMatchCore guards the single-source-of-truth
+// contract: AGENT_LANGUAGE_POLICY_VALUES in
+// packages/core/types/language-policy.ts is canonical, and the Go allow-list
+// must mirror it exactly. go test runs with the working directory set to this
+// package, so the relative path resolves to the monorepo checkout.
+func TestSupportedLanguagePoliciesMatchCore(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "packages", "core", "types", "language-policy.ts")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read core language policy types: %v", err)
+	}
+	m := regexp.MustCompile(`AGENT_LANGUAGE_POLICY_VALUES\s*=\s*\[([^\]]*)\]`).FindSubmatch(raw)
+	if m == nil {
+		t.Fatalf("AGENT_LANGUAGE_POLICY_VALUES array not found in %s", path)
+	}
+	var core []string
+	for _, lit := range regexp.MustCompile(`"([^"]+)"`).FindAllSubmatch(m[1], -1) {
+		core = append(core, string(lit[1]))
+	}
+	if !slices.Equal(core, languagePolicyValues) {
+		t.Fatalf(
+			"core list %v != Go list %v: keep server/internal/handler/language_policy.go (and migration 239) in sync with packages/core/types/language-policy.ts",
+			core, languagePolicyValues,
+		)
 	}
 }
 
@@ -75,6 +106,7 @@ func TestClaimTaskByRuntime_LanguagePolicy(t *testing.T) {
 		{"workspace only", "", "", "ru", "ru"},
 		{"project overrides workspace", "", "en", "ru", "en"},
 		{"agent overrides project", "ru", "en", "ru", "ru"},
+		{"non-ru/en code flows through the chain", "ja", "en", "ru", "ja"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -306,5 +338,72 @@ func TestUpdateAgent_LanguagePolicy(t *testing.T) {
 	}
 	if !cleared {
 		t.Fatal("agent language_policy not cleared after empty string")
+	}
+}
+
+func TestUpdateProject_LanguagePolicy(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+
+	// Seed a project through the API and clean it up afterwards.
+	w := httptest.NewRecorder()
+	req := newRequest("POST", "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+		"title": "Language policy update project",
+	})
+	testHandler.CreateProject(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("seed CreateProject: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	if err := json.NewDecoder(w.Body).Decode(&project); err != nil {
+		t.Fatalf("decode CreateProject: %v", err)
+	}
+	t.Cleanup(func() {
+		req := newRequest("DELETE", "/api/projects/"+project.ID, nil)
+		req = withURLParam(req, "id", project.ID)
+		testHandler.DeleteProject(httptest.NewRecorder(), req)
+	})
+
+	// Set a supported code (beyond the original ru/en pair).
+	w = httptest.NewRecorder()
+	req = newRequest("PUT", "/api/projects/"+project.ID, map[string]any{"language_policy": "zh-Hans"})
+	req = withURLParam(req, "id", project.ID)
+	testHandler.UpdateProject(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("UpdateProject set: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got *string
+	if err := testPool.QueryRow(ctx, `SELECT language_policy FROM project WHERE id = $1`, project.ID).Scan(&got); err != nil {
+		t.Fatalf("load updated project policy: %v", err)
+	}
+	if got == nil || *got != "zh-Hans" {
+		t.Fatalf("project language_policy = %v, want zh-Hans", got)
+	}
+
+	// Unsupported value is rejected.
+	w = httptest.NewRecorder()
+	req = newRequest("PUT", "/api/projects/"+project.ID, map[string]any{"language_policy": "de"})
+	req = withURLParam(req, "id", project.ID)
+	testHandler.UpdateProject(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("UpdateProject invalid: expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Explicit null clears back to unset.
+	w = httptest.NewRecorder()
+	req = newRequest("PUT", "/api/projects/"+project.ID, map[string]any{"language_policy": nil})
+	req = withURLParam(req, "id", project.ID)
+	testHandler.UpdateProject(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("UpdateProject clear: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var cleared bool
+	if err := testPool.QueryRow(ctx, `SELECT language_policy IS NULL FROM project WHERE id = $1`, project.ID).Scan(&cleared); err != nil {
+		t.Fatalf("verify cleared project policy: %v", err)
+	}
+	if !cleared {
+		t.Fatal("project language_policy not cleared after explicit null")
 	}
 }

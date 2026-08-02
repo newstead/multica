@@ -11,37 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const clearProjectLanguagePolicy = `-- name: ClearProjectLanguagePolicy :one
-UPDATE project SET language_policy = NULL, updated_at = now()
-WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, language_policy
-`
-
-// Explicit NULL-clear for language_policy. UpdateProject sets the column
-// directly from a narg, so the API routes "no policy" requests here to keep
-// absent-key (preserve) and explicit-null (clear) distinguishable.
-func (q *Queries) ClearProjectLanguagePolicy(ctx context.Context, id pgtype.UUID) (Project, error) {
-	row := q.db.QueryRow(ctx, clearProjectLanguagePolicy, id)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.Title,
-		&i.Description,
-		&i.Icon,
-		&i.Status,
-		&i.LeadType,
-		&i.LeadID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.Priority,
-		&i.StartDate,
-		&i.DueDate,
-		&i.LanguagePolicy,
-	)
-	return i, err
-}
-
 const countIssuesByProject = `-- name: CountIssuesByProject :one
 SELECT count(*) FROM issue
 WHERE project_id = $1
