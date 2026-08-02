@@ -283,7 +283,7 @@ func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	pr := seedPR(t, pool, q, "A")
+	pr := seedPRAt(t, pool, q, 987654, "trailing-"+randHex(t), 4242, "A")
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM github_pull_request_check_run WHERE pr_id=$1`, pr.ID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM github_pull_request WHERE id=$1`, pr.ID)
@@ -295,7 +295,10 @@ func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 	applied := make(chan struct{}, 1)
 	var fetchCalls atomic.Int32
 
-	m := NewManager(enabledClient(t), q, pool, func(context.Context, pgtype.UUID) {
+	m := NewManager(enabledClient(t), q, pool, func(_ context.Context, prID pgtype.UUID) {
+		if prID != pr.ID {
+			return
+		}
 		select {
 		case applied <- struct{}{}:
 		default:
