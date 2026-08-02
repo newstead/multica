@@ -38,7 +38,7 @@ provider/runtime кастомизации с evidence и явными замет
 
 ## 5. Workspace memory route/auth behavior — сохранено
 
-- `server/cmd/server/router.go`: memory-блок без изменений — GET `/memory/config`, `/memory/mem0-board`, `/memory/recall`, `/memory/recall-samples`, `/memory/audit`, `/memory/audit/export` (member-visible), PUT `/memory/config`, `/memory/events/retain`, `/memory/audit/{eventId}/correct|invalidate|delete`, `/memory/erase` (admin-gated).
+- `server/cmd/server/router.go`: memory-блок без изменений — GET `/memory/config`, `/memory/mem0-board`, `/memory/recall-samples`, `/memory/audit`, `/memory/audit/export` и POST `/memory/recall` (member-visible), PUT `/memory/config`, POST `/memory/events/retain`, POST `/memory/audit/{eventId}/correct|invalidate`, DELETE `/memory/audit/{eventId}`, POST `/memory/erase` (admin-gated).
 - Auth-логика в `server/internal/handler/memory.go` — без изменений.
 - Дополнение (не регрессия): `DeleteWorkspaceMemory` в `server/internal/handler/workspace.go` + `workspace_delete.sql` sweep 5 memory-таблиц — из PR #48.
 
