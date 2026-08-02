@@ -34,10 +34,14 @@ type ProjectResponse struct {
 	// timezone — same contract as issue.start_date / issue.due_date.
 	StartDate  *string `json:"start_date"`
 	DueDate    *string `json:"due_date"`
-	CreatedAt  string  `json:"created_at"`
-	UpdatedAt  string  `json:"updated_at"`
-	IssueCount int64   `json:"issue_count"`
-	DoneCount  int64   `json:"done_count"`
+	// LanguagePolicy is the project-level runtime language policy (BCP-47).
+	// It overrides the workspace policy for tasks bound to this project and
+	// is itself overridden by the assigned agent's policy. NULL = unset.
+	LanguagePolicy *string `json:"language_policy"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
+	IssueCount     int64   `json:"issue_count"`
+	DoneCount      int64   `json:"done_count"`
 	// ResourceCount is a breadcrumb pointing at the sub-collection at
 	// /api/projects/{id}/resources. Resources themselves stay out of this
 	// payload to keep parent metadata and child collections separate; clients
@@ -56,10 +60,11 @@ func projectToResponse(p db.Project) ProjectResponse {
 		Priority:    p.Priority,
 		LeadType:    textToPtr(p.LeadType),
 		LeadID:      uuidToPtr(p.LeadID),
-		StartDate:   dateToPtr(p.StartDate),
-		DueDate:     dateToPtr(p.DueDate),
-		CreatedAt:   timestampToString(p.CreatedAt),
-		UpdatedAt:   timestampToString(p.UpdatedAt),
+		StartDate:      dateToPtr(p.StartDate),
+		DueDate:        dateToPtr(p.DueDate),
+		LanguagePolicy: textToPtr(p.LanguagePolicy),
+		CreatedAt:      timestampToString(p.CreatedAt),
+		UpdatedAt:      timestampToString(p.UpdatedAt),
 	}
 }
 
@@ -89,7 +94,10 @@ type CreateProjectRequest struct {
 	LeadID      *string                               `json:"lead_id"`
 	StartDate   *string                               `json:"start_date"`
 	DueDate     *string                               `json:"due_date"`
-	Resources   []CreateProjectResourceRequestPayload `json:"resources,omitempty"`
+	// LanguagePolicy is the project-level runtime language policy (BCP-47).
+	// Empty/absent = unset; allowed values are validated below.
+	LanguagePolicy *string                               `json:"language_policy"`
+	Resources      []CreateProjectResourceRequestPayload `json:"resources,omitempty"`
 }
 
 // CreateProjectResourceRequestPayload mirrors CreateProjectResourceRequest but
@@ -112,6 +120,9 @@ type UpdateProjectRequest struct {
 	LeadID      *string `json:"lead_id"`
 	StartDate   *string `json:"start_date"`
 	DueDate     *string `json:"due_date"`
+	// LanguagePolicy is tri-state: absent = no change; null or "" = clear
+	// back to unset; a supported code = set.
+	LanguagePolicy *string `json:"language_policy"`
 }
 
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
@@ -260,6 +271,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	if !validateProjectEnum(w, "priority", priority, validProjectPriorities) {
 		return
 	}
+	if req.LanguagePolicy != nil && !validateLanguagePolicy(*req.LanguagePolicy) {
+		writeError(w, http.StatusBadRequest, languagePolicyHint)
+		return
+	}
 	var leadType pgtype.Text
 	var leadID pgtype.UUID
 	if req.LeadType != nil {
@@ -342,9 +357,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		Status:      status,
 		LeadType:    leadType,
 		LeadID:      leadID,
-		Priority:    priority,
-		StartDate:   startDate,
-		DueDate:     dueDate,
+		Priority:       priority,
+		StartDate:      startDate,
+		DueDate:        dueDate,
+		LanguagePolicy: normaliseLanguagePolicy(req.LanguagePolicy),
 	}
 
 	// Without resources, keep the simple non-tx path.
@@ -471,13 +487,14 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	json.Unmarshal(bodyBytes, &rawFields)
 
 	params := db.UpdateProjectParams{
-		ID:          prevProject.ID,
-		Description: prevProject.Description,
-		Icon:        prevProject.Icon,
-		LeadType:    prevProject.LeadType,
-		LeadID:      prevProject.LeadID,
-		StartDate:   prevProject.StartDate,
-		DueDate:     prevProject.DueDate,
+		ID:             prevProject.ID,
+		Description:    prevProject.Description,
+		Icon:           prevProject.Icon,
+		LeadType:       prevProject.LeadType,
+		LeadID:         prevProject.LeadID,
+		StartDate:      prevProject.StartDate,
+		DueDate:        prevProject.DueDate,
+		LanguagePolicy: prevProject.LanguagePolicy,
 	}
 	if req.Title != nil {
 		params.Title = pgtype.Text{String: *req.Title, Valid: true}
@@ -524,6 +541,21 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 			params.LeadID = leadUUID
 		} else {
 			params.LeadID = pgtype.UUID{Valid: false}
+		}
+	}
+	// language_policy is tri-state: absent key preserves the stored value
+	// (params was seeded from prevProject above); present key with a
+	// supported code sets it; present key with null/"" clears it back to
+	// unset (invalid pgtype.Text{} writes NULL through the direct narg).
+	if _, ok := rawFields["language_policy"]; ok {
+		if req.LanguagePolicy != nil && strings.TrimSpace(*req.LanguagePolicy) != "" {
+			if !validateLanguagePolicy(*req.LanguagePolicy) {
+				writeError(w, http.StatusBadRequest, languagePolicyHint)
+				return
+			}
+			params.LanguagePolicy = normaliseLanguagePolicy(req.LanguagePolicy)
+		} else {
+			params.LanguagePolicy = pgtype.Text{} // explicit null = clear
 		}
 	}
 	// Dates follow the issue contract: a present key with an empty/null value

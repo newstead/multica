@@ -21,6 +21,13 @@ export interface Project {
   issue_count: number;
   done_count: number;
   resource_count: number;
+  /**
+   * Language policy for agent task output in this project (BCP-47, e.g.
+   * "ru"). Overrides the workspace policy; `null` means unset (inherit from
+   * the workspace). See `packages/core/types/language-policy.ts`. Optional
+   * so projects from older backends still parse; treat missing as unset.
+   */
+  language_policy?: string | null;
 }
 
 export interface CreateProjectRequest {
@@ -33,6 +40,11 @@ export interface CreateProjectRequest {
   lead_id?: string;
   start_date?: string;
   due_date?: string;
+  /**
+   * Language policy override for agent task output (BCP-47). Omitted keeps
+   * the default; `null` clears any project-level policy.
+   */
+  language_policy?: string | null;
   // Resources to attach in the same transaction as the project. Server returns
   // 4xx (and rolls back) if any one is invalid or duplicate.
   resources?: CreateProjectResourceRequest[];
@@ -49,6 +61,11 @@ export interface UpdateProjectRequest {
   // Omit the key to leave the date untouched; send null (or "") to clear it.
   start_date?: string | null;
   due_date?: string | null;
+  /**
+   * Language policy override for agent task output (BCP-47). Omitted = no
+   * change; `null` = clear (inherit from the workspace).
+   */
+  language_policy?: string | null;
 }
 
 export interface ListProjectsResponse {

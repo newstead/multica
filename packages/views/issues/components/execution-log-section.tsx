@@ -458,6 +458,7 @@ function RowShell({
           actorId={task.agent_id}
           size="sm"
           enableHoverCard
+          identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
         />
       ) : (
         <span className="inline-block h-5 w-5 shrink-0 rounded-full bg-muted" />

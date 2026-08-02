@@ -829,5 +829,37 @@
   "actions": {
     "selected_other": "{{count}} 件選択中",
     "clear_selection": "選択を解除"
+  },
+  "identity": {
+    "role_unset": "ロール未設定",
+    "language_unset": "言語未設定",
+    "roles": {
+      "TL": "テックリード",
+      "BE": "バックエンドエンジニア",
+      "FE": "フロントエンドエンジニア",
+      "FS": "フルスタックエンジニア",
+      "QA": "品質保証",
+      "OPS": "運用 / DevOps",
+      "ML": "機械学習",
+      "DA": "データアナリスト",
+      "SRE": "サイト信頼性",
+      "SEC": "セキュリティ"
+    },
+    "languages": {
+      "GO": "Go",
+      "PY": "Python",
+      "TS": "TypeScript",
+      "JS": "JavaScript",
+      "RS": "Rust",
+      "SH": "Shell",
+      "RB": "Ruby",
+      "JV": "Java",
+      "KT": "Kotlin",
+      "SW": "Swift",
+      "CS": "C#",
+      "CP": "C++",
+      "SC": "Scala",
+      "EL": "Elixir"
+    }
   }
 }

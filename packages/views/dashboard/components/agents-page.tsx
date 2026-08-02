@@ -65,6 +65,7 @@ import {
 import {
   aggregateDailyTokens,
   computeDailyTotals,
+  filterDailyRowsToWindow,
   formatDuration,
 } from "../utils";
 
@@ -132,6 +133,11 @@ export function AgentsUsagePage() {
   const sessions = sessionsQuery.data ?? EMPTY_SESSIONS;
   const codeRows = codeQuery.data ?? EMPTY_CODE;
 
+  const dailyUsageInWindow = useMemo(
+    () => filterDailyRowsToWindow(dailyUsage, days, viewTZ),
+    [dailyUsage, days, viewTZ],
+  );
+
   const isLoading =
     dailyQuery.isLoading ||
     byAgentQuery.isLoading ||
@@ -153,8 +159,14 @@ export function AgentsUsagePage() {
     };
   }, [agents, t]);
 
-  const dailyTokens = useMemo(() => aggregateDailyTokens(dailyUsage), [dailyUsage]);
-  const totals = useMemo(() => computeDailyTotals(dailyUsage), [dailyUsage]);
+  const dailyTokens = useMemo(
+    () => aggregateDailyTokens(dailyUsageInWindow),
+    [dailyUsageInWindow],
+  );
+  const totals = useMemo(
+    () => computeDailyTotals(dailyUsageInWindow),
+    [dailyUsageInWindow],
+  );
   const sessionTotals = useMemo(() => computeSessionTotals(sessions), [sessions]);
   const codeTotals = useMemo(() => computeCodeTotals(codeRows), [codeRows]);
   const cacheHitRatio = computeCacheHitRatio(totals.cacheRead, totals.input);
@@ -247,7 +259,12 @@ export function AgentsUsagePage() {
             value={projectValue}
             onChange={setProjectValue}
           />
-          <Segmented value={days} onChange={setDays} options={RANGE_OPTIONS} />
+          <Segmented
+            label={t(($) => $.filter.period_label)}
+            value={days}
+            onChange={setDays}
+            options={RANGE_OPTIONS}
+          />
         </div>
       </PageHeader>
 

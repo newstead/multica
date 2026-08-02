@@ -68,6 +68,11 @@ type Task struct {
 	// regardless of task kind so the daemon can inject `## Workspace Context`
 	// into the brief. Empty when the owner hasn't set one.
 	WorkspaceContext              string                      `json:"workspace_context,omitempty"`
+	// LanguagePolicy is the resolved runtime language policy for this task
+	// (agent > project > workspace, BCP-47 such as "ru"). The server resolves
+	// it at claim time and the daemon renders the brief's Language Policy
+	// section from it. Empty when no policy is set anywhere.
+	LanguagePolicy                string                      `json:"language_policy,omitempty"`
 	ThreadName                    string                      `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
 	Agent                         *AgentData                  `json:"agent,omitempty"`
 	ConnectedApps                 []ConnectedAppData          `json:"connected_apps,omitempty"` // per-run app capabilities mounted through runtime MCP overlays

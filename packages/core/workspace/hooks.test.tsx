@@ -95,4 +95,38 @@ describe("useActorName", () => {
     expect(result.current.getActorName("agent", "agent-1")).toBe("Walt");
     expect(result.current.getActorName("squad", "squad-1")).toBe("Core");
   });
+
+  it("resolves optional agent identity metadata defensively", () => {
+    const members = [{ user_id: "user-1", name: "Ada", avatar_url: null }];
+    const agents = [
+      {
+        id: "agent-1",
+        name: "Walt",
+        avatar_url: null,
+        role_code: "BE",
+        language_codes: ["GO", "PY"],
+      },
+    ];
+    const squads = [{ id: "squad-1", name: "Core", avatar_url: null }];
+    setApiInstance({
+      listMembers: () => Promise.resolve(members),
+      listAgents: () => Promise.resolve(agents),
+      listSquads: () => Promise.resolve(squads),
+    } as unknown as ApiClient);
+    qc.setQueryData(workspaceKeys.members("ws-1"), members);
+    qc.setQueryData(workspaceKeys.agents("ws-1"), agents);
+    qc.setQueryData(workspaceKeys.squads("ws-1"), squads);
+
+    const { result } = renderHook(() => useActorName(), {
+      wrapper: createWrapper(qc),
+    });
+
+    expect(result.current.getAgentIdentity("agent", "agent-1")).toEqual({
+      roleCode: "BE",
+      languageCodes: ["GO", "PY"],
+    });
+    expect(result.current.getAgentIdentity("member", "user-1")).toBeNull();
+    expect(result.current.getAgentIdentity("agent", "missing")).toBeNull();
+  });
+
 });

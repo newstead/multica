@@ -46,6 +46,7 @@ import {
   type SettingsSaveStatus,
 } from "./settings-layout";
 import { useAutoSave } from "./use-auto-save";
+import { LanguagePolicyRow } from "./language-policy-field";
 
 interface WorkspaceDetailsDraft {
   name: string;
@@ -411,6 +412,33 @@ export function WorkspaceTab() {
               placeholder={t(($) => $.workspace.context_placeholder)}
             />
           </SettingsRow>
+
+          <LanguagePolicyRow
+            value={workspace.language_policy ?? null}
+            disabled={!canManageWorkspace}
+            onChange={async (next) => {
+              if (!workspace) return;
+              try {
+                const updated = await api.updateWorkspace(workspace.id, {
+                  language_policy: next,
+                });
+                qc.setQueryData(
+                  workspaceKeys.list(),
+                  (old: Workspace[] | undefined) =>
+                    old?.map((ws) => (ws.id === updated.id ? updated : ws)),
+                );
+                toast.success(t(($) => $.workspace.toast_saved), {
+                  id: "settings-auto-save",
+                });
+              } catch (error) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : t(($) => $.workspace.toast_save_failed),
+                );
+              }
+            }}
+          />
 
           <SettingsRow
             label={t(($) => $.workspace.slug_label)}

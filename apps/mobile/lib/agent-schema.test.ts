@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { AgentSchema } from "../data/schemas";
 
+describe("AgentSchema identity metadata", () => {
+  it("defaults missing identity metadata to no badge", () => {
+    const parsed = AgentSchema.parse({ id: "agent-1" });
+
+    expect(parsed.role_code).toBeUndefined();
+    expect(parsed.language_codes).toEqual([]);
+  });
+
+  it("parses identity metadata without rejecting future display codes", () => {
+    const parsed = AgentSchema.parse({
+      id: "agent-1",
+      role_code: "BE",
+      language_codes: ["GO", "PY"],
+    });
+
+    expect(parsed.role_code).toBe("BE");
+    expect(parsed.language_codes).toEqual(["GO", "PY"]);
+  });
+});
+
 describe("AgentSchema invocation permissions", () => {
   it("defaults missing invocation permissions to private access", () => {
     const parsed = AgentSchema.parse({ id: "agent-1" });

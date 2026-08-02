@@ -86,6 +86,8 @@ export type { Comment, CommentType, CommentAuthorType, CommentTriggerPreview, Co
 export type { Label, LabelResourceType, CreateLabelRequest, UpdateLabelRequest, ListLabelsResponse, IssueLabelsResponse, ResourceLabelsResponse } from "./label";
 export type { IssueProperty, IssuePropertyType, IssuePropertyOption, IssuePropertyConfig, IssuePropertyValue, IssuePropertyValues, CreatePropertyRequest, UpdatePropertyRequest, ListPropertiesResponse, IssuePropertiesResponse } from "./property";
 export { ISSUE_PROPERTY_TYPES, isKnownPropertyType } from "./property";
+export { AGENT_LANGUAGE_POLICY_VALUES, isAgentLanguagePolicy } from "./language-policy";
+export type { AgentLanguagePolicy } from "./language-policy";
 export type {
   TimelineEntry,
   AssigneeFrequencyEntry,

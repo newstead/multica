@@ -44,8 +44,13 @@ type WorkspaceResponse struct {
 	Repos       any     `json:"repos"`
 	IssuePrefix string  `json:"issue_prefix"`
 	AvatarURL   *string `json:"avatar_url"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	// LanguagePolicy is the workspace-level runtime language policy (BCP-47,
+	// e.g. "ru"). It is separate from the UI locale (user.language): it only
+	// controls agent-authored output via the runtime brief. NULL = unset
+	// (inherit project/agent overrides or keep current behavior).
+	LanguagePolicy *string `json:"language_policy"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 func workspaceToResponse(w db.Workspace) WorkspaceResponse {
@@ -71,10 +76,11 @@ func workspaceToResponse(w db.Workspace) WorkspaceResponse {
 		Context:     textToPtr(w.Context),
 		Settings:    settings,
 		Repos:       repos,
-		IssuePrefix: w.IssuePrefix,
-		AvatarURL:   textToPtr(w.AvatarUrl),
-		CreatedAt:   timestampToString(w.CreatedAt),
-		UpdatedAt:   timestampToString(w.UpdatedAt),
+		IssuePrefix:    w.IssuePrefix,
+		AvatarURL:      textToPtr(w.AvatarUrl),
+		LanguagePolicy: textToPtr(w.LanguagePolicy),
+		CreatedAt:      timestampToString(w.CreatedAt),
+		UpdatedAt:      timestampToString(w.UpdatedAt),
 	}
 }
 
@@ -137,6 +143,9 @@ type CreateWorkspaceRequest struct {
 	Description *string `json:"description"`
 	Context     *string `json:"context"`
 	IssuePrefix *string `json:"issue_prefix"`
+	// LanguagePolicy is the workspace-level runtime language policy (BCP-47).
+	// Empty/absent = unset; allowed values are validated below.
+	LanguagePolicy *string `json:"language_policy"`
 }
 
 func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +184,10 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "slug is reserved")
 		return
 	}
+	if req.LanguagePolicy != nil && !validateLanguagePolicy(*req.LanguagePolicy) {
+		writeError(w, http.StatusBadRequest, languagePolicyHint)
+		return
+	}
 
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
@@ -190,11 +203,12 @@ func (h *Handler) CreateWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	qtx := h.Queries.WithTx(tx)
 	ws, err := qtx.CreateWorkspace(r.Context(), db.CreateWorkspaceParams{
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Description: ptrToText(req.Description),
-		Context:     ptrToText(req.Context),
-		IssuePrefix: issuePrefix,
+		Name:           req.Name,
+		Slug:           req.Slug,
+		Description:    ptrToText(req.Description),
+		Context:        ptrToText(req.Context),
+		IssuePrefix:    issuePrefix,
+		LanguagePolicy: normaliseLanguagePolicy(req.LanguagePolicy),
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -249,6 +263,9 @@ type UpdateWorkspaceRequest struct {
 	Repos       any     `json:"repos"`
 	IssuePrefix *string `json:"issue_prefix"`
 	AvatarURL   *string `json:"avatar_url"`
+	// LanguagePolicy is tri-state: absent = no change; null or "" = clear
+	// back to unset; a supported code = set. Same contract as context.
+	LanguagePolicy *string `json:"language_policy"`
 }
 
 type workspaceRepoRef struct {
@@ -300,13 +317,26 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateWorkspaceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	rawFields, err := decodeJSONBodyWithRawFields(r.Body, &req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	params := db.UpdateWorkspaceParams{
 		ID: idUUID,
+	}
+	clearLanguagePolicy := false
+	if _, ok := rawFields["language_policy"]; ok {
+		if req.LanguagePolicy == nil || strings.TrimSpace(*req.LanguagePolicy) == "" {
+			clearLanguagePolicy = true
+		} else {
+			if !validateLanguagePolicy(*req.LanguagePolicy) {
+				writeError(w, http.StatusBadRequest, languagePolicyHint)
+				return
+			}
+			params.LanguagePolicy = normaliseLanguagePolicy(req.LanguagePolicy)
+		}
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
@@ -349,6 +379,15 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("update workspace failed", append(logger.RequestAttrs(r), "error", err, "workspace_id", id)...)
 		writeError(w, http.StatusInternalServerError, "failed to update workspace: "+err.Error())
 		return
+	}
+	if clearLanguagePolicy {
+		cleared, cerr := h.Queries.ClearWorkspaceLanguagePolicy(r.Context(), idUUID)
+		if cerr != nil {
+			slog.Warn("clear workspace language_policy failed", append(logger.RequestAttrs(r), "error", cerr, "workspace_id", id)...)
+			writeError(w, http.StatusInternalServerError, "failed to clear workspace language_policy")
+			return
+		}
+		ws = cleared
 	}
 
 	slog.Info("workspace updated", append(logger.RequestAttrs(r), "workspace_id", id)...)
