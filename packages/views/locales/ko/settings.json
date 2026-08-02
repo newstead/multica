@@ -5,6 +5,19 @@
     "failed": "저장하지 못했습니다",
     "toast_saved": "변경사항을 저장했습니다"
   },
+  "agent_language_policy": {
+    "title": "에이전트 언어",
+    "hint": "에이전트가 작업 댓글, 핸드오프, 블로커 보고서, 작업 요약에 사용하는 언어입니다. UI 언어와는 별개입니다.",
+    "default_label": "기본값(정책 없음)",
+    "default_hint": "재정의하지 않음 — 워크스페이스 기본값을 상속하며, 어디에도 설정되지 않으면 현재 동작을 유지합니다.",
+    "options": {
+      "ru": "러시아어",
+      "en": "영어",
+      "zh-Hans": "중국어 간체",
+      "ja": "일본어",
+      "ko": "한국어"
+    }
+  },
   "preferences": {
     "general_title": "일반",
     "theme": {

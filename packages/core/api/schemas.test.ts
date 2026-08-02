@@ -931,6 +931,31 @@ describe("SearchProjectsResponseSchema date drift", () => {
     expect(parsed.projects[0]?.start_date).toBeNull();
     expect(parsed.projects[0]?.due_date).toBeNull();
   });
+
+  it("reads back language_policy when the backend returns it", () => {
+    const parsed = parseWithFallback(
+      { projects: [{ ...baseProject, language_policy: "ru" }], total: 1 },
+      SearchProjectsResponseSchema,
+      EMPTY_SEARCH_PROJECTS_RESPONSE,
+      ENDPOINT,
+    );
+    expect(parsed.projects[0]?.language_policy).toBe("ru");
+  });
+
+  // Frontend deploys before backend: an older backend omits the new key. The
+  // .default(null) must keep the batch parseable (→ null), so search results
+  // are not degraded to the empty fallback by the language policy field.
+  it("defaults missing language_policy to null without dropping results", () => {
+    const parsed = parseWithFallback(
+      { projects: [baseProject], total: 1 },
+      SearchProjectsResponseSchema,
+      EMPTY_SEARCH_PROJECTS_RESPONSE,
+      ENDPOINT,
+    );
+    expect(parsed).not.toBe(EMPTY_SEARCH_PROJECTS_RESPONSE);
+    expect(parsed.projects).toHaveLength(1);
+    expect(parsed.projects[0]?.language_policy).toBeNull();
+  });
 });
 
 // The "run now" flow branches on run.status/reason_code to avoid a false-success

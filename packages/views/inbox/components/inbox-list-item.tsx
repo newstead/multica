@@ -77,6 +77,7 @@ export function InboxListItem({
         actorId={item.actor_id ?? item.recipient_id}
         size="lg"
         enableHoverCard
+        identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">

@@ -24,16 +24,24 @@ vi.mock("../../common/actor-avatar", () => ({
     actorType,
     actorId,
     showStatusDot,
+    identityBadge,
   }: {
     actorType: string;
     actorId: string;
     showStatusDot?: boolean;
+    identityBadge?: { variant?: string; hostMode?: string } | boolean;
   }) => (
     <span
       data-testid="actor-avatar"
       data-actor-type={actorType}
       data-actor-id={actorId}
       data-show-status-dot={showStatusDot === true ? "true" : "false"}
+      data-identity-variant={
+        typeof identityBadge === "object" ? identityBadge.variant ?? "" : ""
+      }
+      data-identity-host-mode={
+        typeof identityBadge === "object" ? identityBadge.hostMode ?? "" : ""
+      }
     />
   ),
 }));
@@ -143,6 +151,12 @@ describe("InboxListItem issue activity", () => {
     expect(
       getByTestId("issue-agent-activity").getAttribute("data-issue-id"),
     ).toBe("issue-1");
+    expect(getByTestId("actor-avatar").getAttribute("data-identity-variant")).toBe(
+      "corner-tag",
+    );
+    expect(getByTestId("actor-avatar").getAttribute("data-identity-host-mode")).toBe(
+      "owned",
+    );
   });
 
   it("shows the activity badge without its hover card", () => {

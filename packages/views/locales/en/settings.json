@@ -5,6 +5,19 @@
     "failed": "Couldn't save",
     "toast_saved": "Changes saved"
   },
+  "agent_language_policy": {
+    "title": "Agent language",
+    "hint": "The language agents use for issue comments, handoffs, blocker reports, and task summaries. This is separate from the UI language.",
+    "default_label": "Default (no policy)",
+    "default_hint": "No override — inherits the workspace default, or keeps the current behavior when unset everywhere.",
+    "options": {
+      "ru": "Russian",
+      "en": "English",
+      "zh-Hans": "Simplified Chinese",
+      "ja": "Japanese",
+      "ko": "Korean"
+    }
+  },
   "preferences": {
     "general_title": "General",
     "theme": {

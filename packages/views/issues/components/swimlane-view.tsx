@@ -1632,6 +1632,7 @@ function DraggableSwimLane({
               actorType={lane.actor.type}
               actorId={lane.actor.id}
               size="sm"
+              identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
             />
           )}
           <span className="truncate text-sm font-semibold">{lane.title}</span>

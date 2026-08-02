@@ -23,6 +23,7 @@ import { useAutoSave } from "../../settings/components/use-auto-save";
 import { useT } from "../../i18n";
 import { CharCounter } from "./char-counter";
 import { ResourceLabelPicker } from "../../labels/resource-label-picker";
+import { LanguagePolicyRow } from "../../settings/components/language-policy-field";
 import { ModelPicker } from "./inspector/model-picker";
 import {
   buildModelChangeUpdate,
@@ -235,6 +236,11 @@ export function AgentDetailInspector({
               canEdit={canEdit}
             />
           </SettingsRow>
+          <LanguagePolicyRow
+            value={agent.language_policy ?? null}
+            disabled={!canEdit}
+            onChange={(next) => update({ language_policy: next })}
+          />
         </SettingsCard>
       </SettingsSection>
 

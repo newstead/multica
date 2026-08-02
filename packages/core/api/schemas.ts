@@ -648,6 +648,10 @@ const ProjectSchema = z.object({
   // object — which would degrade a search/list batch to the empty fallback.
   start_date: z.string().nullable().default(null),
   due_date: z.string().nullable().default(null),
+  // Language policy for agent task output (BCP-47). .default(null) keeps a
+  // project from an older backend (frontend deployed before the backend
+  // migration) parseable: missing key -> null instead of failing the batch.
+  language_policy: z.string().nullable().default(null),
   created_at: z.string(),
   updated_at: z.string(),
   issue_count: z.number().default(0),

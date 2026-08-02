@@ -44,12 +44,7 @@ import {
 } from "../../runtimes/components/charts";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
-import {
-  addDaysIso,
-  aggregateByWeek,
-  formatTokens,
-  todayIso,
-} from "../../runtimes/utils";
+import { aggregateByWeek, formatTokens } from "../../runtimes/utils";
 import { useT } from "../../i18n";
 import {
   ALL_PROJECTS,
@@ -72,6 +67,7 @@ import {
   aggregateDailyTokens,
   aggregateFailureClasses,
   aggregateFailureReasons,
+  filterDailyRowsToWindow,
   aggregateWeeklyErrors,
   aggregateWeeklyTasks,
   aggregateWeeklyTime,
@@ -196,21 +192,17 @@ export function DashboardPage() {
   // lands on the same calendar boundary. Applied in both dims so 1d strictly
   // means "today" even at the midnight edge where a wall-clock cutoff would
   // otherwise include yesterday.
-  const dailyCutoffIso = useMemo(
-    () => addDaysIso(todayIso(viewTZ), -(days - 1)),
-    [days, viewTZ],
-  );
   const dailyUsageInWindow = useMemo(
-    () => dailyUsage.filter((u) => u.date >= dailyCutoffIso),
-    [dailyUsage, dailyCutoffIso],
+    () => filterDailyRowsToWindow(dailyUsage, days, viewTZ),
+    [dailyUsage, days, viewTZ],
   );
   const runTimeDailyInWindow = useMemo(
-    () => runTimeDailyRows.filter((r) => r.date >= dailyCutoffIso),
-    [runTimeDailyRows, dailyCutoffIso],
+    () => filterDailyRowsToWindow(runTimeDailyRows, days, viewTZ),
+    [runTimeDailyRows, days, viewTZ],
   );
   const failureDailyInWindow = useMemo(
-    () => failureDailyRows.filter((r) => r.date >= dailyCutoffIso),
-    [failureDailyRows, dailyCutoffIso],
+    () => filterDailyRowsToWindow(failureDailyRows, days, viewTZ),
+    [failureDailyRows, days, viewTZ],
   );
 
   const isLoading =

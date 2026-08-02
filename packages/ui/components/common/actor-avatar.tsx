@@ -15,6 +15,7 @@ interface ActorAvatarProps {
   name: string;
   initials: string;
   avatarUrl?: string | null;
+  ariaLabel?: string;
   isAgent?: boolean;
   isSystem?: boolean;
   isSquad?: boolean;
@@ -26,6 +27,7 @@ function ActorAvatar({
   name,
   initials,
   avatarUrl,
+  ariaLabel,
   isAgent,
   isSystem,
   isSquad,
@@ -46,6 +48,8 @@ function ActorAvatar({
   return (
     <div
       data-slot="avatar"
+      role={ariaLabel ? "img" : undefined}
+      aria-label={ariaLabel}
       className={cn(
         "inline-flex shrink-0 items-center justify-center font-medium overflow-hidden",
         (!avatarUrl || emoji || imgError) && "bg-muted text-muted-foreground",
@@ -59,7 +63,8 @@ function ActorAvatar({
       {emoji ? (
         <span
           role="img"
-          aria-label={name}
+          aria-label={ariaLabel ? undefined : name}
+          aria-hidden={ariaLabel ? true : undefined}
           className="select-none leading-none"
           style={{ fontSize: px * 0.58 }}
         >
@@ -68,7 +73,8 @@ function ActorAvatar({
       ) : avatarUrl && !imgError ? (
         <img
           src={avatarUrl}
-          alt={name}
+          alt={ariaLabel ? "" : name}
+          aria-hidden={ariaLabel ? true : undefined}
           className="h-full w-full object-cover"
           onError={() => setImgError(true)}
         />

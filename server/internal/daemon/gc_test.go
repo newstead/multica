@@ -276,6 +276,51 @@ func TestCleanTaskDir_RemovesDirectory(t *testing.T) {
 	}
 }
 
+func TestCleanTaskDir_RemovesReadOnlyGoModuleTree(t *testing.T) {
+	t.Parallel()
+	d := newGCTestDaemon(t, http.NewServeMux())
+	taskDir := createTaskDir(t, d.cfg.WorkspacesRoot, "ws1", "readonly-go", nil)
+	modDir := filepath.Join(taskDir, "home", "go", "pkg", "mod", "example.com", "mod@v1.0.0")
+	if err := os.MkdirAll(filepath.Join(modDir, "subpkg"), 0o755); err != nil {
+		t.Fatalf("mkdir module tree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(modDir, "subpkg", "go.mod"), []byte("module example.com/mod\n"), 0o444); err != nil {
+		t.Fatalf("write module file: %v", err)
+	}
+	for _, dir := range []string{filepath.Join(modDir, "subpkg"), modDir} {
+		if err := os.Chmod(dir, 0o555); err != nil {
+			t.Fatalf("chmod %s: %v", dir, err)
+		}
+	}
+	t.Cleanup(func() { _ = execenv.RemoveAllWritable(taskDir) })
+
+	d.cleanTaskDir(taskDir)
+
+	if _, err := os.Stat(taskDir); !os.IsNotExist(err) {
+		t.Fatalf("task dir should be removed after cleanup, stat err=%v", err)
+	}
+}
+
+func TestRunGC_SkipsDaemonCacheDir(t *testing.T) {
+	t.Parallel()
+	d := newGCTestDaemon(t, http.NewServeMux())
+	d.cfg.GCOrphanTTL = 0
+	goCache := filepath.Join(d.cfg.WorkspacesRoot, ".cache", "go", "mod")
+	if err := os.MkdirAll(goCache, 0o755); err != nil {
+		t.Fatalf("mkdir go cache: %v", err)
+	}
+	old := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(filepath.Dir(goCache), old, old); err != nil {
+		t.Fatalf("chtimes go cache parent: %v", err)
+	}
+
+	d.runGC(context.Background())
+
+	if info, err := os.Stat(goCache); err != nil || !info.IsDir() {
+		t.Fatalf("daemon shared Go cache must survive workspace GC: info=%v err=%v", info, err)
+	}
+}
+
 func TestGcWorkspace_CleansEmptyWorkspaceDir(t *testing.T) {
 	t.Parallel()
 	issueID := "77777777-7777-7777-7777-777777777777"

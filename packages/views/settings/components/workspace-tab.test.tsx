@@ -17,6 +17,7 @@ const workspaceRef = vi.hoisted(() => ({
     description: "",
     context: "",
     issue_prefix: "TES",
+    language_policy: null as string | null,
     repos: [] as { url: string }[],
   },
 }));
@@ -111,6 +112,7 @@ describe("WorkspaceTab — automatic updates", () => {
       description: "",
       context: "",
       issue_prefix: "TES",
+      language_policy: null,
       repos: [],
     };
     membersRef.current = [{ user_id: "user-1", role: "owner" }];
@@ -244,5 +246,45 @@ describe("WorkspaceTab — automatic updates", () => {
 
     expect(screen.getByPlaceholderText("TES")).toBeDisabled();
     expect(screen.getByDisplayValue("Test Workspace")).toBeDisabled();
+  });
+
+  it("reads back the workspace language policy value", () => {
+    workspaceRef.current = { ...workspaceRef.current, language_policy: "ru" };
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+
+    expect(
+      screen.getByRole("combobox", { name: "Agent language" }),
+    ).toHaveTextContent("Russian");
+  });
+
+  it("persists a language policy selection", async () => {
+    const user = setupUser();
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+
+    await user.click(screen.getByRole("combobox", { name: "Agent language" }));
+    await user.click(await screen.findByRole("option", { name: "Russian" }));
+
+    await waitFor(() => {
+      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
+        language_policy: "ru",
+      });
+    });
+  });
+
+  it("persists null when the policy is cleared back to default", async () => {
+    workspaceRef.current = { ...workspaceRef.current, language_policy: "ru" };
+    const user = setupUser();
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+
+    await user.click(screen.getByRole("combobox", { name: "Agent language" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Default (no policy)" }),
+    );
+
+    await waitFor(() => {
+      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
+        language_policy: null,
+      });
+    });
   });
 });

@@ -12,6 +12,14 @@ export interface Workspace {
   description: string | null;
   context: string | null;
   settings: Record<string, unknown>;
+  /**
+   * Default language policy for agent task output (BCP-47, e.g. "ru").
+   * `null` means unset — agents keep the current behavior (no policy).
+   * Projects and agents can override this. See
+   * `packages/core/types/language-policy.ts`. Optional so workspaces from
+   * older backends still parse; treat missing as unset.
+   */
+  language_policy?: string | null;
   repos: WorkspaceRepo[];
   issue_prefix: string;
   avatar_url: string | null;

@@ -71,6 +71,7 @@ import {
 import { useT } from "../../i18n";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
+import { LanguagePolicyField } from "../../settings/components/language-policy-field";
 
 // ---------------------------------------------------------------------------
 // Property row — sidebar property display
@@ -99,6 +100,7 @@ function PropRow({
 
 export function ProjectDetail({ projectId }: { projectId: string }) {
   const { t } = useT("projects");
+  const { t: ts } = useT("settings");
   const statusLabels = useProjectStatusLabels();
   const priorityLabels = useProjectPriorityLabels();
   const wsId = useWorkspaceId();
@@ -147,6 +149,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const [propertiesOpen, setPropertiesOpen] = useState(true);
   const [progressOpen, setProgressOpen] = useState(true);
   const [descriptionOpen, setDescriptionOpen] = useState(true);
+  const [languagePolicyOpen, setLanguagePolicyOpen] = useState(true);
 
   // Sidebar panel
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
@@ -464,6 +467,29 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
       {/* Resources */}
       <ProjectResourcesSection projectId={projectId} />
+
+      {/* Agent language policy */}
+      <div>
+        <button
+          type="button"
+          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors mb-2 hover:bg-accent/70 ${languagePolicyOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setLanguagePolicyOpen((open) => !open)}
+        >
+          {ts(($) => $.agent_language_policy.title)}
+          <ChevronRight className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${languagePolicyOpen ? "rotate-90" : ""}`} />
+        </button>
+        {languagePolicyOpen && (
+          <div className="space-y-1.5 pl-2">
+            <LanguagePolicyField
+              value={project.language_policy ?? null}
+              onChange={(next) => handleUpdateField({ language_policy: next })}
+            />
+            <p className="px-2 text-xs leading-5 text-muted-foreground">
+              {ts(($) => $.agent_language_policy.hint)}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 

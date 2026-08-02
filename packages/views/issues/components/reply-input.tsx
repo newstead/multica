@@ -207,6 +207,7 @@ function ReplyInput({
         actorId={avatarId}
         size={avatarSize}
         className="mt-0.5 shrink-0"
+        identityBadge={{ variant: "corner-tag", hostMode: "owned" }}
       />
       <div
         {...dropZoneProps}

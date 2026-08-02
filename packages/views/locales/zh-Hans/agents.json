@@ -829,5 +829,37 @@
   "actions": {
     "selected_other": "已选 {{count}} 项",
     "clear_selection": "清除选择"
+  },
+  "identity": {
+    "role_unset": "未设置角色",
+    "language_unset": "未设置语言",
+    "roles": {
+      "TL": "技术负责人",
+      "BE": "后端工程师",
+      "FE": "前端工程师",
+      "FS": "全栈工程师",
+      "QA": "质量保证",
+      "OPS": "运维 / DevOps",
+      "ML": "机器学习",
+      "DA": "数据分析师",
+      "SRE": "站点可靠性",
+      "SEC": "安全"
+    },
+    "languages": {
+      "GO": "Go",
+      "PY": "Python",
+      "TS": "TypeScript",
+      "JS": "JavaScript",
+      "RS": "Rust",
+      "SH": "Shell",
+      "RB": "Ruby",
+      "JV": "Java",
+      "KT": "Kotlin",
+      "SW": "Swift",
+      "CS": "C#",
+      "CP": "C++",
+      "SC": "Scala",
+      "EL": "Elixir"
+    }
   }
 }

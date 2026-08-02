@@ -5,6 +5,19 @@
     "failed": "保存失败",
     "toast_saved": "更改已保存"
   },
+  "agent_language_policy": {
+    "title": "智能体语言",
+    "hint": "智能体在任务评论、交接说明、阻塞报告和任务摘要中使用的语言。此设置与界面语言相互独立。",
+    "default_label": "默认（无策略）",
+    "default_hint": "不覆盖任何层级——继承工作区默认值；如果所有层级均未设置，则保持当前行为。",
+    "options": {
+      "ru": "俄语",
+      "en": "英语",
+      "zh-Hans": "简体中文",
+      "ja": "日语",
+      "ko": "韩语"
+    }
+  },
   "preferences": {
     "general_title": "常规",
     "theme": {
