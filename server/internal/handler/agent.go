@@ -1200,7 +1200,7 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		languageCodes = nil
 	}
 	if req.LanguagePolicy != nil && !validateLanguagePolicy(*req.LanguagePolicy) {
-		writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+		writeError(w, http.StatusBadRequest, languagePolicyHint)
 		return
 	}
 
@@ -1964,7 +1964,7 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 	if _, hasLanguagePolicy := rawFields["language_policy"]; hasLanguagePolicy {
 		if req.LanguagePolicy != nil && strings.TrimSpace(*req.LanguagePolicy) != "" {
 			if !validateLanguagePolicy(*req.LanguagePolicy) {
-				writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+				writeError(w, http.StatusBadRequest, languagePolicyHint)
 				return
 			}
 			params.LanguagePolicy = normaliseLanguagePolicy(req.LanguagePolicy)

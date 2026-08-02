@@ -12,10 +12,25 @@ import (
 // resolution time. This is deliberately separate from the UI locale
 // (user.language) and the agent programming-language list (language_codes),
 // which stay unrelated to the runtime language policy.
+//
+// The canonical list lives in packages/core/types/language-policy.ts
+// (AGENT_LANGUAGE_POLICY_VALUES); TestSupportedLanguagePoliciesMatchCore
+// fails if this Go list drifts from the core list.
 var supportedLanguagePolicies = map[string]bool{
-	"ru": true,
-	"en": true,
+	"ru":      true,
+	"en":      true,
+	"zh-Hans": true,
+	"ja":      true,
+	"ko":      true,
 }
+
+// languagePolicyValues lists the supported codes in stable display order. It
+// mirrors supportedLanguagePolicies and is used to build the write-time
+// rejection message so the hint cannot drift from the allow-list.
+var languagePolicyValues = []string{"ru", "en", "zh-Hans", "ja", "ko"}
+
+// languagePolicyHint is the rejection message for unsupported policy codes.
+var languagePolicyHint = "language_policy must be one of: " + strings.Join(languagePolicyValues, ", ")
 
 // validateLanguagePolicy reports whether v is an accepted policy value.
 func validateLanguagePolicy(v string) bool {

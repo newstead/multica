@@ -272,7 +272,7 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.LanguagePolicy != nil && !validateLanguagePolicy(*req.LanguagePolicy) {
-		writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+		writeError(w, http.StatusBadRequest, languagePolicyHint)
 		return
 	}
 	var leadType pgtype.Text
@@ -550,7 +550,7 @@ func (h *Handler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	if _, ok := rawFields["language_policy"]; ok {
 		if req.LanguagePolicy != nil && strings.TrimSpace(*req.LanguagePolicy) != "" {
 			if !validateLanguagePolicy(*req.LanguagePolicy) {
-				writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+				writeError(w, http.StatusBadRequest, languagePolicyHint)
 				return
 			}
 			params.LanguagePolicy = normaliseLanguagePolicy(req.LanguagePolicy)

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@multica/core/i18n/react";
+import { AGENT_LANGUAGE_POLICY_VALUES } from "@multica/core/types";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 import { LanguagePolicyField } from "./language-policy-field";
@@ -67,6 +68,20 @@ describe("LanguagePolicyField", () => {
     );
     await pickOption("Default (no policy)");
     expect(onChange).toHaveBeenCalledWith(null);
+  });
+
+  it("renders an option for every supported code from core", async () => {
+    const user = userEvent.setup();
+    render(
+      <I18nWrapper>
+        <LanguagePolicyField value={null} onChange={vi.fn()} />
+      </I18nWrapper>,
+    );
+    await user.click(screen.getByRole("combobox", { name: FIELD_LABEL }));
+    for (const code of AGENT_LANGUAGE_POLICY_VALUES) {
+      const label = enSettings.agent_language_policy.options[code];
+      expect(await screen.findByRole("option", { name: label })).toBeTruthy();
+    }
   });
 
   it("disables the control when disabled is set", () => {

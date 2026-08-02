@@ -77,3 +77,35 @@ func TestBriefLanguagePolicyEnglish(t *testing.T) {
 		t.Errorf("brief does not render English policy: %s", out)
 	}
 }
+
+// TestBriefLanguagePolicyNonEnglishCodes locks the render contract for the
+// codes the UI offers beyond ru/en: each supported BCP-47 tag must produce a
+// brief section naming the language, so selecting any UI option never yields
+// a silently-empty brief.
+func TestBriefLanguagePolicyNonEnglishCodes(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		code string
+		name string
+	}{
+		{"zh-Hans", "Simplified Chinese"},
+		{"ja", "Japanese"},
+		{"ko", "Korean"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.code, func(t *testing.T) {
+			ctx := deliveryInvariantFixtures()["comment"]
+			ctx.LanguagePolicy = tc.code
+			out := buildMetaSkillContent("claude", ctx)
+			if !strings.Contains(out, "## Language Policy") {
+				t.Fatalf("brief missing Language Policy section for %s", tc.code)
+			}
+			for _, want := range []string{"**" + tc.name + "**", "(`" + tc.code + "`)"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("brief does not name the policy language for %s (%q)", tc.code, want)
+				}
+			}
+		})
+	}
+}
