@@ -89,6 +89,20 @@ export { ISSUE_PROPERTY_TYPES, isKnownPropertyType } from "./property";
 export { AGENT_LANGUAGE_POLICY_VALUES, isAgentLanguagePolicy } from "./language-policy";
 export type { AgentLanguagePolicy } from "./language-policy";
 export type {
+  QuickAction,
+  QuickActionVisibility,
+  QuickActionAssigneeType,
+  QuickActionStatus,
+  CreateQuickActionRequest,
+  UpdateQuickActionRequest,
+  ListQuickActionsResponse,
+} from "./quick-action";
+export {
+  QUICK_ACTION_SIDEBAR_LIMIT,
+  QUICK_ACTION_TEMPLATE_TOKEN_RE,
+  findQuickActionTemplateToken,
+} from "./quick-action";
+export type {
   TimelineEntry,
   AssigneeFrequencyEntry,
 } from "./activity";
@@ -102,6 +116,9 @@ export type {
   ChatLastMessage,
   ChatPinnedAgent,
   ChatMessage,
+  ChatQuickAction,
+  ChatQuickActionsPendingState,
+  ChatQuickActionsFailureState,
   ChatMessagesPage,
   ChatPendingTask,
   PendingChatTaskItem,
