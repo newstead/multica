@@ -79,18 +79,18 @@ type CodexHomeOptions struct {
 	// task with no issue), in which case sessions/ stays task-local. See
 	// codexSessionStoreDir and prepareCodexSessionsDir (MUL-4424).
 	SessionStoreKey string
-	// WritableRoots are extra absolute paths written into the config.toml
-	// `[sandbox_workspace_write] writable_roots` so the workspace-write sandbox
-	// (Linux) can write outside the task workdir — the per-task writable HOME.
-	// Only meaningful when the policy resolves to workspace-write; ignored on
-	// darwin danger-full-access. See task_home.go and MUL-4856.
-	WritableRoots []string
 	// CodexCustomArgs are the effective Codex CLI args this task will launch
 	// with (daemon defaults + profile-fixed + per-agent custom_args). Only the
 	// Windows sandbox decision reads them, to honor a `-c windows.sandbox=...`
 	// override that never lands in config.toml. See resolveWindowsSandboxState
 	// and MUL-4957.
 	CodexCustomArgs []string
+	// WritableRoots are extra absolute paths written into the config.toml
+	// `[sandbox_workspace_write] writable_roots` so the workspace-write sandbox
+	// (Linux) can write outside the task workdir — the per-task writable HOME.
+	// Only meaningful when the policy resolves to workspace-write; ignored on
+	// darwin danger-full-access. See task_home.go and MUL-4856.
+	WritableRoots []string
 	// DeepSeekProvider tells the Codex home preparer to pin the per-task
 	// config.toml to a DeepSeek Responses-compatible adapter. It is used only
 	// by Multica's deepseek provider, which is implemented through Codex
@@ -99,9 +99,10 @@ type CodexHomeOptions struct {
 }
 
 // prepareCodexHome is a thin wrapper around prepareCodexHomeWithOpts kept for
-// tests that don't care about platform-aware sandbox configuration. It
-// assumes a Linux-like environment where workspace-write + network_access
-// works correctly.
+// tests that don't care about platform-aware sandbox configuration. It pins
+// GOOS to linux, which resolves to the danger-full-access default (MUL-5578),
+// so the sandbox block it writes is stable regardless of the host running the
+// test.
 func prepareCodexHome(codexHome string, logger *slog.Logger) error {
 	return prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{GOOS: "linux"}, logger)
 }

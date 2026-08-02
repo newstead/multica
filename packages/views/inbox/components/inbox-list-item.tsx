@@ -11,6 +11,7 @@ import type { InboxView } from "./inbox-view";
 import { InboxDetailLabel } from "./inbox-detail-label";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { getInboxDisplayTitle } from "./inbox-display";
+import { useInboxContextMenu } from "./inbox-context-menu";
 import { useT } from "../../i18n";
 
 // Hook returning a localized relative-time formatter — the i18n equivalent
@@ -52,6 +53,7 @@ export function InboxListItem({
 }) {
   const { t } = useT("inbox");
   const timeAgo = useTimeAgo();
+  const openContextMenu = useInboxContextMenu();
   const displayTitle = getInboxDisplayTitle(item);
   const isArchivedView = view === "archived";
   // Archiving deliberately leaves `read` untouched so unarchiving restores the
@@ -68,8 +70,14 @@ export function InboxListItem({
     <button
       type="button"
       onClick={onClick}
-      className={`group flex w-full items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors ${
-        isSelected ? "bg-accent" : "hover:bg-accent/50"
+      // Right-click opens the list's shared menu (mark read/unread, archive).
+      // `select-none` mirrors what Base UI's own trigger used to merge in, so
+      // right-clicking a row never starts a text selection.
+      onContextMenu={
+        openContextMenu ? (e) => openContextMenu(item, e) : undefined
+      }
+      className={`group flex w-full select-none items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors ${
+        isSelected ? "bg-accent" : "hover:bg-accent/50 data-[popup-open]:bg-accent/50"
       }`}
     >
       <ActorAvatar
@@ -86,7 +94,7 @@ export function InboxListItem({
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
             )}
             <span
-              className={`truncate text-sm ${showUnread ? "font-medium" : "text-muted-foreground"}`}
+              className={`truncate text-body ${showUnread ? "font-medium" : "text-muted-foreground"}`}
             >
               {displayTitle}
             </span>
@@ -117,12 +125,12 @@ export function InboxListItem({
           </div>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <div className={`flex min-w-0 items-center gap-1.5 text-xs ${showUnread ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+          <div className={`flex min-w-0 items-center gap-1.5 text-caption ${showUnread ? "text-muted-foreground" : "text-muted-foreground"}`}>
             {/* Green-accent project badge: keeps mixed inbox rows' project
                 provenance visible. Capped + shrink-0 + truncated so it can
                 never crowd out the detail label or the first line's title. */}
             {project && (
-              <span className="inline-flex max-w-[140px] shrink-0 items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[11px] font-medium text-success">
+              <span className="inline-flex max-w-[140px] shrink-0 items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-micro font-medium text-success">
                 <ProjectIcon project={project} size="sm" />
                 <span className="truncate">{project.title}</span>
               </span>
@@ -143,7 +151,7 @@ export function InboxListItem({
                 hoverCard={false}
               />
             )}
-            <span className={`text-xs ${showUnread ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+            <span className={`text-caption ${showUnread ? "text-muted-foreground" : "text-muted-foreground"}`}>
               {timeAgo(item.created_at)}
             </span>
           </div>

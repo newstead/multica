@@ -240,10 +240,10 @@ export function ActorAvatar({
     />
   );
 
-  // Optional presence dot overlay. Only meaningful for agents — members have
-  // no presence backbone. Wrapping unconditionally with relative inline-flex
-  // would create extra DOM for every avatar; we only wrap when a dot is asked
-  // for.
+  // Optional presence overlay. Only meaningful for agents — members have no
+  // presence backbone. Wrapping unconditionally with relative inline-flex
+  // would create extra DOM for every avatar; we only wrap when the dot is
+  // asked for.
   const wrapDot = showStatusDot && actorType === "agent";
   const dotted = wrapDot ? (
     <span className="relative inline-flex">
@@ -310,7 +310,7 @@ function ActorAvatarProfileLink({
   href: string;
   children: React.ReactNode;
 }) {
-  const { push, openInNewTab } = useNavigation();
+  const { push, openInNewTab, getShareableUrl } = useNavigation();
 
   const navigate = (event: React.MouseEvent | React.KeyboardEvent) => {
     const controlAncestor = event.currentTarget.parentElement?.closest(
@@ -320,12 +320,15 @@ function ActorAvatarProfileLink({
 
     event.preventDefault();
     event.stopPropagation();
-    if (
-      "metaKey" in event &&
-      (event.metaKey || event.ctrlKey || event.shiftKey) &&
-      openInNewTab
-    ) {
-      openInNewTab(href);
+    if ("metaKey" in event && (event.metaKey || event.ctrlKey || event.shiftKey)) {
+      if (openInNewTab) {
+        openInNewTab(href);
+        return;
+      }
+      // Web: the trigger is a `<span role="link">`, not an anchor, so there is
+      // no native modifier-click behaviour to fall back to — open the browser
+      // tab here rather than letting the click navigate in place.
+      window.open(getShareableUrl(href), "_blank", "noopener,noreferrer");
       return;
     }
     push(href);
@@ -446,11 +449,11 @@ function AgentIdentityAvatarFrame({
           ? ROLE_CLASS[badge.roleCode]
           : "border-border bg-muted text-muted-foreground",
         variant === "corner-tag" &&
-          "absolute -bottom-0.5 -right-1 rounded px-0.5 text-[8px] leading-3 shadow-sm",
+          "absolute -bottom-0.5 -right-1 rounded px-0.5 text-micro leading-3 shadow-sm",
         variant === "chip-below" &&
-          "absolute -bottom-3 left-1/2 -translate-x-1/2 rounded px-0.5 text-[8px] leading-3 shadow-sm",
+          "absolute -bottom-3 left-1/2 -translate-x-1/2 rounded px-0.5 text-micro leading-3 shadow-sm",
         variant === "inline-row" &&
-          "ml-1 inline-flex h-4 max-w-20 items-center rounded px-1 text-[10px] leading-none",
+          "ml-1 inline-flex h-4 max-w-20 items-center rounded px-1 text-micro leading-none",
       )}
     >
       {badge.text}

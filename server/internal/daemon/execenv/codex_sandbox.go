@@ -316,6 +316,13 @@ func codexUpgradeHint() string {
 	return "upgrade Codex CLI (e.g. `brew upgrade codex` or `npm i -g @openai/codex`) once a release including openai/codex#10390 is available to restore workspace-write + network_access"
 }
 
+// codexLinuxIsolationHint returns the actionable remediation for the Linux
+// full-access default: unlike the macOS bug, there is no version to upgrade to —
+// the containment has to come from the boundary the daemon runs inside.
+func codexLinuxIsolationHint() string {
+	return "run the daemon inside a VM, container, or dedicated Unix user — tasks can read and write everything that user can"
+}
+
 // multicaManagedBeginMarker / multicaManagedEndMarker delimit the block the
 // daemon writes into the per-task config.toml. Everything between the markers
 // is owned by the daemon and will be rewritten idempotently; anything outside
@@ -441,8 +448,10 @@ func stripLegacySandboxDirectives(content string) string {
 // twice produces the same file contents. The file is created if it doesn't
 // exist.
 //
-// The function logs (at warn level) when it falls back to danger-full-access
-// on macOS so the incident is visible in daemon logs.
+// The function logs (at warn level) whenever the resolved mode is
+// danger-full-access — the Linux default, the macOS seatbelt fallback, and the
+// Windows no-native-sandbox fallback alike — so that every unsandboxed task is
+// visible in daemon logs.
 func ensureCodexSandboxConfig(configPath string, policy codexSandboxPolicy, detectedVersion string, logger *slog.Logger) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil && !os.IsNotExist(err) {
