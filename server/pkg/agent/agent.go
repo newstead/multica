@@ -225,7 +225,8 @@ type Config struct {
 // runtime_profile.protocol_family CHECK constraint (migration 120, widened by
 // migration 134 to add qoder, migration 136 to add traecli, migration 175 to
 // add deveco, migration 179 to add grok, migration 202 to add qwen, and
-// migration 228 to add deepseek, migration 242 to add qoderclicn): a
+// migration 242 to add qoderclicn, and
+// migration 258 to add deepseek): a
 // custom runtime profile may only
 // be based on a backend Multica officially supports.
 // qoder and qoderclicn share the same ACP backend; keeping both provider keys
