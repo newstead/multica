@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -35,15 +36,30 @@ type MemoryProvider interface {
 	Health(ctx context.Context) (MemoryProviderHealth, error)
 }
 
+// MemoryProviderAggregateTelemetrySource is deliberately separate from the
+// request/response adapter. It is implemented only by providers configured
+// with a private endpoint that returns the two aggregate, provider-owned
+// measurements needed for the soak. It must never enumerate memories or
+// return scopes, content, identifiers, prompts, or credentials.
+type MemoryProviderAggregateTelemetrySource interface {
+	AggregateTelemetry(ctx context.Context) (MemoryProviderAggregateTelemetry, error)
+}
+
+type MemoryProviderAggregateTelemetry struct {
+	StorageBytes         float64
+	VariableCostUSDTotal float64
+}
+
 // MemoryTelemetry accepts only bounded enums. Implementations must never use
 // user, workspace, project, request, or memory identifiers as metric labels.
 type MemoryTelemetry interface {
 	RecordRequest(provider, mode, operation, result string)
+	RecordDualWritePartial()
 	ObserveDualWriteLag(seconds float64)
 	RecordRecallComparison(comparison string)
 	RecordRecallFeedback(outcome string)
 	RecordRecallTokens(input, output int)
-	RecordRecallCost(usd float64)
+	SetProviderCostUSDTotal(provider string, usd float64)
 	SetStorageBytes(provider string, bytes float64)
 	RecordHealth(provider string, healthy bool)
 }
@@ -635,10 +651,8 @@ func (s *MemoryService) recordMemoryDeliverySuccess(ctx context.Context, deliver
 		mode := memoryTelemetryDeliveryMode(envelope)
 		s.Telemetry.RecordRequest(delivery.Provider, mode, "capture", "ok")
 		if mode == "dual_write" {
-			s.Telemetry.ObserveDualWriteLag(float64(deliveryLagMillis(eventCreatedAt, now)) / 1000)
-			if storageBytes, ok := providerStorageBytes(result.Response); ok {
-				s.Telemetry.SetStorageBytes(delivery.Provider, storageBytes)
-			}
+			s.recordProviderAggregateTelemetry(ctx, delivery.Provider)
+			s.recordDualWriteTelemetry(ctx, delivery)
 		}
 		s.Telemetry.RecordHealth(delivery.Provider, true)
 	}
@@ -667,14 +681,70 @@ func (s *MemoryService) recordMemoryDeliveryFailure(ctx context.Context, deliver
 	})
 	if err == nil && s.Telemetry != nil {
 		mode := memoryTelemetryDeliveryMode(envelope)
-		result := "error"
+		s.Telemetry.RecordRequest(delivery.Provider, mode, "capture", "error")
 		if mode == "dual_write" {
-			result = "partial"
+			s.recordDualWriteTelemetry(ctx, delivery)
 		}
-		s.Telemetry.RecordRequest(delivery.Provider, mode, "capture", result)
 		s.Telemetry.RecordHealth(delivery.Provider, false)
 	}
 	return updated, err
+}
+
+func (s *MemoryService) recordDualWriteTelemetry(ctx context.Context, delivery db.MemoryProviderDelivery) {
+	if s == nil || s.Telemetry == nil || !delivery.MemoryEventID.Valid {
+		return
+	}
+	outcomes, err := s.Queries.ListMemoryProviderDeliveryOutcomes(ctx, db.ListMemoryProviderDeliveryOutcomesParams{
+		WorkspaceID:   delivery.WorkspaceID,
+		MemoryEventID: delivery.MemoryEventID,
+	})
+	if err != nil {
+		return
+	}
+	lagSeconds, partial, ready := dualWriteOutcome(outcomes)
+	if !ready {
+		return
+	}
+	if _, err := s.Queries.ClaimMemoryDualWriteTelemetry(ctx, db.ClaimMemoryDualWriteTelemetryParams{
+		MemoryEventID: delivery.MemoryEventID,
+		WorkspaceID:   delivery.WorkspaceID,
+	}); err != nil {
+		return
+	}
+	if partial {
+		s.Telemetry.RecordDualWritePartial()
+		return
+	}
+	s.Telemetry.ObserveDualWriteLag(lagSeconds)
+}
+
+func dualWriteOutcome(outcomes []db.ListMemoryProviderDeliveryOutcomesRow) (lagSeconds float64, partial, ready bool) {
+	if len(outcomes) != 2 {
+		return 0, false, false
+	}
+	delivered := make([]time.Time, 0, 2)
+	terminalFailures := 0
+	for _, outcome := range outcomes {
+		switch outcome.Status {
+		case "delivered":
+			if !outcome.LastAttemptAt.Valid {
+				return 0, false, false
+			}
+			delivered = append(delivered, outcome.LastAttemptAt.Time)
+		case "terminal_failed":
+			terminalFailures++
+		default:
+			return 0, false, false
+		}
+	}
+	if len(delivered) == 2 {
+		delta := delivered[0].Sub(delivered[1])
+		if delta < 0 {
+			delta = -delta
+		}
+		return delta.Seconds(), false, true
+	}
+	return 0, len(delivered) == 1 && terminalFailures == 1, len(delivered) == 1 && terminalFailures == 1
 }
 
 func (s *MemoryService) Recall(ctx context.Context, req MemoryRecallRequest) (MemoryRecallReadResult, error) {
@@ -747,7 +817,7 @@ func (s *MemoryService) Recall(ctx context.Context, req MemoryRecallRequest) (Me
 		if out.Primary == nil && out.Shadow == nil && len(out.Errors) > 0 {
 			return out, fmt.Errorf("%w: all recall providers failed", ErrMemoryConfig)
 		}
-		s.recordPairedRecallTelemetry(req, out)
+		s.recordPairedRecallTelemetry(ctx, req, out)
 		return out, nil
 	}
 	if err != nil {
@@ -782,7 +852,7 @@ func (s *MemoryService) recallProvider(ctx context.Context, req MemoryRecallRequ
 	return &MemoryProviderRecall{Provider: providerName, Result: result, Sample: sample}, nil
 }
 
-func (s *MemoryService) recordPairedRecallTelemetry(req MemoryRecallRequest, result MemoryRecallReadResult) {
+func (s *MemoryService) recordPairedRecallTelemetry(ctx context.Context, req MemoryRecallRequest, result MemoryRecallReadResult) {
 	if s == nil || s.Telemetry == nil || result.Primary == nil || result.Shadow == nil {
 		return
 	}
@@ -792,11 +862,8 @@ func (s *MemoryService) recordPairedRecallTelemetry(req MemoryRecallRequest, res
 	}
 	s.Telemetry.RecordRecallComparison(comparison)
 	s.Telemetry.RecordRecallTokens(memoryApproxTokenCount(req.Query), memoryApproxTokenCount(string(result.Primary.Result.Results))+memoryApproxTokenCount(string(result.Shadow.Result.Results)))
-	if primaryCost, ok := providerEstimatedCost(result.Primary.Result.Provenance); ok {
-		if shadowCost, ok := providerEstimatedCost(result.Shadow.Result.Provenance); ok {
-			s.Telemetry.RecordRecallCost(primaryCost + shadowCost)
-		}
-	}
+	s.recordProviderAggregateTelemetry(ctx, result.Primary.Provider)
+	s.recordProviderAggregateTelemetry(ctx, result.Shadow.Provider)
 }
 
 func jsonEqual(left, right json.RawMessage) bool {
@@ -830,6 +897,59 @@ func providerEstimatedCost(raw json.RawMessage) (float64, bool) {
 		return 0, false
 	}
 	return aggregateMetricNumber(values["estimated_cost_usd"])
+}
+
+func parseProviderAggregateTelemetry(raw json.RawMessage) (MemoryProviderAggregateTelemetry, error) {
+	var values map[string]any
+	if json.Unmarshal(raw, &values) != nil {
+		return MemoryProviderAggregateTelemetry{}, errors.New("invalid aggregate telemetry response")
+	}
+	storageBytes, storageOK := aggregateMetricNumber(values["storage_bytes"])
+	variableCostUSDTotal, costOK := aggregateMetricNumber(values["variable_cost_usd_total"])
+	if !storageOK || !costOK {
+		return MemoryProviderAggregateTelemetry{}, errors.New("invalid aggregate telemetry response")
+	}
+	return MemoryProviderAggregateTelemetry{StorageBytes: storageBytes, VariableCostUSDTotal: variableCostUSDTotal}, nil
+}
+
+func aggregateTelemetryPath(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.RawQuery != "" || parsed.Fragment != "" || !strings.HasPrefix(parsed.Path, "/") {
+		return "", errors.New("aggregate telemetry path must be an absolute path without query or fragment")
+	}
+	return parsed.EscapedPath(), nil
+}
+
+func (s *MemoryService) recordProviderAggregateTelemetry(ctx context.Context, providerName string) {
+	if s == nil || s.Telemetry == nil || !memoryTelemetryProvider(providerName) {
+		return
+	}
+	provider, ok := s.memoryProvider(providerName).(MemoryProviderAggregateTelemetrySource)
+	if !ok {
+		return
+	}
+	measurement, err := provider.AggregateTelemetry(ctx)
+	if err != nil || !finiteAggregateTelemetry(measurement) {
+		// The source is optional at the request boundary. Omitting a bad or
+		// unavailable value keeps the VictoriaMetrics preflight fail-closed.
+		return
+	}
+	s.Telemetry.SetStorageBytes(providerName, measurement.StorageBytes)
+	s.Telemetry.SetProviderCostUSDTotal(providerName, measurement.VariableCostUSDTotal)
+}
+
+func finiteAggregateTelemetry(measurement MemoryProviderAggregateTelemetry) bool {
+	_, storageOK := aggregateMetricNumber(measurement.StorageBytes)
+	_, costOK := aggregateMetricNumber(measurement.VariableCostUSDTotal)
+	return storageOK && costOK
+}
+
+func memoryTelemetryProvider(provider string) bool {
+	return provider == "hindsight" || provider == "mem0"
 }
 
 func aggregateMetricNumber(value any) (float64, bool) {

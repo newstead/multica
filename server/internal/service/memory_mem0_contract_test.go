@@ -57,6 +57,21 @@ func TestMapMem0ScopeExactContract(t *testing.T) {
 	}
 }
 
+func TestMem0AggregateTelemetryUsesOnlyConfiguredPrivatePath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/aggregate" || r.Method != http.MethodGet {
+			t.Fatalf("aggregate request = %s %s, want GET /aggregate", r.Method, r.URL.Path)
+		}
+		writeMem0TestJSON(t, w, map[string]any{"storage_bytes": 2048, "variable_cost_usd_total": 0.5})
+	}))
+	defer server.Close()
+	provider := newMem0TestProvider(t, server.URL, Mem0ProviderConfig{AggregateTelemetryPath: "/aggregate"})
+	measurement, err := provider.AggregateTelemetry(context.Background())
+	if err != nil || measurement.StorageBytes != 2048 || measurement.VariableCostUSDTotal != 0.5 {
+		t.Fatalf("aggregate measurement = %+v, %v", measurement, err)
+	}
+}
+
 func TestMem0ProviderAuthenticatedAddRecallAndIsolation(t *testing.T) {
 	t.Parallel()
 

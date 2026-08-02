@@ -136,6 +136,21 @@ func TestHindsightRetainContractUsesWorkspaceBankStrictTagsAndIdempotency(t *tes
 	}
 }
 
+func TestHindsightAggregateTelemetryUsesOnlyConfiguredPrivatePath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/aggregate" || r.Method != http.MethodGet {
+			t.Fatalf("aggregate request = %s %s, want GET /aggregate", r.Method, r.URL.Path)
+		}
+		writeHindsightJSON(t, w, map[string]any{"storage_bytes": 1024, "variable_cost_usd_total": 0.25})
+	}))
+	defer server.Close()
+	provider := newTestHindsightProvider(t, server.URL, HindsightConfig{AggregateTelemetryPath: "/aggregate"})
+	measurement, err := provider.AggregateTelemetry(context.Background())
+	if err != nil || measurement.StorageBytes != 1024 || measurement.VariableCostUSDTotal != 0.25 {
+		t.Fatalf("aggregate measurement = %+v, %v", measurement, err)
+	}
+}
+
 func TestHindsightRetainAcceptsProviderGeneratedOperationID(t *testing.T) {
 	t.Parallel()
 

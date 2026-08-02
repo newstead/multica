@@ -45,22 +45,27 @@ type HindsightConfig struct {
 	MaxRequestBytes  int64
 	MaxResponseBytes int64
 	RecallMaxTokens  int
+	// AggregateTelemetryPath is a private, aggregate-only provider endpoint.
+	// It must return only storage_bytes and variable_cost_usd_total; it is not
+	// a memory listing endpoint and is intentionally optional.
+	AggregateTelemetryPath string
 
 	// Sleep is injectable so retry tests do not pay wall-clock backoff.
 	Sleep func(context.Context, time.Duration) error
 }
 
 type HindsightProvider struct {
-	baseURL          string
-	apiKey           string
-	client           *http.Client
-	requestTimeout   time.Duration
-	maxAttempts      int
-	retryBackoff     time.Duration
-	maxRequestBytes  int64
-	maxResponseBytes int64
-	recallMaxTokens  int
-	sleep            func(context.Context, time.Duration) error
+	baseURL                string
+	apiKey                 string
+	client                 *http.Client
+	requestTimeout         time.Duration
+	maxAttempts            int
+	retryBackoff           time.Duration
+	maxRequestBytes        int64
+	maxResponseBytes       int64
+	recallMaxTokens        int
+	aggregateTelemetryPath string
+	sleep                  func(context.Context, time.Duration) error
 }
 
 var _ MemoryProvider = (*HindsightProvider)(nil)
@@ -83,6 +88,10 @@ func NewHindsightProvider(cfg HindsightConfig) (*HindsightProvider, error) {
 	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("%w: base_url must not contain userinfo, query, or fragment", ErrHindsightConfig)
+	}
+	aggregateTelemetryPath, err := aggregateTelemetryPath(cfg.AggregateTelemetryPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrHindsightConfig, err)
 	}
 
 	requestTimeout := cfg.RequestTimeout
@@ -122,17 +131,29 @@ func NewHindsightProvider(cfg HindsightConfig) (*HindsightProvider, error) {
 	}
 
 	return &HindsightProvider{
-		baseURL:          strings.TrimRight(parsed.String(), "/"),
-		apiKey:           strings.TrimSpace(cfg.APIKey),
-		client:           client,
-		requestTimeout:   requestTimeout,
-		maxAttempts:      maxAttempts,
-		retryBackoff:     retryBackoff,
-		maxRequestBytes:  maxRequestBytes,
-		maxResponseBytes: maxResponseBytes,
-		recallMaxTokens:  recallMaxTokens,
-		sleep:            sleep,
+		baseURL:                strings.TrimRight(parsed.String(), "/"),
+		apiKey:                 strings.TrimSpace(cfg.APIKey),
+		client:                 client,
+		requestTimeout:         requestTimeout,
+		maxAttempts:            maxAttempts,
+		retryBackoff:           retryBackoff,
+		maxRequestBytes:        maxRequestBytes,
+		maxResponseBytes:       maxResponseBytes,
+		recallMaxTokens:        recallMaxTokens,
+		aggregateTelemetryPath: aggregateTelemetryPath,
+		sleep:                  sleep,
 	}, nil
+}
+
+func (p *HindsightProvider) AggregateTelemetry(ctx context.Context) (MemoryProviderAggregateTelemetry, error) {
+	if p.aggregateTelemetryPath == "" {
+		return MemoryProviderAggregateTelemetry{}, errors.New("aggregate telemetry source unavailable")
+	}
+	raw, _, err := p.doJSON(ctx, "aggregate telemetry", http.MethodGet, p.aggregateTelemetryPath, nil, nil)
+	if err != nil {
+		return MemoryProviderAggregateTelemetry{}, err
+	}
+	return parseProviderAggregateTelemetry(raw)
 }
 
 func (p *HindsightProvider) Name() string {

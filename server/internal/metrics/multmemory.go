@@ -16,7 +16,7 @@ type MemoryMetrics struct {
 	pairedRecall   *prometheus.CounterVec
 	feedback       *prometheus.CounterVec
 	tokens         *prometheus.CounterVec
-	cost           *prometheus.CounterVec
+	cost           *prometheus.GaugeVec
 	storage        *prometheus.GaugeVec
 	providerHealth *prometheus.GaugeVec
 }
@@ -24,16 +24,43 @@ type MemoryMetrics struct {
 func NewMemoryMetrics() *MemoryMetrics {
 	labels := []string{"provider", "mode", "scope_hash", "operation", "result", "model"}
 	m := &MemoryMetrics{
-		requests:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_requests_total", Help: "MultMemory gateway requests after policy checks."}, labels),
-		dualWriteLag:   prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "multmemory_dual_write_lag_seconds", Help: "Delta between dual-write provider completion.", Buckets: []float64{0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}}, labels),
-		pairedRecall:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_paired_recall_total", Help: "Aggregate primary/shadow recall comparisons."}, append(labels, "comparison")),
-		feedback:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_recall_feedback_total", Help: "Aggregate recall feedback."}, append(labels, "outcome")),
-		tokens:         prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_tokens_total", Help: "MultMemory provider token usage."}, append(labels, "token_type")),
-		cost:           prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_cost_usd_total", Help: "MultMemory estimated provider cost."}, labels),
+		requests:     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_requests_total", Help: "MultMemory gateway requests after policy checks."}, labels),
+		dualWriteLag: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "multmemory_dual_write_lag_seconds", Help: "Delta between dual-write provider completion.", Buckets: []float64{0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}}, labels),
+		pairedRecall: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_paired_recall_total", Help: "Aggregate primary/shadow recall comparisons."}, append(labels, "comparison")),
+		feedback:     prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_recall_feedback_total", Help: "Aggregate recall feedback."}, append(labels, "outcome")),
+		tokens:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "multmemory_tokens_total", Help: "MultMemory provider token usage."}, append(labels, "token_type")),
+		// Cost is a provider-reported cumulative total, not a locally inferred
+		// per-request estimate. A gauge keeps the source authoritative while the
+		// soak collector calculates its full-window increase.
+		cost:           prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "multmemory_cost_usd_total", Help: "Provider-reported cumulative variable USD cost."}, labels),
 		storage:        prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "multmemory_storage_bytes", Help: "Provider storage measurement when configured."}, []string{"provider", "mode", "scope_hash", "operation", "result"}),
 		providerHealth: prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "multmemory_provider_health", Help: "Provider health; one is healthy."}, []string{"provider", "mode", "scope_hash", "operation", "result"}),
 	}
+	// These event families have real update paths but may legitimately have no
+	// observations in a healthy interval. Registering their bounded zero series
+	// lets preflight distinguish that case from an absent exporter. Storage and
+	// provider cost remain intentionally unregistered until their private,
+	// provider-reported aggregate source succeeds.
+	m.initializeReadinessSeries()
 	return m
+}
+
+func (m *MemoryMetrics) initializeReadinessSeries() {
+	if m == nil {
+		return
+	}
+	m.dualWriteLag.WithLabelValues("dual", "dual_write", "global", "upsert", "ok", "none")
+	m.requests.WithLabelValues("hindsight", "dual_write", "global", "capture", "partial", "none")
+	m.requests.WithLabelValues("mem0", "dual_write", "global", "capture", "partial", "none")
+	for _, comparison := range []string{"match", "divergent"} {
+		m.pairedRecall.WithLabelValues("gateway", "shadow", "global", "recall", "ok", "none", comparison)
+	}
+	for _, outcome := range []string{"useful", "not_useful"} {
+		m.feedback.WithLabelValues("gateway", "shadow", "global", "recall", "ok", "none", outcome)
+	}
+	for _, tokenType := range []string{"input", "output"} {
+		m.tokens.WithLabelValues("gateway", "shadow", "global", "recall", "ok", "none", tokenType)
+	}
 }
 
 func (m *MemoryMetrics) Collectors() []prometheus.Collector {
@@ -45,6 +72,15 @@ func (m *MemoryMetrics) RecordRequest(provider, mode, operation, result string) 
 		return
 	}
 	m.requests.WithLabelValues(provider, mode, "global", operation, result, "none").Inc()
+}
+
+// RecordDualWritePartial records one terminal, correlated dual-write outcome.
+// Individual provider retries never call this method.
+func (m *MemoryMetrics) RecordDualWritePartial() {
+	if m == nil {
+		return
+	}
+	m.requests.WithLabelValues("dual", "dual_write", "global", "capture", "partial", "none").Inc()
 }
 
 // ObserveDualWriteLag records a completed dual-write delivery. It is called
@@ -82,13 +118,13 @@ func (m *MemoryMetrics) RecordRecallTokens(input, output int) {
 	m.tokens.WithLabelValues("gateway", "shadow", "global", "recall", "ok", "none", "output").Add(float64(output))
 }
 
-// RecordRecallCost records an explicitly computed variable provider cost. A
-// caller must not use this to manufacture a zero when no cost source exists.
-func (m *MemoryMetrics) RecordRecallCost(usd float64) {
-	if m == nil || !finiteNonNegative(usd) {
+// SetProviderCostUSDTotal records the total returned by an approved private
+// aggregate source. It must never be set from prompt sizes or local estimates.
+func (m *MemoryMetrics) SetProviderCostUSDTotal(provider string, usd float64) {
+	if m == nil || !memoryProvider(provider) || !finiteNonNegative(usd) {
 		return
 	}
-	m.cost.WithLabelValues("gateway", "shadow", "global", "recall", "ok", "none").Add(usd)
+	m.cost.WithLabelValues(provider, "dual_write", "global", "recall", "ok", "none").Set(usd)
 }
 
 // SetStorageBytes records a provider-reported aggregate storage measurement.
