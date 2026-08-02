@@ -43,7 +43,7 @@ multica agent update <id> --role-code '' --language-code ''
 
 ## Migration and Fallback
 
-Migration `235_agent_identity_metadata` adds nullable columns and database checks for the approved taxonomy. The down migration drops the checks and columns.
+Migration `242_agent_identity_metadata` adds nullable columns and database checks for the approved taxonomy. The down migration drops the checks and columns.
 
 Legacy agents keep `NULL` identity values and continue using their existing emoji/image `avatar_url`. Badge renderers should suppress the identity badge when both fields are unset. If a future backend returns a code unknown to an older client, the client should render the raw code with an unknown/raw tooltip fallback rather than guessing from other fields.
 
