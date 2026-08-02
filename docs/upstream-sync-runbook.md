@@ -20,6 +20,7 @@ Internal ops runbook for syncing the `newstead/multica` fork with the official
 Rules:
 
 - Always fetch first: `git fetch origin --prune` and `git fetch upstream --prune --no-tags`.
+  The `remote.upstream.tagOpt` config from §2 is mandatory, not optional.
 - Feature branches start from `origin/upstream-sync/<ver>-production`.
 - Every implementation PR targets `upstream-sync/<ver>-production` — never `main`,
   `mega`, or bare `multmemory`.
@@ -30,11 +31,12 @@ Rules:
 ```bash
 # one-time remote setup
 git remote add upstream https://github.com/multica-ai/multica
+git config remote.upstream.tagOpt --no-tags   # MANDATORY: no upstream fetch ever auto-follows bare tags
 
 # per cycle
 git fetch origin --prune
 git fetch upstream --prune --no-tags   # no auto-follow of bare upstream tags, see §3
-git fetch upstream refs/tags/v0.4.16:refs/tags/upstream/v0.4.16   # prefixed tag, see §3
+git fetch --no-tags upstream refs/tags/v0.4.16:refs/tags/upstream/v0.4.16   # prefixed tag, see §3
 
 # release commit
 git rev-parse upstream/v0.4.16^{}
@@ -60,16 +62,20 @@ tree syntax (or strip the `server/migrations/` prefix first).
 
 - Never push bare upstream tags (`v0.4.16`) to `origin` — our releases use
   `-ns` tags only.
-- Fetch upstream with `--no-tags` (or configure
-  `git config remote.upstream.tagOpt --no-tags`) so a plain fetch does not
-  auto-follow bare upstream tags into the local tag namespace.
+- `git config remote.upstream.tagOpt --no-tags` is mandatory on every clone
+  (see §2). Tag auto-follow applies to explicit refspec fetches too — a plain
+  `git fetch upstream refs/tags/v0.4.16:refs/tags/upstream/v0.4.16` would
+  import every reachable bare tag (observed: 138 tags, including bare
+  `v0.4.16`). The config, plus `--no-tags` on each explicit fetch, guarantees
+  only the `upstream/` prefixed tag is imported.
 - Import upstream tags under the `upstream/` prefix so they cannot be confused
-  with ours: `git fetch upstream refs/tags/v0.4.16:refs/tags/upstream/v0.4.16`.
+  with ours: `git fetch --no-tags upstream refs/tags/v0.4.16:refs/tags/upstream/v0.4.16`.
   A plain `git fetch upstream --tags` can clobber locally cached tags; if it
   reports `would clobber existing tag`, verify the local copy matches the
   upstream commit instead of force-overwriting. If a bare tag was already
   auto-followed in the past and exists locally, verify it points at the same
-  upstream commit and never push it to `origin`.
+  upstream commit and never push it to `origin` (optionally delete the local
+  copy: `git tag -d v0.4.16`).
 - Local prod tags always carry the `-ns` suffix: `v0.4.16-ns.1`. Never tag our
   releases with a bare `v0.4.16`.
 - Sanity check before release:
