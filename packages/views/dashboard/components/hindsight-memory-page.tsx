@@ -341,10 +341,10 @@ export function HindsightMemoryPage() {
           <div className="flex min-w-0 items-center gap-2">
             <BrainCircuit className="h-5 w-5 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold">
+              <h1 className="truncate text-body font-semibold">
                 {t(($) => $.hindsight.title)}
               </h1>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="truncate text-caption text-muted-foreground">
                 {t(($) => $.hindsight.subtitle)}
               </p>
             </div>
@@ -444,8 +444,8 @@ function Board({
         <div className="rounded-lg border bg-card p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">{t(($) => $.hindsight.growth.title)}</h2>
-              <p className="text-xs text-muted-foreground">{t(($) => $.hindsight.growth.subtitle)}</p>
+              <h2 className="text-body font-semibold">{t(($) => $.hindsight.growth.title)}</h2>
+              <p className="text-caption text-muted-foreground">{t(($) => $.hindsight.growth.subtitle)}</p>
             </div>
             <HardDrive className="h-4 w-4 text-muted-foreground" />
           </div>
@@ -480,8 +480,8 @@ function Board({
       <section className="rounded-lg border bg-card">
         <div className="flex flex-col gap-1 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-semibold">{t(($) => $.hindsight.samples.title)}</h2>
-            <p className="text-xs text-muted-foreground">{t(($) => $.hindsight.samples.subtitle)}</p>
+            <h2 className="text-body font-semibold">{t(($) => $.hindsight.samples.title)}</h2>
+            <p className="text-caption text-muted-foreground">{t(($) => $.hindsight.samples.subtitle)}</p>
           </div>
           <FileSearch className="h-4 w-4 text-muted-foreground" />
         </div>
@@ -490,7 +490,7 @@ function Board({
             <div key={sample.id} className="grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-medium">{sample.query}</span>
+                  <span className="truncate text-body font-medium">{sample.query}</span>
                   <Badge variant="secondary" className="rounded-md">
                     {formatPercent(sample.score)}
                   </Badge>
@@ -498,7 +498,7 @@ function Board({
                     {sample.resultCount} {t(($) => $.hindsight.samples.results)}
                   </Badge>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
                   <span>{new Date(sample.sampledAt).toLocaleString()}</span>
                   <span>{t(($) => $.hindsight.samples.latency, { value: sample.latencyMs })}</span>
                   <span>{sample.provenanceKeys.join(" / ") || t(($) => $.hindsight.samples.no_provenance)}</span>
@@ -507,12 +507,12 @@ function Board({
               </div>
               <div className="flex flex-wrap items-center gap-2 md:justify-end">
                 {sample.issueId && (
-                  <AppLink href={paths.issueDetail(sample.issueId)} className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline">
+                  <AppLink href={paths.issueDetail(sample.issueId)} className="inline-flex items-center gap-1 text-caption font-medium text-brand hover:underline">
                     <Link2 className="h-3.5 w-3.5" />
                     {t(($) => $.hindsight.samples.issue_link)}
                   </AppLink>
                 )}
-                <span className="max-w-48 truncate text-xs text-muted-foreground">{sample.correlationId}</span>
+                <span className="max-w-48 truncate text-caption text-muted-foreground">{sample.correlationId}</span>
               </div>
             </div>
           ))}
@@ -555,10 +555,10 @@ function SummaryTile({
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <span className="text-caption font-medium text-muted-foreground">{label}</span>
         <span className="text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">{icon}</span>
       </div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+      <div className="mt-2 text-display-sm font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

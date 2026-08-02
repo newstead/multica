@@ -61,8 +61,8 @@ export function MemoryPage() {
       <PageHeader>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Database className="size-4 shrink-0 text-muted-foreground" />
-          <h1 className="truncate text-sm font-semibold">{t("page.title")}</h1>
-          <span className="hidden rounded-sm bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground sm:inline">
+          <h1 className="truncate text-body font-semibold">{t("page.title")}</h1>
+          <span className="hidden rounded-sm bg-muted px-1.5 py-0.5 text-micro text-muted-foreground sm:inline">
             {hasConfigError ? t("status.unavailable") : config?.enabled ? t("status.enabled") : t("status.disabled")}
           </span>
         </div>
@@ -74,9 +74,9 @@ export function MemoryPage() {
             <div className="rounded-md border bg-card p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">{t("page.eyebrow")}</p>
-                  <h2 className="text-xl font-semibold tracking-normal">{t("page.heading")}</h2>
-                  <p className="max-w-3xl text-sm text-muted-foreground">{t("page.description")}</p>
+                  <p className="text-caption font-medium uppercase text-muted-foreground">{t("page.eyebrow")}</p>
+                  <h2 className="text-title-lg font-semibold tracking-normal">{t("page.heading")}</h2>
+                  <p className="max-w-3xl text-body text-muted-foreground">{t("page.description")}</p>
                 </div>
                 <div className="flex rounded-md border bg-muted/30 p-0.5" role="tablist" aria-label={t("tabs.label")}>
                   {TABS.map((key) => (
@@ -86,7 +86,7 @@ export function MemoryPage() {
                       role="tab"
                       aria-selected={tab === key}
                       className={cn(
-                        "h-8 whitespace-nowrap rounded-sm px-3 text-xs font-medium text-muted-foreground transition-colors",
+                        "h-8 whitespace-nowrap rounded-sm px-3 text-caption font-medium text-muted-foreground transition-colors",
                         tab === key && "bg-background text-foreground shadow-sm",
                       )}
                       onClick={() => setTab(key)}
@@ -108,7 +108,7 @@ export function MemoryPage() {
               ) : hasConfigError ? (
                 <UnavailableState title={t("errors.config_title")} description={t("errors.config_description")} />
               ) : (
-                <div className="space-y-3 text-sm">
+                <div className="space-y-3 text-body">
                   <StatusLine label={t("config.primary")} value={config?.primary_provider || t("common.unknown")} />
                   <StatusLine label={t("config.shadow")} value={config?.shadow_provider || t("common.none")} />
                   <StatusLine label={t("config.read_mode")} value={config?.read_mode || t("common.unknown")} />
@@ -161,7 +161,7 @@ function UnavailableState({
 }) {
   return (
     <div className={cn(
-      "flex items-start gap-3 text-sm",
+      "flex items-start gap-3 text-body",
       variant === "section" && "rounded-md border bg-card p-4",
     )}>
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
@@ -187,10 +187,10 @@ function CoverageBanner({ model }: { model: MemoryComparisonModel }) {
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />
         )}
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-medium">
+          <p className="text-body font-medium">
             {model.source === "fixture" ? t("coverage.fixture_title") : t("coverage.live_title")}
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             {model.source === "fixture"
               ? t("coverage.fixture_body", { count: model.sampleSize })
               : t("coverage.live_body", {
@@ -239,9 +239,9 @@ function SummaryTiles({ model, locale }: { model: MemoryComparisonModel; locale:
 function StatTile({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-md border bg-card p-4">
-      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-normal">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+      <p className="text-caption font-medium uppercase text-muted-foreground">{label}</p>
+      <p className="mt-2 text-display-sm font-semibold tracking-normal">{value}</p>
+      <p className="mt-1 text-caption text-muted-foreground">{detail}</p>
     </div>
   );
 }
@@ -252,8 +252,8 @@ function WriteMatrix({ model, locale }: { model: MemoryComparisonModel; locale: 
     <section className="rounded-md border bg-card p-4">
       <SectionHeader icon={<GitCompareArrows className="size-4" />} title={t("write.title")} description={t("write.description")} />
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[680px] text-sm">
-          <thead className="border-b text-xs uppercase text-muted-foreground">
+        <table className="w-full min-w-[680px] text-body">
+          <thead className="border-b text-caption uppercase text-muted-foreground">
             <tr>
               <th className="py-2 text-left font-medium">{t("table.provider")}</th>
               <th className="py-2 text-right font-medium">{t("write.success")}</th>
@@ -287,8 +287,8 @@ function RecallMetrics({ model, locale }: { model: MemoryComparisonModel; locale
     <section className="rounded-md border bg-card p-4">
       <SectionHeader title={t("recall.title")} description={t("recall.description")} />
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[780px] text-sm">
-          <thead className="border-b text-xs uppercase text-muted-foreground">
+        <table className="w-full min-w-[780px] text-body">
+          <thead className="border-b text-caption uppercase text-muted-foreground">
             <tr>
               <th className="py-2 text-left font-medium">{t("table.provider")}</th>
               <th className="py-2 text-right font-medium">{t("recall.correctness")}</th>
@@ -327,8 +327,8 @@ function RankMetrics({ model }: { model: MemoryComparisonModel }) {
     <section className="rounded-md border bg-card p-4">
       <SectionHeader title={t("rank.title")} description={t("rank.description")} />
       <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead className="border-b text-xs uppercase text-muted-foreground">
+        <table className="w-full min-w-[760px] text-body">
+          <thead className="border-b text-caption uppercase text-muted-foreground">
             <tr>
               <th className="py-2 text-left font-medium">{t("table.query")}</th>
               <th className="py-2 text-right font-medium">{t("rank.hindsight_rank")}</th>
@@ -364,8 +364,8 @@ function LifecycleTable({ model }: { model: MemoryComparisonModel }) {
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         {providerRows(model).map((summary) => (
           <div key={summary.provider} className="rounded-md border bg-muted/20 p-3">
-            <p className="text-sm font-medium">{providerLabel(summary.provider)}</p>
-            <dl className="mt-3 space-y-2 text-sm">
+            <p className="text-body font-medium">{providerLabel(summary.provider)}</p>
+            <dl className="mt-3 space-y-2 text-body">
               <MetricRow label={t("lifecycle.stale")} value={`${summary.stalePass}/${summary.sampleSize}`} />
               <MetricRow label={t("lifecycle.correction")} value={`${summary.correctionPass}/${summary.sampleSize}`} />
               <MetricRow label={t("lifecycle.deletion")} value={`${summary.deletionPass}/${summary.sampleSize}`} />
@@ -418,8 +418,8 @@ function ProvenanceDrilldown({ samples }: { samples: PairedMemorySample[] }) {
       <div className="mt-4 space-y-2">
         {samples.map((sample) => (
           <details key={sample.correlationId} className="rounded-md border bg-muted/20 p-3">
-            <summary className="cursor-pointer text-sm font-medium">{sample.query}</summary>
-            <div className="mt-3 grid gap-3 text-xs md:grid-cols-2">
+            <summary className="cursor-pointer text-body font-medium">{sample.query}</summary>
+            <div className="mt-3 grid gap-3 text-caption md:grid-cols-2">
               <ProvenanceBlock label="Hindsight" observation={sample.hindsight} />
               <ProvenanceBlock label="mem0" observation={sample.mem0} />
             </div>
@@ -434,7 +434,7 @@ function ProvenanceBlock({ label, observation }: { label: string; observation: P
   return (
     <div className="min-w-0 rounded border bg-background p-2">
       <p className="mb-2 font-medium">{label}</p>
-      <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words text-[11px] text-muted-foreground">
+      <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words text-micro text-muted-foreground">
         {formatProvenance(observation.provenance)}
       </pre>
     </div>
@@ -457,8 +457,8 @@ function ProviderBoard({ provider, model, locale }: { provider: MemoryProvider; 
       <section className="rounded-md border bg-card p-4">
         <SectionHeader title={t("provider.deliveries_title")} description={t("provider.deliveries_description")} />
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
-            <thead className="border-b text-xs uppercase text-muted-foreground">
+          <table className="w-full min-w-[820px] text-body">
+            <thead className="border-b text-caption uppercase text-muted-foreground">
               <tr>
                 <th className="py-2 text-left font-medium">{t("table.query")}</th>
                 <th className="py-2 text-right font-medium">{t("table.write_status")}</th>
@@ -496,8 +496,8 @@ function SectionHeader({ icon, title, description }: { icon?: ReactNode; title: 
     <div className="flex items-start gap-2">
       {icon ? <span className="mt-0.5 text-muted-foreground">{icon}</span> : null}
       <div className="min-w-0">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        <h3 className="text-body font-semibold">{title}</h3>
+        <p className="mt-1 text-body text-muted-foreground">{description}</p>
       </div>
     </div>
   );

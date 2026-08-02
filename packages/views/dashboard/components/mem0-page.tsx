@@ -98,12 +98,12 @@ export function Mem0UsagePage() {
       <PageHeader className="h-auto min-h-12 flex-wrap justify-between gap-y-1.5 px-5 py-1.5 sm:py-0">
         <div className="flex min-w-0 items-center gap-2">
           <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <h1 className="truncate text-sm font-medium">{t(($) => $.memory.mem0.title)}</h1>
+          <h1 className="truncate text-body font-medium">{t(($) => $.memory.mem0.title)}</h1>
         </div>
         <UsagePageTabs value="mem0" />
       </PageHeader>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
-        <p className="text-xs text-muted-foreground">{t(($) => $.memory.mem0.subtitle)}</p>
+        <p className="text-caption text-muted-foreground">{t(($) => $.memory.mem0.subtitle)}</p>
         <div className="flex flex-wrap items-center gap-2">
           <ProjectFilter projects={projects} value={projectValue} onChange={setProjectValue} />
           <Segmented
@@ -127,18 +127,18 @@ export function Mem0UsagePage() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t(($) => $.memory.mem0.search_placeholder)}
-              className="h-8 pl-8 text-sm"
+              className="h-8 pl-8 text-body"
             />
           </div>
         </div>
 
         {hasError ? (
           <Panel className="border-destructive/30 bg-destructive/5">
-            <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+            <div className="flex items-center gap-2 text-body font-medium text-destructive">
               <AlertTriangle className="h-4 w-4" />
               {t(($) => $.memory.mem0.error_title)}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-body text-muted-foreground">
               {t(($) => $.memory.mem0.error_body)}
             </p>
           </Panel>
@@ -186,7 +186,7 @@ export function Mem0UsagePage() {
                   title={t(($) => $.memory.mem0.config_title)}
                   subtitle={canManageMemory ? t(($) => $.memory.mem0.config_admin) : t(($) => $.memory.mem0.config_readonly)}
                 />
-                <div className="mt-4 grid gap-2 text-sm">
+                <div className="mt-4 grid gap-2 text-body">
                   <ConfigRow label={t(($) => $.memory.mem0.config.enabled)} value={summary.configured ? t(($) => $.memory.mem0.yes) : t(($) => $.memory.mem0.no)} />
                   <ConfigRow label={t(($) => $.memory.mem0.config.primary)} value={summary.primaryProvider || "-"} />
                   <ConfigRow label={t(($) => $.memory.mem0.config.shadow)} value={summary.shadowProvider || "-"} />
@@ -224,7 +224,7 @@ export function Mem0UsagePage() {
                   {summary.outcomes.length === 0 ? (
                     <EmptyPanel text={t(($) => $.memory.mem0.no_outcomes)} />
                   ) : summary.outcomes.map((row) => (
-                    <div key={row.operation} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <div key={row.operation} className="flex items-center justify-between gap-3 py-2 text-body">
                       <span className="capitalize">{t(($) => $.memory.mem0.operation[row.operation])}</span>
                       <span className="tabular-nums text-muted-foreground">
                         {t(($) => $.memory.mem0.outcome_counts, { ok: row.ok, error: row.error })}
@@ -263,9 +263,9 @@ function MetricCard({
     <Panel className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
-          <div className="mt-2 truncate text-2xl font-semibold tabular-nums">{value}</div>
-          <div className="mt-1 truncate text-xs text-muted-foreground">{hint}</div>
+          <div className="text-micro font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
+          <div className="mt-2 truncate text-display-sm font-semibold tabular-nums">{value}</div>
+          <div className="mt-1 truncate text-caption text-muted-foreground">{hint}</div>
         </div>
         <div className="rounded-md bg-muted p-2 text-muted-foreground">
           <Icon className="h-4 w-4" />
@@ -282,14 +282,14 @@ function Panel({ children, className = "" }: { children: ReactNode; className?: 
 function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+      <div className="text-body font-semibold">{title}</div>
+      <div className="mt-1 text-caption text-muted-foreground">{subtitle}</div>
     </div>
   );
 }
 
 function EmptyPanel({ text }: { text: string }) {
-  return <div className="mt-4 rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">{text}</div>;
+  return <div className="mt-4 rounded-md border border-dashed py-8 text-center text-body text-muted-foreground">{text}</div>;
 }
 
 function ConfigRow({ label, value }: { label: string; value: string }) {
@@ -350,8 +350,8 @@ function AuditTable({ rows, locales }: { rows: ReturnType<typeof buildMem0BoardS
   if (rows.length === 0) return <EmptyPanel text={t(($) => $.memory.mem0.no_audit)} />;
   return (
     <div className="mt-4 overflow-x-auto">
-      <table className="w-full min-w-[760px] text-left text-sm">
-        <thead className="border-b text-xs text-muted-foreground">
+      <table className="w-full min-w-[760px] text-left text-body">
+        <thead className="border-b text-caption text-muted-foreground">
           <tr>
             <th className="py-2 pr-4 font-medium">{t(($) => $.memory.mem0.audit.time)}</th>
             <th className="py-2 pr-4 font-medium">{t(($) => $.memory.mem0.audit.query)}</th>
@@ -365,13 +365,13 @@ function AuditTable({ rows, locales }: { rows: ReturnType<typeof buildMem0BoardS
         <tbody className="divide-y">
           {rows.map((row) => (
             <tr key={row.id}>
-              <td className="py-2 pr-4 text-xs text-muted-foreground">{formatDateTime(row.sampledAt, locales)}</td>
+              <td className="py-2 pr-4 text-caption text-muted-foreground">{formatDateTime(row.sampledAt, locales)}</td>
               <td className="max-w-64 py-2 pr-4"><span className="block truncate">{row.query || "-"}</span></td>
               <td className="py-2 pr-4 tabular-nums">{row.resultCount}</td>
               <td className="py-2 pr-4 tabular-nums">{formatMs(row.latencyMs)}</td>
               <td className="py-2 pr-4 tabular-nums">{row.tokens == null ? "-" : formatNumber(row.tokens, locales)}</td>
               <td className="py-2 pr-4"><StatusBadge status={row.status} /></td>
-              <td className="max-w-44 py-2 font-mono text-xs text-muted-foreground"><span className="block truncate">{row.correlationId || row.id}</span></td>
+              <td className="max-w-44 py-2 font-mono text-caption text-muted-foreground"><span className="block truncate">{row.correlationId || row.id}</span></td>
             </tr>
           ))}
         </tbody>

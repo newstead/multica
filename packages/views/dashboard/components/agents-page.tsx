@@ -250,7 +250,7 @@ export function AgentsUsagePage() {
       <PageHeader className="h-auto min-h-12 flex-wrap justify-between gap-y-1.5 px-5 py-1.5 sm:py-0">
         <div className="flex min-w-0 items-center gap-2">
           <BarChart3 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <h1 className="truncate text-sm font-medium">{t(($) => $.title)}</h1>
+          <h1 className="truncate text-body font-medium">{t(($) => $.title)}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <UsagePageTabs value="agents" />
@@ -270,7 +270,7 @@ export function AgentsUsagePage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl space-y-5 p-6">
-          <p className="text-xs text-muted-foreground">
+          <p className="text-caption text-muted-foreground">
             {t(($) => $.agents.subtitle)}
           </p>
 
@@ -393,8 +393,8 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
   return (
     <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
       <div className="min-w-0">
-        <h2 className="truncate text-sm font-medium">{title}</h2>
-        <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+        <h2 className="truncate text-body font-medium">{title}</h2>
+        <p className="mt-1 text-caption text-muted-foreground">{subtitle}</p>
       </div>
     </div>
   );
@@ -402,7 +402,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
 
 function SectionEmpty({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-48 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground">
+    <div className="flex min-h-48 items-center justify-center rounded-md border border-dashed text-caption text-muted-foreground">
       {children}
     </div>
   );
@@ -449,7 +449,7 @@ function ModelMixChart({
       </ChartContainer>
       <div className="min-w-0 space-y-2 self-center">
         {data.map((row, index) => (
-          <div key={row.label} className="flex min-w-0 items-center justify-between gap-3 text-xs">
+          <div key={row.label} className="flex min-w-0 items-center justify-between gap-3 text-caption">
             <div className="flex min-w-0 items-center gap-2">
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-sm"
@@ -518,7 +518,7 @@ function FailureList({ rows }: { rows: FailureRow[] }) {
   return (
     <div className="space-y-2">
       {rows.slice(0, 8).map((row) => (
-        <div key={`${row.agentId}:${row.reason}`} className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-xs">
+        <div key={`${row.agentId}:${row.reason}`} className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-caption">
           <div className="min-w-0">
             <div className="truncate font-medium">{row.agentName}</div>
             <div className="truncate text-muted-foreground">{row.reason}</div>
@@ -592,7 +592,7 @@ function CodeTable({ rows }: { rows: CodeTableRow[] }) {
 
 function DiffText({ additions, deletions }: { additions: number; deletions: number }) {
   return (
-    <span className="inline-flex gap-2 font-mono text-xs tabular-nums">
+    <span className="inline-flex gap-2 font-mono text-caption tabular-nums">
       <span className="text-emerald-600 dark:text-emerald-400">{formatSigned(additions)}</span>
       <span className="text-rose-600 dark:text-rose-400">{formatSigned(-deletions)}</span>
     </span>
@@ -600,7 +600,7 @@ function DiffText({ additions, deletions }: { additions: number; deletions: numb
 }
 
 function Mono({ children }: { children: ReactNode }) {
-  return <span className="font-mono text-xs tabular-nums">{children}</span>;
+  return <span className="font-mono text-caption tabular-nums">{children}</span>;
 }
 
 function BottlenecksPanel({ rows }: { rows: BottleneckRow[] }) {
@@ -615,20 +615,20 @@ function BottlenecksPanel({ rows }: { rows: BottleneckRow[] }) {
             <div className="flex min-w-0 items-center gap-2">
               <ActorAvatar actorType="agent" actorId={row.agentId} size="sm" />
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{row.agentName}</div>
-                <div className="text-xs text-muted-foreground">
+                <div className="truncate text-body font-medium">{row.agentName}</div>
+                <div className="text-caption text-muted-foreground">
                   {t(($) => $.agents.bottlenecks.score, { score: row.score.toFixed(2) })}
                 </div>
               </div>
             </div>
-            <div className="shrink-0 text-right text-xs text-muted-foreground">
+            <div className="shrink-0 text-right text-caption text-muted-foreground">
               <div>{formatPercent(row.failureRate)}</div>
               <div>{t(($) => $.agents.bottlenecks.tokens_per_loc, { tokens: formatTokens(Math.round(row.tokensPerLoc)) })}</div>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {row.reasons.map((reason) => (
-              <span key={reason} className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+              <span key={reason} className="rounded-md bg-muted px-2 py-1 text-caption text-muted-foreground">
                 {reason}
               </span>
             ))}
@@ -658,8 +658,8 @@ function AgentsEmpty() {
   const { t } = useT("usage");
   return (
     <div className="rounded-lg border bg-card p-10 text-center">
-      <h2 className="text-sm font-medium">{t(($) => $.agents.empty.title)}</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+      <h2 className="text-body font-medium">{t(($) => $.agents.empty.title)}</h2>
+      <p className="mx-auto mt-2 max-w-md text-body text-muted-foreground">
         {t(($) => $.agents.empty.body)}
       </p>
     </div>
