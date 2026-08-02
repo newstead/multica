@@ -19,7 +19,7 @@ Internal ops runbook for syncing the `newstead/multica` fork with the official
 
 Rules:
 
-- Always fetch first: `git fetch origin --prune` and `git fetch upstream --prune`.
+- Always fetch first: `git fetch origin --prune` and `git fetch upstream --prune --no-tags`.
 - Feature branches start from `origin/upstream-sync/<ver>-production`.
 - Every implementation PR targets `upstream-sync/<ver>-production` — never `main`,
   `mega`, or bare `multmemory`.
@@ -33,7 +33,7 @@ git remote add upstream https://github.com/multica-ai/multica
 
 # per cycle
 git fetch origin --prune
-git fetch upstream --prune
+git fetch upstream --prune --no-tags   # no auto-follow of bare upstream tags, see §3
 git fetch upstream refs/tags/v0.4.16:refs/tags/upstream/v0.4.16   # prefixed tag, see §3
 
 # release commit
@@ -49,26 +49,39 @@ git diff --stat origin/production upstream/v0.4.16
 git log --oneline --no-merges origin/production..upstream/v0.4.16
 
 # migration inventory (see §5)
-git ls-tree --name-only upstream/v0.4.16 server/migrations/ | grep -E '^[0-9]+_.*\.up\.sql$' | sort
+git ls-tree --name-only upstream/v0.4.16:server/migrations | grep -E '^[0-9]+_.*\.up\.sql$' | sort
 ```
+
+Note: `git ls-tree --name-only <ref> server/migrations/` prints full paths
+(`server/migrations/250_...`), so the grep would not match. Use the `ref:path`
+tree syntax (or strip the `server/migrations/` prefix first).
 
 ## 3. Safe upstream tag handling
 
 - Never push bare upstream tags (`v0.4.16`) to `origin` — our releases use
   `-ns` tags only.
+- Fetch upstream with `--no-tags` (or configure
+  `git config remote.upstream.tagOpt --no-tags`) so a plain fetch does not
+  auto-follow bare upstream tags into the local tag namespace.
 - Import upstream tags under the `upstream/` prefix so they cannot be confused
   with ours: `git fetch upstream refs/tags/v0.4.16:refs/tags/upstream/v0.4.16`.
   A plain `git fetch upstream --tags` can clobber locally cached tags; if it
   reports `would clobber existing tag`, verify the local copy matches the
-  upstream commit instead of force-overwriting.
+  upstream commit instead of force-overwriting. If a bare tag was already
+  auto-followed in the past and exists locally, verify it points at the same
+  upstream commit and never push it to `origin`.
 - Local prod tags always carry the `-ns` suffix: `v0.4.16-ns.1`. Never tag our
   releases with a bare `v0.4.16`.
 - Sanity check before release:
 
 ```bash
-git tag -l 'v0.4.16*'        # expect upstream/v0.4.16, v0.4.16 (upstream cache), v0.4.16-ns.* (ours)
-git push origin v0.4.16-ns.1 # push only -ns tags
+git tag -l 'upstream/v0.4.16*'   # imported upstream tag present
+git tag -l 'v0.4.16-ns.*'        # our release tags only
+git push origin v0.4.16-ns.1     # push only -ns tags
 ```
+
+  A bare glob like `v0.4.16*` cannot match the `upstream/` prefix, so check the
+  two namespaces separately.
 
 - The release workflow (`.github/workflows/release.yml`) triggers on `v*.*.*`
   tags and validates semver (refuses `*-dirty*`). On the fork it builds and
@@ -104,9 +117,12 @@ git config --global rerere.autoUpdate true
 - Check the max prefix on each side before/after the merge:
 
 ```bash
-git ls-tree --name-only origin/upstream-sync/v0.4.16-production server/migrations/ | grep -E '^[0-9]+_.*\.up\.sql$' | sed -E 's/^([0-9]+)_.*/\1/' | sort -n | tail -1
-git ls-tree --name-only upstream/v0.4.16 server/migrations/ | grep -E '^[0-9]+_.*\.up\.sql$' | sed -E 's/^([0-9]+)_.*/\1/' | sort -n | tail -1
+git ls-tree --name-only origin/upstream-sync/v0.4.16-production:server/migrations | grep -E '^[0-9]+_.*\.up\.sql$' | sed -E 's/^([0-9]+)_.*/\1/' | sort -n | tail -1
+git ls-tree --name-only upstream/v0.4.16:server/migrations | grep -E '^[0-9]+_.*\.up\.sql$' | sed -E 's/^([0-9]+)_.*/\1/' | sort -n | tail -1
 ```
+
+  Use the `ref:path` tree syntax here too — the `server/migrations/` form
+  returns full paths and the grep will match nothing.
 
 - Rules:
   - Carried local migrations start after the upstream max prefix (v0.4.16 → `251`).
@@ -150,8 +166,17 @@ git ls-tree --name-only upstream/v0.4.16 server/migrations/ | grep -E '^[0-9]+_.
 2. Push the tag: `git push origin v0.4.16-ns.1`.
 3. Confirm the release workflow builds `ghcr.io/newstead/multica-backend` and
    `ghcr.io/newstead/multica-web` for the tag (`.github/workflows/release.yml`).
-4. Deploy per the selfhost procedure — pin `MULTICA_IMAGE_TAG=v0.4.16-ns.1` in
-   `.env`, then:
+4. Deploy per the selfhost procedure — pin the fork images and the release tag
+   in `.env`. The compose defaults (`ghcr.io/multica-ai/...`) do not receive
+   the fork's images, so all three must be set:
+
+```bash
+MULTICA_BACKEND_IMAGE=ghcr.io/newstead/multica-backend
+MULTICA_WEB_IMAGE=ghcr.io/newstead/multica-web
+MULTICA_IMAGE_TAG=v0.4.16-ns.1
+```
+
+   then:
 
 ```bash
 docker compose -f docker-compose.selfhost.yml pull
@@ -166,7 +191,10 @@ docker compose -f docker-compose.selfhost.yml up -d
 ### Rollback
 
 - Previous known-good: `v0.4.14-ns.11` / `b92b3be51`.
-- Compose: set `MULTICA_IMAGE_TAG` back to `v0.4.14-ns.11`, `pull`, `up -d`.
+- Compose: restore the same three `.env` values — keep
+  `MULTICA_BACKEND_IMAGE=ghcr.io/newstead/multica-backend` and
+  `MULTICA_WEB_IMAGE=ghcr.io/newstead/multica-web`, set
+  `MULTICA_IMAGE_TAG=v0.4.14-ns.11` — then `pull` and `up -d`.
 - Helm: `helm -n multica rollback multica` (rolls back to the previous revision).
 - DB: migrations run forward on startup; downgrade requires the `.down.sql` for
   the delta or a restore from backup — take a DB backup before deploying.
