@@ -147,6 +147,11 @@ type TaskContextForEnv struct {
 	// non-empty so every agent in the workspace sees the same shared context,
 	// regardless of issue / chat / autopilot / quick-create.
 	WorkspaceContext string
+	// LanguagePolicy is the resolved runtime language policy for this task
+	// (agent > project > workspace, BCP-47 such as "ru"). Rendered into the
+	// brief as `## Language Policy` for every task kind when non-empty;
+	// projects without a policy leave it empty and the section is omitted.
+	LanguagePolicy string
 	// ConnectedApps lists per-run external app capabilities mounted through
 	// MCP overlays. Rendered briefly so the agent can map app names such as
 	// Notion to the actual MCP server name (`composio`).

@@ -1,7 +1,8 @@
 -- name: ListWorkspaces :many
 SELECT w.id, w.name, w.slug, w.description, w.settings,
        w.created_at, w.updated_at, w.context, w.repos,
-       w.issue_prefix, w.issue_counter, w.avatar_url, w.attribution_fail_closed
+       w.issue_prefix, w.issue_counter, w.avatar_url, w.attribution_fail_closed,
+       w.language_policy
 FROM member m
 JOIN workspace w ON w.id = m.workspace_id
 WHERE m.user_id = $1
@@ -40,8 +41,8 @@ SELECT attribution_fail_closed FROM workspace
 WHERE id = $1;
 
 -- name: CreateWorkspace :one
-INSERT INTO workspace (name, slug, description, context, issue_prefix)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO workspace (name, slug, description, context, issue_prefix, language_policy)
+VALUES ($1, $2, $3, $4, $5, sqlc.narg('language_policy'))
 RETURNING *;
 
 -- name: UpdateWorkspace :one
@@ -53,6 +54,7 @@ UPDATE workspace SET
     repos = COALESCE(sqlc.narg('repos'), repos),
     issue_prefix = COALESCE(sqlc.narg('issue_prefix'), issue_prefix),
     avatar_url = COALESCE(sqlc.narg('avatar_url'), avatar_url),
+    language_policy = COALESCE(sqlc.narg('language_policy'), language_policy),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -197,3 +199,11 @@ cleared_client_usage_workspace AS (
     UPDATE client_usage_daily SET workspace_id = NULL WHERE workspace_id = $1
 )
 DELETE FROM workspace WHERE workspace.id = $1;
+
+-- name: ClearWorkspaceLanguagePolicy :one
+-- Explicit NULL-clear for language_policy. COALESCE-based UpdateWorkspace
+-- cannot set the nullable column back to NULL, so the API routes "no policy"
+-- requests here.
+UPDATE workspace SET language_policy = NULL, updated_at = now()
+WHERE id = $1
+RETURNING *;

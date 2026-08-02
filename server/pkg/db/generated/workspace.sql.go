@@ -11,18 +11,50 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearWorkspaceLanguagePolicy = `-- name: ClearWorkspaceLanguagePolicy :one
+UPDATE workspace SET language_policy = NULL, updated_at = now()
+WHERE id = $1
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy
+`
+
+// Explicit NULL-clear for language_policy. COALESCE-based UpdateWorkspace
+// cannot set the nullable column back to NULL, so the API routes "no policy"
+// requests here.
+func (q *Queries) ClearWorkspaceLanguagePolicy(ctx context.Context, id pgtype.UUID) (Workspace, error) {
+	row := q.db.QueryRow(ctx, clearWorkspaceLanguagePolicy, id)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Description,
+		&i.Settings,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Context,
+		&i.Repos,
+		&i.IssuePrefix,
+		&i.IssueCounter,
+		&i.AvatarUrl,
+		&i.AttributionFailClosed,
+		&i.LanguagePolicy,
+	)
+	return i, err
+}
+
 const createWorkspace = `-- name: CreateWorkspace :one
-INSERT INTO workspace (name, slug, description, context, issue_prefix)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed
+INSERT INTO workspace (name, slug, description, context, issue_prefix, language_policy)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy
 `
 
 type CreateWorkspaceParams struct {
-	Name        string      `json:"name"`
-	Slug        string      `json:"slug"`
-	Description pgtype.Text `json:"description"`
-	Context     pgtype.Text `json:"context"`
-	IssuePrefix string      `json:"issue_prefix"`
+	Name           string      `json:"name"`
+	Slug           string      `json:"slug"`
+	Description    pgtype.Text `json:"description"`
+	Context        pgtype.Text `json:"context"`
+	IssuePrefix    string      `json:"issue_prefix"`
+	LanguagePolicy pgtype.Text `json:"language_policy"`
 }
 
 func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error) {
@@ -32,6 +64,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		arg.Description,
 		arg.Context,
 		arg.IssuePrefix,
+		arg.LanguagePolicy,
 	)
 	var i Workspace
 	err := row.Scan(
@@ -48,6 +81,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.IssueCounter,
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
+		&i.LanguagePolicy,
 	)
 	return i, err
 }
@@ -187,7 +221,7 @@ func (q *Queries) GetDaemonWorkspace(ctx context.Context, id pgtype.UUID) (GetDa
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed FROM workspace
+SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy FROM workspace
 WHERE id = $1
 `
 
@@ -208,6 +242,7 @@ func (q *Queries) GetWorkspace(ctx context.Context, id pgtype.UUID) (Workspace, 
 		&i.IssueCounter,
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
+		&i.LanguagePolicy,
 	)
 	return i, err
 }
@@ -227,7 +262,7 @@ func (q *Queries) GetWorkspaceAttributionFailClosed(ctx context.Context, id pgty
 }
 
 const getWorkspaceBySlug = `-- name: GetWorkspaceBySlug :one
-SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed FROM workspace
+SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy FROM workspace
 WHERE slug = $1
 `
 
@@ -248,6 +283,7 @@ func (q *Queries) GetWorkspaceBySlug(ctx context.Context, slug string) (Workspac
 		&i.IssueCounter,
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
+		&i.LanguagePolicy,
 	)
 	return i, err
 }
@@ -305,7 +341,8 @@ func (q *Queries) ListDaemonWorkspaces(ctx context.Context, userID pgtype.UUID) 
 const listWorkspaces = `-- name: ListWorkspaces :many
 SELECT w.id, w.name, w.slug, w.description, w.settings,
        w.created_at, w.updated_at, w.context, w.repos,
-       w.issue_prefix, w.issue_counter, w.avatar_url, w.attribution_fail_closed
+       w.issue_prefix, w.issue_counter, w.avatar_url, w.attribution_fail_closed,
+       w.language_policy
 FROM member m
 JOIN workspace w ON w.id = m.workspace_id
 WHERE m.user_id = $1
@@ -335,6 +372,7 @@ func (q *Queries) ListWorkspaces(ctx context.Context, userID pgtype.UUID) ([]Wor
 			&i.IssueCounter,
 			&i.AvatarUrl,
 			&i.AttributionFailClosed,
+			&i.LanguagePolicy,
 		); err != nil {
 			return nil, err
 		}
@@ -399,20 +437,22 @@ UPDATE workspace SET
     repos = COALESCE($6, repos),
     issue_prefix = COALESCE($7, issue_prefix),
     avatar_url = COALESCE($8, avatar_url),
+    language_policy = COALESCE($9, language_policy),
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy
 `
 
 type UpdateWorkspaceParams struct {
-	ID          pgtype.UUID `json:"id"`
-	Name        pgtype.Text `json:"name"`
-	Description pgtype.Text `json:"description"`
-	Context     pgtype.Text `json:"context"`
-	Settings    []byte      `json:"settings"`
-	Repos       []byte      `json:"repos"`
-	IssuePrefix pgtype.Text `json:"issue_prefix"`
-	AvatarUrl   pgtype.Text `json:"avatar_url"`
+	ID             pgtype.UUID `json:"id"`
+	Name           pgtype.Text `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	Context        pgtype.Text `json:"context"`
+	Settings       []byte      `json:"settings"`
+	Repos          []byte      `json:"repos"`
+	IssuePrefix    pgtype.Text `json:"issue_prefix"`
+	AvatarUrl      pgtype.Text `json:"avatar_url"`
+	LanguagePolicy pgtype.Text `json:"language_policy"`
 }
 
 func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error) {
@@ -425,6 +465,7 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		arg.Repos,
 		arg.IssuePrefix,
 		arg.AvatarUrl,
+		arg.LanguagePolicy,
 	)
 	var i Workspace
 	err := row.Scan(
@@ -441,6 +482,7 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.IssueCounter,
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
+		&i.LanguagePolicy,
 	)
 	return i, err
 }
