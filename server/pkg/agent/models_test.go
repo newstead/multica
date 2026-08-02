@@ -38,10 +38,10 @@ func TestListModelsDeepSeekDefaultsToV4Flash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels(deepseek) error: %v", err)
 	}
-	if len(got) != 1 {
+	if len(got.Models) != 1 {
 		t.Fatalf("ListModels(deepseek) = %+v, want one default model", got)
 	}
-	model := got[0]
+	model := got.Models[0]
 	if model.ID != "deepseek-v4-flash" || model.Label != "DeepSeek V4 Flash" || model.Provider != "deepseek" || !model.Default {
 		t.Fatalf("deepseek model = %+v, want deepseek-v4-flash default", model)
 	}
@@ -53,8 +53,11 @@ func TestListModelsQwenUsesRuntimeDefaultAndManualEntry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels(qwen) error: %v", err)
 	}
-	if len(got) != 0 {
+	if len(got.Models) != 0 {
 		t.Fatalf("ListModels(qwen) = %+v, want no account-specific static catalog", got)
+	}
+	if got.Fallback {
+		t.Error("qwen's empty catalog is deliberate, not a discovery fallback")
 	}
 }
 
@@ -73,11 +76,14 @@ func TestListModelsCopilotFallsBackToStatic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels(copilot) error: %v", err)
 	}
-	if len(got) == 0 {
+	if len(got.Models) == 0 {
 		t.Fatal("expected static fallback models, got empty list")
 	}
+	if !got.Fallback {
+		t.Error("a static stand-in must be marked Fallback so it is never cached as the real catalog")
+	}
 	ids := map[string]bool{}
-	for _, m := range got {
+	for _, m := range got.Models {
 		ids[m.ID] = true
 	}
 	if !ids["gpt-5.4"] || !ids["claude-sonnet-4.6"] {
@@ -394,7 +400,7 @@ func TestListModelsHermesWithoutBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels(hermes) error: %v", err)
 	}
-	if got == nil {
+	if got.Models == nil {
 		t.Error("expected non-nil slice even when binary is missing")
 	}
 }
@@ -409,7 +415,7 @@ func TestListModelsKiroWithoutBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels(kiro) error: %v", err)
 	}
-	if got == nil {
+	if got.Models == nil {
 		t.Error("expected non-nil slice even when binary is missing")
 	}
 }
@@ -424,7 +430,22 @@ func TestListModelsQoderWithoutBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels(qoder) error: %v", err)
 	}
-	if got == nil {
+	if got.Models == nil {
+		t.Error("expected non-nil slice even when binary is missing")
+	}
+}
+
+func TestListModelsQoderCNWithoutBinary(t *testing.T) {
+	ctx := context.Background()
+	modelCacheMu.Lock()
+	delete(modelCache, "qoderclicn")
+	modelCacheMu.Unlock()
+
+	got, err := ListModels(ctx, "qoderclicn", missingAgentExecutable(t, "qoderclicn"))
+	if err != nil {
+		t.Fatalf("ListModels(qoderclicn) error: %v", err)
+	}
+	if got.Models == nil {
 		t.Error("expected non-nil slice even when binary is missing")
 	}
 }
@@ -618,16 +639,16 @@ func TestCachedDiscoveryDoesNotCacheEmpty(t *testing.T) {
 	t.Cleanup(resetCache)
 
 	emptyCalls := 0
-	empty := func() ([]Model, error) {
+	empty := func() (Catalog, error) {
 		emptyCalls++
-		return []Model{}, nil
+		return Catalog{Models: []Model{}}, nil
 	}
 	for i := 0; i < 2; i++ {
 		got, err := cachedDiscovery(emptyKey, empty)
 		if err != nil {
 			t.Fatalf("cachedDiscovery: %v", err)
 		}
-		if len(got) != 0 {
+		if len(got.Models) != 0 {
 			t.Fatalf("expected empty result, got %+v", got)
 		}
 	}
@@ -636,9 +657,9 @@ func TestCachedDiscoveryDoesNotCacheEmpty(t *testing.T) {
 	}
 
 	nonEmptyCalls := 0
-	nonEmpty := func() ([]Model, error) {
+	nonEmpty := func() (Catalog, error) {
 		nonEmptyCalls++
-		return []Model{{ID: "provider/model"}}, nil
+		return Catalog{Models: []Model{{ID: "provider/model"}}}, nil
 	}
 	for i := 0; i < 2; i++ {
 		if _, err := cachedDiscovery(nonEmptyKey, nonEmpty); err != nil {
@@ -1240,9 +1261,9 @@ func TestParseAntigravityModelsEmpty(t *testing.T) {
 
 func TestCachedDiscovery(t *testing.T) {
 	calls := 0
-	fn := func() ([]Model, error) {
+	fn := func() (Catalog, error) {
 		calls++
-		return []Model{{ID: "x", Label: "x"}}, nil
+		return Catalog{Models: []Model{{ID: "x", Label: "x"}}}, nil
 	}
 	// First call populates the cache; reset for isolation.
 	modelCacheMu.Lock()

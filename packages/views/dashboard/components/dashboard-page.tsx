@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, Trash2 } from "lucide-react";
+import { BarChart3, EyeOff, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import {
@@ -78,9 +78,11 @@ import {
   DELETED_AGENTS_ROW_ID,
   formatDuration,
   hasRateSample,
+  isSyntheticAgentRow,
   mergeAgentDashboardRows,
   MIN_RATE_SAMPLE,
   OFFENDER_METRIC,
+  RESTRICTED_AGENTS_ROW_ID,
   sortAgentFailures,
   type AgentDashboardRow,
   type AgentFailureRow,
@@ -162,6 +164,13 @@ export function DashboardPage() {
   const dailyQuery = useQuery(
     dashboardUsageDailyOptions(wsId, chartFetchDays, projectId, viewTZ),
   );
+  // The three per-agent rollups carry no date, so `dailyCutoffIso` below
+  // cannot trim them — their window is closed server-side at exactly `days`
+  // calendar buckets (parseExactSinceParamInTZ). Anything derived from these
+  // three is therefore already on the same span as the trimmed daily series;
+  // do NOT put a per-agent rollup back on the N+1 cutoff, or the leaderboard
+  // and the Run time / Tasks KPIs silently widen by one day while the chart
+  // and the Cost / Tokens KPIs beside them do not (MUL-5551).
   const byAgentQuery = useQuery(
     dashboardUsageByAgentOptions(wsId, days, projectId, viewTZ),
   );
@@ -357,11 +366,16 @@ export function DashboardPage() {
     [agentRows, knownAgentIds],
   );
   // Distinct hard-deleted agents folded into the bucket — drives the caption's
-  // "· N deleted" suffix (the bucket itself is a single row).
+  // "· N deleted" suffix (the bucket itself is a single row). The server's
+  // restricted bucket is not in `knownAgentIds` either but is not a deletion,
+  // so it must not inflate this count — that mislabelling is exactly the bug
+  // MUL-5409 came with.
   const deletedAgentCount = useMemo(
     () =>
       knownAgentIds
-        ? agentRows.filter((r) => !knownAgentIds.has(r.agentId)).length
+        ? agentRows.filter(
+            (r) => !knownAgentIds.has(r.agentId) && !isSyntheticAgentRow(r.agentId),
+          ).length
         : 0,
     [agentRows, knownAgentIds],
   );
@@ -375,7 +389,7 @@ export function DashboardPage() {
       <PageHeader className="h-auto min-h-12 flex-wrap justify-between gap-y-1.5 px-5 py-1.5 sm:py-0">
         <div className="flex min-w-0 items-center gap-2">
           <BarChart3 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <h1 className="truncate text-sm font-medium">{t(($) => $.title)}</h1>
+          <h1 className="truncate text-body font-medium">{t(($) => $.title)}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <UsagePageTabs value="overview" />
@@ -404,7 +418,7 @@ export function DashboardPage() {
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl space-y-5 p-6">
-          <p className="text-xs text-muted-foreground">{t(($) => $.subtitle)}</p>
+          <p className="text-caption text-muted-foreground">{t(($) => $.subtitle)}</p>
 
           {isLoading ? (
             <DashboardSkeleton />
@@ -613,7 +627,7 @@ function TrendBlock({
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h4 className="text-sm font-semibold">{title}</h4>
+        <h4 className="text-body font-semibold">{title}</h4>
         <Segmented
           label={t(($) => $.daily.metric_label)}
           value={metric}
@@ -630,8 +644,8 @@ function TrendBlock({
       <div className="min-h-[240px]">
         {isEmpty ? (
           <div className="flex aspect-[3/1] flex-col items-center justify-center gap-2 rounded-md border border-dashed bg-muted/20 p-6 text-center">
-            <BarChart3 className="h-5 w-5 text-muted-foreground/50" />
-            <p className="text-xs text-muted-foreground">
+            <BarChart3 className="h-5 w-5 text-faint-foreground" />
+            <p className="text-caption text-muted-foreground">
               {metric === "errors"
                 ? t(($) => $.errors.no_data)
                 : t(($) => $.daily.no_data)}
@@ -769,8 +783,8 @@ function ErrorsBreakdown({
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 pt-4 pb-3">
-        <h4 className="text-sm font-semibold">{t(($) => $.errors.title)}</h4>
-        <span className="text-xs text-muted-foreground">
+        <h4 className="text-body font-semibold">{t(($) => $.errors.title)}</h4>
+        <span className="text-caption text-muted-foreground">
           {totals.failed > 0
             ? t(($) => $.errors.summary, {
                 failed: totals.failed,
@@ -790,13 +804,13 @@ function ErrorsBreakdown({
                   failures alone (287). Two percentages one above the other
                   with different denominators read as a contradiction unless
                   each says what it is counting. */}
-              <h5 className="text-xs font-medium text-muted-foreground">
+              <h5 className="text-caption font-medium text-muted-foreground">
                 {t(($) => $.errors.mix_title, { failed: totals.failed })}
               </h5>
               <button
                 type="button"
                 onClick={() => setShowReasons((v) => !v)}
-                className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 {showReasons
                   ? t(($) => $.errors.hide_reasons)
@@ -812,7 +826,7 @@ function ErrorsBreakdown({
 
           <div className="p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h5 className="text-xs font-medium text-muted-foreground">
+              <h5 className="text-caption font-medium text-muted-foreground">
                 {t(($) => $.errors.by_agent)}
               </h5>
               <div className="flex flex-wrap items-center justify-end gap-3">
@@ -826,7 +840,7 @@ function ErrorsBreakdown({
                   <button
                     type="button"
                     onClick={() => setShowAllAgents((v) => !v)}
-                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    className="text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                   >
                     {showAllAgents
                       ? t(($) => $.errors.show_less, {
@@ -845,7 +859,7 @@ function ErrorsBreakdown({
                 obvious what the ranking and the bars measure. */}
             {sortedAgents.length > 0 ? (
               <div
-                className={`${OFFENDER_GRID} border-b py-2 text-xs font-medium text-muted-foreground`}
+                className={`${OFFENDER_GRID} border-b py-2 text-caption font-medium text-muted-foreground`}
               >
                 <span>{t(($) => $.errors.header_agent)}</span>
                 <span />
@@ -930,8 +944,8 @@ function ClassComposition({
               className="h-2 w-2 shrink-0 rounded-[2px]"
               style={{ backgroundColor: FAILURE_CLASS_COLOR[row.failureClass] }}
             />
-            <span className="text-xs">{classLabel(row.failureClass)}</span>
-            <span className="text-xs tabular-nums text-muted-foreground">
+            <span className="text-caption">{classLabel(row.failureClass)}</span>
+            <span className="text-caption tabular-nums text-muted-foreground">
               {row.count}
             </span>
           </li>
@@ -964,11 +978,11 @@ function ReasonList({ rows }: { rows: FailureReasonRow[] }) {
               className="h-2 w-2 shrink-0 rounded-[2px]"
               style={{ backgroundColor: FAILURE_CLASS_COLOR[row.failureClass] }}
             />
-            <code className="truncate text-xs text-muted-foreground">
+            <code className="truncate text-caption text-muted-foreground">
               {row.reason}
             </code>
           </span>
-          <span className="shrink-0 text-xs tabular-nums">{row.count}</span>
+          <span className="shrink-0 text-caption tabular-nums">{row.count}</span>
         </li>
       ))}
     </ul>
@@ -1036,7 +1050,7 @@ function AgentFailureItem({
   // existence and failure profile to a member who cannot see it.
   const label = (
     <span
-      className={`block truncate text-xs${name ? "" : " italic text-muted-foreground"}`}
+      className={`block truncate text-caption${name ? "" : " italic text-muted-foreground"}`}
     >
       {name ?? t(($) => $.errors.other_agents)}
     </span>
@@ -1076,11 +1090,11 @@ function AgentFailureItem({
         </div>
       </div>
       <span
-        className={`text-right text-xs tabular-nums ${sortBy === "failed" ? "font-medium text-foreground" : "text-muted-foreground"}`}
+        className={`text-right text-caption tabular-nums ${sortBy === "failed" ? "font-medium text-foreground" : "text-muted-foreground"}`}
       >
         {row.failed}
       </span>
-      <span className="text-right text-xs tabular-nums text-muted-foreground">
+      <span className="text-right text-caption tabular-nums text-muted-foreground">
         {row.total}
       </span>
       <span
@@ -1089,7 +1103,7 @@ function AgentFailureItem({
             ? t(($) => $.errors.low_sample, { count: MIN_RATE_SAMPLE })
             : undefined
         }
-        className={`text-right text-xs tabular-nums ${
+        className={`text-right text-caption tabular-nums ${
           sortBy === "rate" && !weakSample
             ? "font-medium text-foreground"
             : "text-muted-foreground"
@@ -1165,6 +1179,14 @@ function Leaderboard({
     ? sortedRows
     : sortedRows.slice(0, LEADERBOARD_LIMIT);
 
+  // "N agents" counts the rows that actually name an agent. Up to two of the
+  // rows are synthetic buckets (deleted, restricted), and subtracting a fixed 1
+  // reported one agent too many whenever both were present.
+  const namedAgentCount = useMemo(
+    () => rows.filter((r) => !isSyntheticAgentRow(r.agentId)).length,
+    [rows],
+  );
+
   // Active column gets foreground text; others stay muted. Helps the user
   // see "this is what the bar is measuring" at a glance.
   const colClass = (key: LeaderboardSort) =>
@@ -1173,7 +1195,7 @@ function Leaderboard({
   return (
     <div className="rounded-lg border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 pt-4 pb-3">
-        <h4 className="text-sm font-semibold">{t(($) => $.leaderboard.title)}</h4>
+        <h4 className="text-body font-semibold">{t(($) => $.leaderboard.title)}</h4>
         <div className="flex flex-wrap items-center justify-end gap-3">
           <Segmented
             label={t(($) => $.leaderboard.sort_label)}
@@ -1181,13 +1203,13 @@ function Leaderboard({
             onChange={setSortBy}
             options={sortOptions}
           />
-          <span className="text-xs text-muted-foreground">
+          <span className="text-caption text-muted-foreground">
             {deletedAgentCount > 0
               ? t(($) => $.leaderboard.caption_with_deleted, {
-                  count: rows.length - 1,
+                  count: namedAgentCount,
                   deleted: deletedAgentCount,
                 })
-              : t(($) => $.leaderboard.caption, { count: rows.length })}
+              : t(($) => $.leaderboard.caption, { count: namedAgentCount })}
           </span>
           {/* The caption right beside this already states how many agents the
               window covers, so the toggle carries a count only when
@@ -1197,7 +1219,7 @@ function Leaderboard({
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              className="text-caption text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
             >
               {showAll
                 ? t(($) => $.leaderboard.show_less, { count: LEADERBOARD_LIMIT })
@@ -1207,12 +1229,12 @@ function Leaderboard({
         </div>
       </div>
       {sortedRows.length === 0 ? (
-        <p className="px-4 py-8 text-center text-xs text-muted-foreground">
+        <p className="px-4 py-8 text-center text-caption text-muted-foreground">
           {t(($) => $.leaderboard.no_data)}
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_5rem_5rem_5rem_4rem] items-center gap-3 border-b px-4 py-2 text-xs font-medium text-muted-foreground">
+          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_5rem_5rem_5rem_4rem] items-center gap-3 border-b px-4 py-2 text-caption font-medium text-muted-foreground">
             <span>{t(($) => $.leaderboard.header_agent)}</span>
             <span />
             <span className={colClass("tokens")}>{t(($) => $.leaderboard.header_tokens)}</span>
@@ -1225,11 +1247,24 @@ function Leaderboard({
               item boundaries rather than a bag of divs. */}
           <ul aria-label={t(($) => $.leaderboard.title)} className="divide-y">
             {visibleRows.map((row) => {
-              // The deleted-agents bucket is a synthetic row, not a real agent:
-              // render a neutral placeholder (no avatar fetch / hover card / UUID)
-              // and dash out Time/Tasks, which it never carries (see
-              // bucketUnknownAgentRows).
+              // Two synthetic rows, neither a real agent: both render a neutral
+              // placeholder (no avatar fetch / hover card / UUID) instead of
+              // looking the id up in the agent list.
+              //
+              // Only the deleted bucket dashes out Time/Tasks — it genuinely
+              // never carries them (see bucketUnknownAgentRows). The server's
+              // bucket does: those agents are alive and ran, the server just
+              // merged them (MUL-5409), so zeroing their columns would
+              // under-report the workspace's run time.
+              //
+              // Its copy is the neutral "Other agents" rather than anything
+              // about permissions, because it covers two populations: agents
+              // this viewer may not see, and the hidden system carriers behind
+              // agent-builder sessions, which nobody can name — including the
+              // admin who owns them.
               const isDeletedBucket = row.agentId === DELETED_AGENTS_ROW_ID;
+              const isRestrictedBucket = row.agentId === RESTRICTED_AGENTS_ROW_ID;
+              const isBucket = isDeletedBucket || isRestrictedBucket;
               const agent = agents.find((a) => a.id === row.agentId);
               const value = SORT_METRIC[sortBy](row);
               const pct = maxValue > 0 ? (value / maxValue) * 100 : 0;
@@ -1239,13 +1274,19 @@ function Leaderboard({
                   className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_5rem_5rem_5rem_4rem] items-center gap-3 px-4 py-2"
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    {isDeletedBucket ? (
+                    {isBucket ? (
                       <>
                         <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                          <Trash2 className="h-3 w-3" />
+                          {isDeletedBucket ? (
+                            <Trash2 className="h-3 w-3" />
+                          ) : (
+                            <EyeOff className="h-3 w-3" />
+                          )}
                         </span>
-                        <span className="truncate text-sm font-medium italic text-muted-foreground">
-                          {t(($) => $.leaderboard.deleted_agents)}
+                        <span className="truncate text-body font-medium italic text-muted-foreground">
+                          {isDeletedBucket
+                            ? t(($) => $.leaderboard.deleted_agents)
+                            : t(($) => $.leaderboard.other_agents)}
                         </span>
                       </>
                     ) : (
@@ -1256,7 +1297,7 @@ function Leaderboard({
                           size="md"
                           enableHoverCard
                         />
-                        <span className="cursor-pointer truncate text-sm font-medium">
+                        <span className="cursor-pointer truncate text-body font-medium">
                           {agent?.name ?? row.agentId}
                         </span>
                       </>
@@ -1269,24 +1310,24 @@ function Leaderboard({
                     />
                   </div>
                   <div
-                    className={`text-right text-xs tabular-nums ${sortBy === "tokens" ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                    className={`text-right text-caption tabular-nums ${sortBy === "tokens" ? "font-medium text-foreground" : "text-muted-foreground"}`}
                   >
                     {formatTokens(row.tokens)}
                   </div>
                   <div
-                    className={`text-right tabular-nums ${sortBy === "cost" ? "text-sm font-medium" : "text-xs text-muted-foreground"}`}
+                    className={`text-right tabular-nums ${sortBy === "cost" ? "text-body font-medium" : "text-caption text-muted-foreground"}`}
                   >
                     ${row.cost.toFixed(2)}
                   </div>
                   <div
-                    className={`text-right text-xs tabular-nums ${sortBy === "time" ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                    className={`text-right text-caption tabular-nums ${sortBy === "time" ? "font-medium text-foreground" : "text-muted-foreground"}`}
                   >
                     {isDeletedBucket
                       ? "—"
                       : formatDuration(row.seconds, lessThanMinuteLabel)}
                   </div>
                   <div
-                    className={`text-right text-xs tabular-nums ${sortBy === "tasks" ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                    className={`text-right text-caption tabular-nums ${sortBy === "tasks" ? "font-medium text-foreground" : "text-muted-foreground"}`}
                   >
                     {isDeletedBucket ? "—" : row.taskCount}
                   </div>
@@ -1314,9 +1355,9 @@ function DashboardEmpty() {
   const { t } = useT("usage");
   return (
     <div className="flex flex-col items-center rounded-lg border border-dashed py-12 text-center">
-      <BarChart3 className="h-6 w-6 text-muted-foreground/40" />
-      <p className="mt-3 text-sm font-medium">{t(($) => $.empty.title)}</p>
-      <p className="mt-1 max-w-md text-xs text-muted-foreground">
+      <BarChart3 className="h-6 w-6 text-faint-foreground" />
+      <p className="mt-3 text-body font-medium">{t(($) => $.empty.title)}</p>
+      <p className="mt-1 max-w-md text-caption text-muted-foreground">
         {t(($) => $.empty.body)}
       </p>
     </div>

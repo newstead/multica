@@ -74,6 +74,13 @@ describe("runtimeDisplayLabel", () => {
     ).toBe("box (DeepSeek)");
     expect(
       runtimeDisplayLabel({
+        name: "Qoder CN (host)",
+        custom_name: "box",
+        provider: "qoderclicn",
+      }),
+    ).toBe("box (Qoder CN)");
+    expect(
+      runtimeDisplayLabel({
         name: "Trae (host)",
         custom_name: "box",
         provider: "traecli",
