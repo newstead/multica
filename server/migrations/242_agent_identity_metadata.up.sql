@@ -1,6 +1,10 @@
 ALTER TABLE agent
-    ADD COLUMN role_code TEXT,
-    ADD COLUMN language_codes TEXT[];
+    ADD COLUMN IF NOT EXISTS role_code TEXT,
+    ADD COLUMN IF NOT EXISTS language_codes TEXT[];
+
+ALTER TABLE agent
+    DROP CONSTRAINT IF EXISTS agent_language_codes_check,
+    DROP CONSTRAINT IF EXISTS agent_role_code_check;
 
 ALTER TABLE agent
     ADD CONSTRAINT agent_role_code_check CHECK (
