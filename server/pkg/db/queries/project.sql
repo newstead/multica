@@ -30,9 +30,9 @@ FOR UPDATE;
 -- name: CreateProject :one
 INSERT INTO project (
     workspace_id, title, description, icon, status,
-    lead_type, lead_id, priority, start_date, due_date
+    lead_type, lead_id, priority, start_date, due_date, language_policy
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, sqlc.narg('language_policy')
 ) RETURNING *;
 
 -- name: UpdateProject :one
@@ -46,6 +46,7 @@ UPDATE project SET
     lead_id = sqlc.narg('lead_id'),
     start_date = sqlc.narg('start_date'),
     due_date = sqlc.narg('due_date'),
+    language_policy = sqlc.narg('language_policy'),
     updated_at = now()
 WHERE id = $1
 RETURNING *;
@@ -65,3 +66,11 @@ SELECT project_id,
 FROM issue
 WHERE project_id = ANY(sqlc.arg('project_ids')::uuid[])
 GROUP BY project_id;
+
+-- name: ClearProjectLanguagePolicy :one
+-- Explicit NULL-clear for language_policy. UpdateProject sets the column
+-- directly from a narg, so the API routes "no policy" requests here to keep
+-- absent-key (preserve) and explicit-null (clear) distinguishable.
+UPDATE project SET language_policy = NULL, updated_at = now()
+WHERE id = $1
+RETURNING *;

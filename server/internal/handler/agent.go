@@ -82,7 +82,12 @@ type AgentResponse struct {
 	AvatarURL     *string         `json:"avatar_url"`
 	RoleCode      *string         `json:"role_code"`
 	LanguageCodes []string        `json:"language_codes"`
-	RuntimeMode   string          `json:"runtime_mode"`
+	// LanguagePolicy is the agent-level runtime language policy (BCP-47). It
+	// is the highest-precedence override (agent > project > workspace) for
+	// agent-authored output and is separate from language_codes (the agent's
+	// programming languages) and the UI locale (user.language). NULL = unset.
+	LanguagePolicy *string        `json:"language_policy"`
+	RuntimeMode    string         `json:"runtime_mode"`
 	RuntimeConfig any             `json:"runtime_config"`
 	CustomArgs    []string        `json:"custom_args"`
 	McpConfig     json.RawMessage `json:"mcp_config"`
@@ -205,6 +210,7 @@ func agentToResponse(a db.Agent) AgentResponse {
 		AvatarURL:                textToPtr(a.AvatarUrl),
 		RoleCode:                 textToPtr(a.RoleCode),
 		LanguageCodes:            a.LanguageCodes,
+		LanguagePolicy:           textToPtr(a.LanguagePolicy),
 		RuntimeMode:              a.RuntimeMode,
 		RuntimeConfig:            rc,
 		CustomArgs:               customArgs,
@@ -324,6 +330,11 @@ type AgentTaskResponse struct {
 	// regardless of issue / chat / autopilot / quick-create — sees the same
 	// shared context. Empty when the workspace owner hasn't set it.
 	WorkspaceContext   string                `json:"workspace_context,omitempty"`
+	// LanguagePolicy is the resolved runtime language policy for this task
+	// (agent > project > workspace, BCP-47 such as "ru"). Empty when no
+	// policy is set anywhere — the daemon then keeps the previous behavior
+	// and omits the brief's Language Policy section.
+	LanguagePolicy     string                `json:"language_policy,omitempty"`
 	ThreadName         string                `json:"thread_name,omitempty"` // semantic title for provider-native session/thread history
 	Status             string                `json:"status"`
 	Priority           int32                 `json:"priority"`
@@ -979,7 +990,11 @@ type CreateAgentRequest struct {
 	AvatarURL     *string           `json:"avatar_url"`
 	RoleCode      *string           `json:"role_code"`
 	LanguageCodes []string          `json:"language_codes"`
-	RuntimeID     string            `json:"runtime_id"`
+	// LanguagePolicy is the agent-level runtime language policy (BCP-47).
+	// Empty/absent = unset (inherit project/workspace); allowed values are
+	// validated below.
+	LanguagePolicy *string           `json:"language_policy"`
+	RuntimeID      string            `json:"runtime_id"`
 	RuntimeConfig any               `json:"runtime_config"`
 	CustomEnv     map[string]string `json:"custom_env"`
 	CustomArgs    []string          `json:"custom_args"`
@@ -1184,6 +1199,10 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 	if len(languageCodes) == 0 {
 		languageCodes = nil
 	}
+	if req.LanguagePolicy != nil && !validateLanguagePolicy(*req.LanguagePolicy) {
+		writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+		return
+	}
 
 	skillUUIDs, ok := parseUUIDSliceOrBadRequest(w, req.SkillIDs, "skill_ids")
 	if !ok {
@@ -1228,6 +1247,7 @@ func (h *Handler) CreateAgent(w http.ResponseWriter, r *http.Request) {
 		ServiceTier:              pgtype.Text{String: req.ServiceTier, Valid: req.ServiceTier != ""},
 		RoleCode:                 roleCodeValue,
 		LanguageCodes:            languageCodes,
+		LanguagePolicy:           normaliseLanguagePolicy(req.LanguagePolicy),
 		ComposioToolkitAllowlist: allowlist,
 	})
 	if err != nil {
@@ -1367,7 +1387,10 @@ type UpdateAgentRequest struct {
 	AvatarURL     *string   `json:"avatar_url"`
 	RoleCode      *string   `json:"role_code"`
 	LanguageCodes *[]string `json:"language_codes"`
-	RuntimeID     *string   `json:"runtime_id"`
+	// LanguagePolicy is tri-state: absent = no change; null or "" = clear
+	// back to unset; a supported code = set.
+	LanguagePolicy *string   `json:"language_policy"`
+	RuntimeID      *string   `json:"runtime_id"`
 	RuntimeConfig any       `json:"runtime_config"`
 	// custom_env is intentionally NOT updatable through this endpoint.
 	// Use `PUT /api/agents/{id}/env` for env changes — that path is
@@ -1935,6 +1958,21 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// language_policy is tri-state: omitted → no change; null or "" →
+	// explicit clear via ClearAgentLanguagePolicy; a supported code → set.
+	shouldClearLanguagePolicy := false
+	if _, hasLanguagePolicy := rawFields["language_policy"]; hasLanguagePolicy {
+		if req.LanguagePolicy != nil && strings.TrimSpace(*req.LanguagePolicy) != "" {
+			if !validateLanguagePolicy(*req.LanguagePolicy) {
+				writeError(w, http.StatusBadRequest, "language_policy must be one of: ru, en")
+				return
+			}
+			params.LanguagePolicy = normaliseLanguagePolicy(req.LanguagePolicy)
+		} else {
+			shouldClearLanguagePolicy = true
+		}
+	}
+
 	// composio_toolkit_allowlist handling (MUL-3869). Tri-state semantics
 	// mirror thinking_level (see above): omitted → no change, null →
 	// ClearAgentComposioToolkitAllowlist, slice → wholesale replace.
@@ -2047,6 +2085,14 @@ func (h *Handler) UpdateAgent(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Warn("clear agent language_codes failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
 			writeError(w, http.StatusInternalServerError, "failed to clear language_codes: "+err.Error())
+			return
+		}
+	}
+	if shouldClearLanguagePolicy {
+		updated, err = queries.ClearAgentLanguagePolicy(r.Context(), updated.ID)
+		if err != nil {
+			slog.Warn("clear agent language_policy failed", append(logger.RequestAttrs(r), "error", err, "agent_id", id)...)
+			writeError(w, http.StatusInternalServerError, "failed to clear language_policy: "+err.Error())
 			return
 		}
 	}

@@ -191,6 +191,40 @@ func writeWorkspaceContext(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("\n\n")
 }
 
+// writeLanguagePolicy emits the workspace/project/agent language policy
+// section (MUL language-policy contract). It is a hard rule for all
+// agent-authored text; system template prose stays English. The section is
+// omitted entirely when no policy resolves so projects without a policy keep
+// the previous byte-for-byte brief (prompt-cache prefix stability).
+func writeLanguagePolicy(b *strings.Builder, ctx TaskContextForEnv) {
+	lang := strings.TrimSpace(ctx.LanguagePolicy)
+	if lang == "" {
+		return
+	}
+	name := languagePolicyDisplayName(lang)
+	if name == "" {
+		return
+	}
+	b.WriteString("## Language Policy\n\n")
+	fmt.Fprintf(b, "All agent-authored text for this task must be written in **%s** (`%s`). This is a hard rule that applies to every agent-written surface: issue comments (results and replies), handoff/delegation notes, blocker reports, autopilot summaries, chat replies, and issue titles/descriptions you create (including quick-create paraphrases of user input).\n\n", name, lang)
+	b.WriteString("Commands, file paths, enum/status/model IDs, task identifiers, UUIDs, JSON keys, CLI flags, mention links, URLs, filenames, code quotes, and exact CLI output stay verbatim — never translate them.\n\n")
+}
+
+// languagePolicyDisplayName maps a supported policy code to its English
+// display name. Unknown codes return "" and the section is skipped — the
+// server already rejects unknown codes at write time, so this is only a
+// defensive guard.
+func languagePolicyDisplayName(lang string) string {
+	switch lang {
+	case "ru":
+		return "Russian"
+	case "en":
+		return "English"
+	default:
+		return ""
+	}
+}
+
 // BuildConnectedAppsBlock renders the Connected Apps block for the per-turn
 // user message. The app set is per-run state (runtime MCP overlays are
 // resolved at enqueue time), so it cannot live in the runtime brief without
@@ -660,9 +694,10 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 //	Attachments           |    ✓    |   ✓    |     —     |      —       |  —
 //
 // Always-on rows — Header, Background Task Safety, Agent Identity,
-// Requesting User, Task Initiator, Workspace Context, Connected Apps,
-// Workflow, Always Use CLI, Output — are shared by every kind and emitted
-// unconditionally (or gated by their own data preconditions).
+// Requesting User, Task Initiator, Workspace Context, Language Policy,
+// Connected Apps, Workflow, Always Use CLI, Output — are shared by every
+// kind and emitted unconditionally (or gated by their own data
+// preconditions; Language Policy renders only when a policy is set).
 func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	var b strings.Builder
 	kind := classifyTask(ctx)
@@ -676,6 +711,7 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 	writeAgentIdentity(&b, ctx)
 	writeRequestingUser(&b, ctx)
 	writeWorkspaceContext(&b, ctx)
+	writeLanguagePolicy(&b, ctx)
 
 	switch kind {
 	case kindQuickCreate:

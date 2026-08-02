@@ -1590,6 +1590,13 @@ type claimBuildFailure struct {
 func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQueue, runtime db.AgentRuntime, runtimeID, runtimeWorkspaceID string) (resp AgentTaskResponse, deliveredCommentIDs []pgtype.UUID, agentSkillCount, builtinSkillCount int, failure *claimBuildFailure) {
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp = taskToResponse(*task, runtimeWorkspaceID)
+
+	// Language policy accumulation: the agent row and the task's project are
+	// loaded in kind-specific branches below, while the workspace row is only
+	// fetched at the tail. Collect the two higher-precedence values here and
+	// resolve agent > project > workspace once the workspace is in hand.
+	var agentPolicy pgtype.Text
+	var projectPolicy pgtype.Text
 	supportsCoalescedComments := requestHasClientCapability(r, protocol.DaemonCapabilityCoalescedCommentsV1)
 	// Empty-but-non-nil so pgx persists '{}' rather than NULL for tasks without
 	// comment input. Comment tasks replace this with the ids actually embedded
@@ -1600,6 +1607,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		resp.ConnectedApps = parseRuntimeConnectedAppsForClaim(task.RuntimeConnectedApps, task.ID)
 	}
 	if agent, err := h.Queries.GetAgent(r.Context(), task.AgentID); err == nil {
+		agentPolicy = agent.LanguagePolicy
 		useSkillRefs := requestHasClientCapability(r, protocol.DaemonCapabilitySkillBundlesV1)
 		var customEnv map[string]string
 		if agent.CustomEnv != nil {
@@ -1785,6 +1793,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				if proj, err := h.Queries.GetProject(r.Context(), issue.ProjectID); err == nil {
 					resp.ProjectTitle = proj.Title
 					resp.ProjectDescription = proj.Description.String
+					projectPolicy = proj.LanguagePolicy
 				}
 				if rows := h.listProjectResourcesForProject(r.Context(), issue.ProjectID); len(rows) > 0 {
 					out := make([]ProjectResourceData, 0, len(rows))
@@ -2120,6 +2129,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 					resp.ProjectID = uuidToString(project.ID)
 					resp.ProjectTitle = project.Title
 					resp.ProjectDescription = project.Description.String
+					projectPolicy = project.LanguagePolicy
 					if rows := h.listProjectResourcesForProject(r.Context(), project.ID); len(rows) > 0 {
 						resources := make([]ProjectResourceData, 0, len(rows))
 						for _, row := range rows {
@@ -2341,6 +2351,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 					if proj, err := h.Queries.GetProject(r.Context(), projectUUID); err == nil {
 						resp.ProjectTitle = proj.Title
 						resp.ProjectDescription = proj.Description.String
+						projectPolicy = proj.LanguagePolicy
 					}
 					if rows := h.listProjectResourcesForProject(r.Context(), projectUUID); len(rows) > 0 {
 						out := make([]ProjectResourceData, 0, len(rows))
@@ -2489,6 +2500,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if ws.Context.Valid {
 			resp.WorkspaceContext = ws.Context.String
 		}
+		resp.LanguagePolicy = resolveLanguagePolicy(agentPolicy, projectPolicy, ws.LanguagePolicy)
 	} else {
 		slog.Warn("task claim: failed to load workspace for context injection",
 			"task_id", uuidToString(task.ID),
