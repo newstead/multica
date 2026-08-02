@@ -390,6 +390,16 @@ export interface Agent {
    * uppercases, dedupes, and sorts these values on write.
    */
   language_codes?: string[] | null;
+  /**
+   * Language policy for this agent's task output (BCP-47, e.g. "ru"). The
+   * agent level overrides the project/workspace policy; `null` means unset
+   * (inherit up the chain). Distinct from `language_codes` (programming
+   * languages) and from the user's UI locale. See
+   * `packages/core/types/language-policy.ts`.
+   * Optional so backends that predate the policy still parse; consumers
+   * treat missing/`null` as unset.
+   */
+  language_policy?: string | null;
   runtime_mode: AgentRuntimeMode;
   runtime_config: Record<string, unknown>;
   custom_args: string[];
@@ -535,6 +545,12 @@ export interface CreateAgentRequest {
   role_code?: string | null;
   /** Primary/polyglot language code list. Backend normalizes and validates. */
   language_codes?: string[] | null;
+  /**
+   * Language policy override for this agent's task output (BCP-47).
+   * Omitted keeps the default; `null` clears any inherited policy at the
+   * agent level.
+   */
+  language_policy?: string | null;
   runtime_id: string;
   runtime_config?: Record<string, unknown>;
   custom_env?: Record<string, string>;
@@ -665,6 +681,11 @@ export interface UpdateAgentRequest {
   role_code?: string | null;
   /** Omitted preserves, null/empty clears, non-empty stores normalized codes. */
   language_codes?: string[] | null;
+  /**
+   * Language policy override for this agent's task output (BCP-47).
+   * Omitted = no change; `null` = clear (inherit from project/workspace).
+   */
+  language_policy?: string | null;
   runtime_id?: string;
   runtime_config?: Record<string, unknown>;
   /**
