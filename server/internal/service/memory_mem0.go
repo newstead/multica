@@ -57,26 +57,30 @@ type Mem0ProviderConfig struct {
 	MaxRecallTokens  int
 	MaxMemoryTokens  int
 	MaxRecallResults int
-	Clock            func() time.Time
-	Sleep            func(context.Context, time.Duration) error
+	// AggregateTelemetryPath is an optional private endpoint returning only
+	// provider-wide storage_bytes and variable_cost_usd_total.
+	AggregateTelemetryPath string
+	Clock                  func() time.Time
+	Sleep                  func(context.Context, time.Duration) error
 }
 
 // Mem0Provider is a provider-neutral gateway adapter for the authenticated,
 // self-hosted Mem0 OSS REST server.
 type Mem0Provider struct {
-	baseURL          *url.URL
-	apiKey           string
-	httpClient       *http.Client
-	requestTimeout   time.Duration
-	maxAttempts      int
-	retryBase        time.Duration
-	maxResponseBytes int64
-	maxRequestBytes  int64
-	maxRecallTokens  int
-	maxMemoryTokens  int
-	maxRecallResults int
-	clock            func() time.Time
-	sleep            func(context.Context, time.Duration) error
+	baseURL                *url.URL
+	apiKey                 string
+	httpClient             *http.Client
+	requestTimeout         time.Duration
+	maxAttempts            int
+	retryBase              time.Duration
+	maxResponseBytes       int64
+	maxRequestBytes        int64
+	maxRecallTokens        int
+	maxMemoryTokens        int
+	maxRecallResults       int
+	aggregateTelemetryPath string
+	clock                  func() time.Time
+	sleep                  func(context.Context, time.Duration) error
 
 	retainMu sync.Mutex
 	retained map[string]MemoryProviderResult
@@ -138,6 +142,10 @@ func NewMem0Provider(cfg Mem0ProviderConfig) (*Mem0Provider, error) {
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("%w: base URL must not contain a query or fragment", ErrMem0Config)
 	}
+	aggregateTelemetryPath, err := aggregateTelemetryPath(cfg.AggregateTelemetryPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrMem0Config, err)
+	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/")
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return nil, fmt.Errorf("%w: API key is required", ErrMem0Config)
@@ -184,21 +192,33 @@ func NewMem0Provider(cfg Mem0ProviderConfig) (*Mem0Provider, error) {
 	}
 
 	return &Mem0Provider{
-		baseURL:          parsed,
-		apiKey:           strings.TrimSpace(cfg.APIKey),
-		httpClient:       cfg.HTTPClient,
-		requestTimeout:   cfg.RequestTimeout,
-		maxAttempts:      cfg.MaxAttempts,
-		retryBase:        cfg.RetryBase,
-		maxResponseBytes: cfg.MaxResponseBytes,
-		maxRequestBytes:  cfg.MaxRequestBytes,
-		maxRecallTokens:  cfg.MaxRecallTokens,
-		maxMemoryTokens:  cfg.MaxMemoryTokens,
-		maxRecallResults: cfg.MaxRecallResults,
-		clock:            cfg.Clock,
-		sleep:            cfg.Sleep,
-		retained:         make(map[string]MemoryProviderResult),
+		baseURL:                parsed,
+		apiKey:                 strings.TrimSpace(cfg.APIKey),
+		httpClient:             cfg.HTTPClient,
+		requestTimeout:         cfg.RequestTimeout,
+		maxAttempts:            cfg.MaxAttempts,
+		retryBase:              cfg.RetryBase,
+		maxResponseBytes:       cfg.MaxResponseBytes,
+		maxRequestBytes:        cfg.MaxRequestBytes,
+		maxRecallTokens:        cfg.MaxRecallTokens,
+		maxMemoryTokens:        cfg.MaxMemoryTokens,
+		maxRecallResults:       cfg.MaxRecallResults,
+		aggregateTelemetryPath: aggregateTelemetryPath,
+		clock:                  cfg.Clock,
+		sleep:                  cfg.Sleep,
+		retained:               make(map[string]MemoryProviderResult),
 	}, nil
+}
+
+func (p *Mem0Provider) AggregateTelemetry(ctx context.Context) (MemoryProviderAggregateTelemetry, error) {
+	if p.aggregateTelemetryPath == "" {
+		return MemoryProviderAggregateTelemetry{}, errors.New("aggregate telemetry source unavailable")
+	}
+	raw, _, err := p.do(ctx, "aggregate telemetry", http.MethodGet, p.aggregateTelemetryPath, nil, nil, "", "")
+	if err != nil {
+		return MemoryProviderAggregateTelemetry{}, err
+	}
+	return parseProviderAggregateTelemetry(raw)
 }
 
 func (p *Mem0Provider) Name() string {

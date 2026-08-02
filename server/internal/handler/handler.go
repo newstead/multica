@@ -125,10 +125,12 @@ type Config struct {
 	// Workspace memory config selects providers and stores provider settings,
 	// but provider credentials and base URLs are never accepted from or echoed
 	// to the frontend memory config API.
-	MemoryHindsightBaseURL string
-	MemoryHindsightAPIKey  string
-	MemoryMem0BaseURL      string
-	MemoryMem0APIKey       string
+	MemoryHindsightBaseURL                string
+	MemoryHindsightAPIKey                 string
+	MemoryHindsightAggregateTelemetryPath string
+	MemoryMem0BaseURL                     string
+	MemoryMem0APIKey                      string
+	MemoryMem0AggregateTelemetryPath      string
 	// ServerVersion is the build version of the running API binary (the same
 	// value main.go stamps via -X main.version and reports on /metrics).
 	// Surfaced through /api/config so self-hosted operators can confirm which
@@ -283,8 +285,9 @@ func registerMemoryProviders(memorySvc *service.MemoryService, cfg Config) {
 	}
 	if baseURL := strings.TrimSpace(cfg.MemoryHindsightBaseURL); baseURL != "" {
 		provider, err := service.NewHindsightProvider(service.HindsightConfig{
-			BaseURL: baseURL,
-			APIKey:  strings.TrimSpace(cfg.MemoryHindsightAPIKey),
+			BaseURL:                baseURL,
+			APIKey:                 strings.TrimSpace(cfg.MemoryHindsightAPIKey),
+			AggregateTelemetryPath: strings.TrimSpace(cfg.MemoryHindsightAggregateTelemetryPath),
 		})
 		if err != nil {
 			slog.Warn("memory provider disabled", "provider", "hindsight", "error", err)
@@ -296,8 +299,9 @@ func registerMemoryProviders(memorySvc *service.MemoryService, cfg Config) {
 	mem0APIKey := strings.TrimSpace(cfg.MemoryMem0APIKey)
 	if mem0BaseURL != "" || mem0APIKey != "" {
 		provider, err := service.NewMem0Provider(service.Mem0ProviderConfig{
-			BaseURL: mem0BaseURL,
-			APIKey:  mem0APIKey,
+			BaseURL:                mem0BaseURL,
+			APIKey:                 mem0APIKey,
+			AggregateTelemetryPath: strings.TrimSpace(cfg.MemoryMem0AggregateTelemetryPath),
 		})
 		if err != nil {
 			slog.Warn("memory provider disabled", "provider", service.Mem0ProviderName, "error", err)

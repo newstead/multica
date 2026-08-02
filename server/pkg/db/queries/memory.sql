@@ -128,6 +128,20 @@ SET status = @status,
 WHERE id = @id AND workspace_id = @workspace_id
 RETURNING *;
 
+-- name: ListMemoryProviderDeliveryOutcomes :many
+SELECT provider, status, last_attempt_at
+FROM memory_provider_delivery
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND memory_event_id = sqlc.arg('memory_event_id')
+  AND provider IN ('hindsight', 'mem0')
+ORDER BY provider;
+
+-- name: ClaimMemoryDualWriteTelemetry :one
+INSERT INTO memory_dual_write_telemetry (memory_event_id, workspace_id)
+VALUES (sqlc.arg('memory_event_id'), sqlc.arg('workspace_id'))
+ON CONFLICT (memory_event_id) DO NOTHING
+RETURNING memory_event_id;
+
 
 -- name: ListMemoryMem0DeliveriesByWorkspace :many
 SELECT
@@ -152,25 +166,25 @@ FROM memory_provider_delivery d
 JOIN memory_event e
   ON e.id = d.memory_event_id
  AND e.workspace_id = d.workspace_id
-WHERE d.workspace_id = $1
+WHERE d.workspace_id = sqlc.arg('workspace_id')
   AND lower(d.provider) = 'mem0'
-  AND ($4::uuid IS NULL OR e.project_id = $4)
-  AND ($5::uuid IS NULL OR e.agent_id = $5)
-  AND ($6::uuid IS NULL OR e.issue_id = $6)
-  AND ($7::uuid IS NULL OR e.task_id = $7)
+  AND (sqlc.narg('project_id')::uuid IS NULL OR e.project_id = sqlc.narg('project_id'))
+  AND (sqlc.narg('agent_id')::uuid IS NULL OR e.agent_id = sqlc.narg('agent_id'))
+  AND (sqlc.narg('issue_id')::uuid IS NULL OR e.issue_id = sqlc.narg('issue_id'))
+  AND (sqlc.narg('task_id')::uuid IS NULL OR e.task_id = sqlc.narg('task_id'))
 ORDER BY COALESCE(d.last_attempt_at, d.updated_at, d.created_at) DESC
-LIMIT $2 OFFSET $3;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: ListMemoryRecallSamplesByWorkspaceProviderAndScope :many
 SELECT * FROM memory_recall_sample
-WHERE workspace_id = $1
-  AND lower(provider) = lower($2)
-  AND ($5::uuid IS NULL OR project_id = $5)
-  AND ($6::uuid IS NULL OR agent_id = $6)
-  AND ($7::uuid IS NULL OR issue_id = $7)
-  AND ($8::uuid IS NULL OR task_id = $8)
+WHERE workspace_id = sqlc.arg('workspace_id')
+  AND lower(provider) = lower(sqlc.arg('provider'))
+  AND (sqlc.narg('project_id')::uuid IS NULL OR project_id = sqlc.narg('project_id'))
+  AND (sqlc.narg('agent_id')::uuid IS NULL OR agent_id = sqlc.narg('agent_id'))
+  AND (sqlc.narg('issue_id')::uuid IS NULL OR issue_id = sqlc.narg('issue_id'))
+  AND (sqlc.narg('task_id')::uuid IS NULL OR task_id = sqlc.narg('task_id'))
 ORDER BY sampled_at DESC
-LIMIT $3 OFFSET $4;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CreateMemoryRecallSample :one
 INSERT INTO memory_recall_sample (

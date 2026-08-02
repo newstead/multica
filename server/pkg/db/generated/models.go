@@ -801,6 +801,12 @@ type Member struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type MemoryDualWriteTelemetry struct {
+	MemoryEventID pgtype.UUID        `json:"memory_event_id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	RecordedAt    pgtype.Timestamptz `json:"recorded_at"`
+}
+
 type MemoryEvent struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
