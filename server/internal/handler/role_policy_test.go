@@ -351,3 +351,101 @@ func TestRolePolicyCatalogValidation(t *testing.T) {
 		t.Fatalf("invalid thinking_level: got %d, want 400: %s", w.Code, w.Body.String())
 	}
 }
+
+// TestWorkspaceRolePolicy_SerializationCompatibility verifies the JSON wire
+// shape is stable (the GET body feeds PUT verbatim and the matrix survives
+// unchanged) and that updating the role policy never clobbers unrelated
+// workspace state (language_policy, settings).
+func TestWorkspaceRolePolicy_SerializationCompatibility(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	t.Cleanup(func() { clearRolePolicyForTest(t) })
+	agentID := createHandlerTestAgent(t, "role-policy-serial-agent", nil)
+	runtimeID := handlerTestRuntimeID(t)
+
+	// Seed unrelated workspace state that a role-policy update must preserve.
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `
+		UPDATE workspace
+		SET language_policy = 'ru',
+		    settings = jsonb_build_object('comment_routing', jsonb_build_object('escalation_seconds', 900))
+		WHERE id = $1`, testWorkspaceID); err != nil {
+		t.Fatalf("seed workspace language_policy/settings: %v", err)
+	}
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `UPDATE workspace SET language_policy = NULL, settings = '{}'::jsonb WHERE id = $1`, testWorkspaceID)
+	})
+
+	// Rules for two roles: bind_agent (QA) and exec_override (BE).
+	seedRolePolicyRuleForTest(t, "QA", agentID, "", "", "", "", "agent_default")
+	seedRolePolicyRuleForTest(t, "BE", "", runtimeID, "gpt-5", "high", "fast", "disabled")
+	if _, err := testPool.Exec(ctx,
+		`UPDATE workspace SET role_policy_enabled = true WHERE id = $1`, testWorkspaceID); err != nil {
+		t.Fatalf("enable role policy: %v", err)
+	}
+
+	// Capture the GET wire shape...
+	w := httptest.NewRecorder()
+	testHandler.GetWorkspaceRolePolicy(w, rolePolicyGetRequest())
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET role-policy: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &wire); err != nil {
+		t.Fatalf("decode GET wire shape: %v", err)
+	}
+
+	// ...and feed it back to PUT verbatim (same field names and values).
+	w = httptest.NewRecorder()
+	testHandler.UpdateWorkspaceRolePolicy(w, rolePolicyPutRequest(wire))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT verbatim GET body: got %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	// GET again: toggle and matrix must be identical after the verbatim PUT.
+	w = httptest.NewRecorder()
+	testHandler.GetWorkspaceRolePolicy(w, rolePolicyGetRequest())
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET after verbatim PUT: got %d, want 200", w.Code)
+	}
+	var got rolePolicyResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode second GET: %v", err)
+	}
+	if !got.Enabled || len(got.Rules) != 2 {
+		t.Fatalf("matrix changed by verbatim PUT: %+v", got)
+	}
+	qa := got.Rules["QA"]
+	if qa.AgentID == nil || *qa.AgentID != agentID {
+		t.Fatalf("QA rule changed by verbatim PUT: %+v", qa)
+	}
+	be := got.Rules["BE"]
+	if be.RuntimeID == nil || *be.RuntimeID != runtimeID || be.Model == nil || *be.Model != "gpt-5" ||
+		be.ThinkingLevel == nil || *be.ThinkingLevel != "high" ||
+		be.ServiceTier == nil || *be.ServiceTier != "fast" || be.Fallback != "disabled" {
+		t.Fatalf("BE rule changed by verbatim PUT: %+v", be)
+	}
+
+	// Unrelated workspace state must survive the update untouched.
+	var languagePolicy *string
+	var settings []byte
+	if err := testPool.QueryRow(ctx,
+		`SELECT language_policy, settings FROM workspace WHERE id = $1`, testWorkspaceID).Scan(&languagePolicy, &settings); err != nil {
+		t.Fatalf("reload workspace state: %v", err)
+	}
+	if languagePolicy == nil || *languagePolicy != "ru" {
+		t.Fatalf("language_policy = %v, want ru", languagePolicy)
+	}
+	var settingsDoc map[string]any
+	if err := json.Unmarshal(settings, &settingsDoc); err != nil {
+		t.Fatalf("decode settings: %v", err)
+	}
+	cr, ok := settingsDoc["comment_routing"].(map[string]any)
+	if !ok {
+		t.Fatalf("settings.comment_routing missing after role-policy PUT: %s", settings)
+	}
+	if esc, ok := cr["escalation_seconds"].(float64); !ok || esc != 900 {
+		t.Fatalf("settings.comment_routing.escalation_seconds = %v, want 900", cr["escalation_seconds"])
+	}
+}
