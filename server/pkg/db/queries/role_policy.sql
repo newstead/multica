@@ -27,3 +27,21 @@ INSERT INTO workspace_role_policy (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9
 );
+
+-- name: DeleteWorkspaceRolePolicyByRuntimeAgents :exec
+-- Application-layer replacement for the (deliberately absent) agent_id FK:
+-- removes policy rows bound to agents a runtime teardown is about to
+-- hard-delete (archived + system agents on that runtime). MUST run in the
+-- same tx as, and BEFORE, DeleteArchivedAgentsByRuntime /
+-- DeleteSystemAgentsByRuntime so no orphan bind_agent row survives the
+-- agent rows it referenced.
+DELETE FROM workspace_role_policy
+WHERE agent_id IN (
+    SELECT id FROM agent WHERE agent.runtime_id = $1
+);
+
+-- name: DeleteWorkspaceRolePolicyByRuntime :exec
+-- Application-layer replacement for the (deliberately absent) runtime_id FK:
+-- removes exec_override rows pointing at a runtime being deleted, so a
+-- policy row can never stamp a new task with a dead runtime.
+DELETE FROM workspace_role_policy WHERE runtime_id = $1;

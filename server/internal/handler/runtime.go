@@ -869,6 +869,18 @@ func (h *Handler) DeleteAgentRuntime(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to clean up chat draft restores")
 		return
 	}
+	// workspace_role_policy has no agent/runtime FKs (CLAUDE.md), so the
+	// teardown must clear policy rows bound to the agents it hard-deletes and
+	// to the runtime itself: no bind_agent row may outlive its agent, and no
+	// exec_override row may stamp a new task with a dead runtime.
+	if err := qtx.DeleteWorkspaceRolePolicyByRuntimeAgents(r.Context(), rt.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to clean up role policy agent bindings")
+		return
+	}
+	if err := qtx.DeleteWorkspaceRolePolicyByRuntime(r.Context(), rt.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to clean up role policy runtime bindings")
+		return
+	}
 	if err := qtx.DeleteArchivedAgentsByRuntime(r.Context(), rt.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to clean up archived agents")
 		return
@@ -1140,6 +1152,18 @@ func (h *Handler) ArchiveAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.R
 	// chat_draft_restore has no FK to follow them (#5219). Prune first.
 	if err := pruneRuntimeAgentChatDraftRestores(r.Context(), qtx, rt.ID, true); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to clean up chat draft restores")
+		return
+	}
+	// workspace_role_policy has no agent/runtime FKs (CLAUDE.md), so the
+	// teardown must clear policy rows bound to the agents it hard-deletes and
+	// to the runtime itself: no bind_agent row may outlive its agent, and no
+	// exec_override row may stamp a new task with a dead runtime.
+	if err := qtx.DeleteWorkspaceRolePolicyByRuntimeAgents(r.Context(), rt.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to clean up role policy agent bindings")
+		return
+	}
+	if err := qtx.DeleteWorkspaceRolePolicyByRuntime(r.Context(), rt.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to clean up role policy runtime bindings")
 		return
 	}
 	if err := qtx.DeleteArchivedAgentsByRuntime(r.Context(), rt.ID); err != nil {
