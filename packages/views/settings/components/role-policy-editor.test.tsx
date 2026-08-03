@@ -23,6 +23,14 @@ const runtimesRef = vi.hoisted(() => ({ current: [] as AgentRuntime[] }));
 const modelsRef = vi.hoisted(() => ({
   current: [] as { id: string; label: string }[],
 }));
+const modelsQueryState = vi.hoisted(() => ({
+  current: {
+    isLoading: false,
+    isError: false,
+    error: null as Error | null,
+    supported: true,
+  },
+}));
 
 vi.mock("@multica/core/api", () => ({
   api: {
@@ -70,7 +78,16 @@ vi.mock("@tanstack/react-query", () => ({
       return { data: agentsRef.current, isFetched: true };
     }
     if (key[0] === "runtimes" && key[1] === "models") {
-      return { data: { models: modelsRef.current, supported: true }, isFetched: true };
+      return {
+        data: {
+          models: modelsRef.current,
+          supported: modelsQueryState.current.supported,
+        },
+        isFetched: true,
+        isLoading: modelsQueryState.current.isLoading,
+        isError: modelsQueryState.current.isError,
+        error: modelsQueryState.current.error,
+      };
     }
     if (key[0] === "runtimes") {
       return { data: runtimesRef.current, isFetched: true };
@@ -152,6 +169,12 @@ describe("RolePolicySection", () => {
     agentsRef.current = [];
     runtimesRef.current = [];
     modelsRef.current = [];
+    modelsQueryState.current = {
+      isLoading: false,
+      isError: false,
+      error: null,
+      supported: true,
+    };
   });
 
   it("renders all 10 canonical roles with their labels", () => {
@@ -231,5 +254,99 @@ describe("RolePolicySection", () => {
     expect(screen.getByRole("combobox", { name: "BE Mode" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.getByText(/only admins and owners/i)).toBeTruthy();
+  });
+
+  it("edits an existing agent-bound mapping to a different agent", async () => {
+    policyRef.current = {
+      enabled: true,
+      rules: { TL: { agent_id: "agent-lead", fallback: "agent_default" } },
+    };
+    agentsRef.current = [
+      makeAgent({ id: "agent-lead", name: "Lead Bot", runtime_id: "rt-1" }),
+      makeAgent({ id: "agent-lead-2", name: "Lead Bot 2", runtime_id: "rt-1" }),
+    ];
+    renderEditor();
+    await pickOption("TL Agent", "Lead Bot 2");
+    await save();
+    await waitFor(() => {
+      expect(mockPut).toHaveBeenCalledWith("ws-1", {
+        enabled: true,
+        rules: { TL: { agent_id: "agent-lead-2", fallback: "agent_default" } },
+      });
+    });
+  });
+
+  it("removes a mapping by switching the role back to no rule", async () => {
+    policyRef.current = {
+      enabled: true,
+      rules: { BE: { agent_id: "agent-qa", fallback: "agent_default" } },
+    };
+    agentsRef.current = [
+      makeAgent({ id: "agent-qa", name: "QA Bot", runtime_id: "rt-1" }),
+    ];
+    renderEditor();
+    await pickOption("BE Mode", "No rule");
+    await save();
+    await waitFor(() => {
+      expect(mockPut).toHaveBeenCalledWith("ws-1", { enabled: true, rules: {} });
+    });
+  });
+
+  it("shows the catalog loading state while models are being discovered", async () => {
+    runtimesRef.current = [makeRuntime({ id: "rt-1", name: "Runtime 1" })];
+    modelsQueryState.current = { ...modelsQueryState.current, isLoading: true };
+    renderEditor();
+    await pickOption("FE Mode", "Execution config");
+    await pickOption("FE Runtime", "Runtime 1");
+    expect(screen.getByText(/discovering models/i)).toBeTruthy();
+  });
+
+  it("falls back to the runtime default when the selected runtime is offline", async () => {
+    runtimesRef.current = [
+      makeRuntime({ id: "rt-1", name: "Runtime 1", status: "offline" }),
+    ];
+    renderEditor();
+    await pickOption("FE Mode", "Execution config");
+    await pickOption("FE Runtime", "Runtime 1");
+    expect(screen.getByText(/runtime is offline/i)).toBeTruthy();
+    await save();
+    await waitFor(() => {
+      expect(mockPut).toHaveBeenCalledWith("ws-1", {
+        enabled: false,
+        rules: { FE: { runtime_id: "rt-1", fallback: "agent_default" } },
+      });
+    });
+  });
+
+  it("falls back to the runtime default when the model catalog fails to load", async () => {
+    runtimesRef.current = [makeRuntime({ id: "rt-1", name: "Runtime 1" })];
+    modelsQueryState.current = {
+      ...modelsQueryState.current,
+      isError: true,
+      error: new Error("model discovery failed"),
+    };
+    renderEditor();
+    await pickOption("FE Mode", "Execution config");
+    await pickOption("FE Runtime", "Runtime 1");
+    expect(screen.getByText(/model catalog unavailable/i)).toBeTruthy();
+    await save();
+    await waitFor(() => {
+      expect(mockPut).toHaveBeenCalledWith("ws-1", {
+        enabled: false,
+        rules: { FE: { runtime_id: "rt-1", fallback: "agent_default" } },
+      });
+    });
+  });
+
+  it("surfaces a save error and keeps the draft editable for retry", async () => {
+    mockPut.mockRejectedValueOnce(new Error("server exploded"));
+    renderEditor();
+    await userEvent.click(screen.getByRole("switch", { name: "Enable role policy" }));
+    await save();
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Failed to save role policy");
+    });
+    expect(mockPut).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
   });
 });
