@@ -800,5 +800,47 @@
         "description": "创建并处理 issue"
       }
     }
+  },
+  "role_policy": {
+    "title": "角色策略",
+    "description": "将代理角色绑定到具体的 AI 代理或执行配置（运行时、模型、思考级别、服务层级）。仅应用于新任务。",
+    "enabled_label": "启用角色策略",
+    "enabled_hint": "启用后，新的工作区任务将按下面的角色矩阵路由。停用则保持现有的以代理为中心的行为。",
+    "save": "保存",
+    "saving": "保存中...",
+    "saved": "已保存",
+    "save_failed": "保存角色策略失败",
+    "empty_warning": "角色策略已启用，但没有角色配置规则——所有任务仍保持现有的以代理为中心的行为。",
+    "manage_hint": "只有管理员和所有者可以编辑角色策略。",
+    "role_header": "角色",
+    "mode_header": "模式",
+    "mode_agent": "代理",
+    "mode_exec": "执行配置",
+    "mode_none": "无规则",
+    "agent_label": "代理",
+    "agent_placeholder": "选择代理",
+    "runtime_label": "运行时",
+    "runtime_placeholder": "选择运行时",
+    "model_label": "模型",
+    "model_default": "默认",
+    "thinking_label": "思考级别",
+    "thinking_default": "默认",
+    "service_tier_label": "服务层级",
+    "service_tier_default": "默认",
+    "fallback_label": "回退",
+    "fallback_agent_default": "按分配的代理运行",
+    "fallback_disabled": "拒绝任务",
+    "roles": {
+      "TL": "负责人",
+      "BE": "开发（后端）",
+      "FE": "前端",
+      "FS": "全栈",
+      "QA": "测试",
+      "OPS": "运维",
+      "ML": "机器学习",
+      "DA": "数据",
+      "SRE": "SRE",
+      "SEC": "安全"
+    }
   }
 }

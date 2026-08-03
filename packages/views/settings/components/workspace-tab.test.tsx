@@ -83,6 +83,10 @@ vi.mock("./delete-workspace-dialog", () => ({
   DeleteWorkspaceDialog: () => null,
 }));
 
+vi.mock("./role-policy-editor", () => ({
+  RolePolicySection: () => null,
+}));
+
 vi.mock("sonner", () => ({
   toast: { success: mockToastSuccess, error: vi.fn() },
 }));

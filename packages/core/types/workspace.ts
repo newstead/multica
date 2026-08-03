@@ -97,3 +97,32 @@ export interface Invitation {
   inviter_email?: string;
   workspace_name?: string;
 }
+
+/**
+ * Workspace role → AI execution config policy (ROLEPOL-0 / ROL-214).
+ *
+ * One matrix row per canonical agent role (`role_code`). A row either binds
+ * the role to a concrete agent (Variant A, XOR with exec fields) or layers
+ * exec overrides on top of the assigned agent (Variant B). `fallback`
+ * decides what happens when the policy cannot be applied for the role:
+ * `agent_default` keeps the historical agent-centric behavior, `disabled`
+ * fails closed (no task is created).
+ */
+export type RolePolicyFallback = "agent_default" | "disabled";
+
+export interface WorkspaceRolePolicyRule {
+  /** Variant A: run tasks for this role as this agent. XOR with exec fields. */
+  agent_id?: string | null;
+  /** Variant B: exec config layered over the assigned agent. */
+  runtime_id?: string | null;
+  model?: string | null;
+  thinking_level?: string | null;
+  service_tier?: string | null;
+  fallback: RolePolicyFallback;
+}
+
+export interface WorkspaceRolePolicy {
+  enabled: boolean;
+  /** Keyed by canonical role_code (`TL`, `BE`, ...). */
+  rules: Record<string, WorkspaceRolePolicyRule>;
+}

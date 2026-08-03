@@ -17,6 +17,7 @@ export const workspaceKeys = {
     ["workspaces", wsId, "squads", squadId, "members-status"] as const,
   skills: (wsId: string) => ["workspaces", wsId, "skills"] as const,
   assigneeFrequency: (wsId: string) => ["workspaces", wsId, "assignee-frequency"] as const,
+  rolePolicy: (wsId: string) => ["workspaces", wsId, "role-policy"] as const,
 };
 
 export function workspaceListOptions() {
@@ -31,6 +32,14 @@ export function workspaceBySlugOptions(slug: string) {
   return queryOptions({
     ...workspaceListOptions(),
     select: (list: Workspace[]) => list.find((w) => w.slug === slug) ?? null,
+  });
+}
+
+export function workspaceRolePolicyOptions(wsId: string) {
+  return queryOptions({
+    queryKey: workspaceKeys.rolePolicy(wsId),
+    queryFn: () => api.getWorkspaceRolePolicy(wsId),
+    enabled: !!wsId,
   });
 }
 
