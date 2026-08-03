@@ -57,6 +57,7 @@ const (
 	ReasonTargetUnavailable     = dispatch.ReasonTargetUnavailable
 	ReasonRuntimeOffline        = dispatch.ReasonRuntimeOffline
 	ReasonAttributionBlocked    = dispatch.ReasonAttributionBlocked
+	ReasonRolePolicyBlocked     = dispatch.ReasonRolePolicyBlocked
 	ReasonAlreadyActive         = dispatch.ReasonAlreadyActive
 	ReasonSelfTriggerSuppressed = dispatch.ReasonSelfTriggerSuppressed
 	ReasonInternalError         = dispatch.ReasonInternalError
@@ -117,6 +118,8 @@ func dispatchBlockedFallbackMessage(code DispatchReasonCode) string {
 		return "the target's runtime is offline"
 	case ReasonAttributionBlocked:
 		return "the run couldn't be attributed to a responsible member"
+	case ReasonRolePolicyBlocked:
+		return "the role is disabled by the workspace role policy"
 	case ReasonAlreadyActive:
 		return "a run is already active for this target"
 	default:

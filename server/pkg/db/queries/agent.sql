@@ -275,7 +275,8 @@ INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
     squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
-    originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id
+    originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
+    policy_model, policy_thinking_level, policy_service_tier
 )
 VALUES (
     $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
@@ -299,7 +300,10 @@ VALUES (
     sqlc.narg(rule_version_id),
     sqlc.narg(rerun_of_task_id),
     sqlc.narg(trigger_evidence_kind),
-    sqlc.narg(trigger_evidence_ref_id)
+    sqlc.narg(trigger_evidence_ref_id),
+    sqlc.narg(policy_model),
+    sqlc.narg(policy_thinking_level),
+    sqlc.narg(policy_service_tier)
 )
 RETURNING *;
 
@@ -339,7 +343,8 @@ INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     trigger_summary, is_leader_task, squad_id, escalation_for_task_id, fire_at,
     originator_user_id, accountable_user_id, originator_source,
-    delegated_from_task_id, trigger_evidence_kind, trigger_evidence_ref_id
+    delegated_from_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
+    policy_model, policy_thinking_level, policy_service_tier
 )
 VALUES (
     @agent_id, @runtime_id, @issue_id, 'deferred', @priority,
@@ -354,7 +359,10 @@ VALUES (
     sqlc.narg(originator_source),
     sqlc.narg(delegated_from_task_id),
     sqlc.narg(trigger_evidence_kind),
-    sqlc.narg(trigger_evidence_ref_id)
+    sqlc.narg(trigger_evidence_ref_id),
+    sqlc.narg(policy_model),
+    sqlc.narg(policy_thinking_level),
+    sqlc.narg(policy_service_tier)
 )
 RETURNING *;
 

@@ -556,6 +556,9 @@ func dispatchFailReasonCode(err error) dispatch.ReasonCode {
 	if errors.Is(err, ErrAttributionFailClosed) {
 		return dispatch.ReasonAttributionBlocked
 	}
+	if errors.Is(err, ErrRolePolicyDisabled) {
+		return dispatch.ReasonRolePolicyBlocked
+	}
 	return dispatch.ReasonInternalError
 }
 
@@ -882,6 +885,14 @@ func (s *AutopilotService) dispatchRunOnly(ctx context.Context, ap db.Autopilot,
 		return &errDispatchSkipped{reason: formatAdmissionReason(ap, "not allowed to invoke private squad leader"), code: dispatch.ReasonInvocationNotAllowed}
 	}
 
+	// Workspace role policy (ROLEPOL-0): resolve before the task insert so the
+	// autopilot task is stamped with the policy executor and exec overrides. A
+	// role disabled by policy skips dispatch (fail-closed).
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.TaskSvc.applyRolePolicy(ctx, ap.WorkspaceID, agent)
+	if err != nil {
+		return &errDispatchSkipped{reason: formatAdmissionReason(ap, "role disabled by workspace role policy"), code: dispatch.ReasonRolePolicyBlocked}
+	}
+
 	// Attribution splits on the trigger. A MANUAL trigger is a direct human action:
 	// the triggering member is direct_human and becomes BOTH originator (so the run
 	// carries their authorization context) and accountable (MUL-4302 §4). A
@@ -907,10 +918,13 @@ func (s *AutopilotService) dispatchRunOnly(ctx context.Context, ap db.Autopilot,
 	}
 	apSource, _, apEvidenceKind, apEvidenceRef := attributionCreateParams(autopilotAttr)
 	task, err := s.Queries.CreateAutopilotTask(ctx, db.CreateAutopilotTaskParams{
-		AgentID:        agent.ID,
-		RuntimeID:      agent.RuntimeID,
-		Priority:       0,
-		AutopilotRunID: run.ID,
+		AgentID:             taskAgentID,
+		RuntimeID:           taskRuntimeID,
+		Priority:            0,
+		AutopilotRunID:      run.ID,
+		PolicyModel:         policyModel,
+		PolicyThinkingLevel: policyThinkingLevel,
+		PolicyServiceTier:   policyServiceTier,
 		// Snapshot the autopilot title so task rows self-describe later
 		// without joining back to autopilot. Truncated for the same
 		// transmission-cost reason as comment-driven summaries.

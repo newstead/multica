@@ -33,6 +33,9 @@ const (
 	// ReasonAttributionBlocked: a fail-closed workspace could not resolve a
 	// responsible human for the run, so it was refused.
 	ReasonAttributionBlocked ReasonCode = "attribution_blocked"
+	// ReasonRolePolicyBlocked: the workspace role policy marks the agent's role
+	// with fallback = 'disabled', so the run was refused (fail-closed).
+	ReasonRolePolicyBlocked ReasonCode = "role_policy_blocked"
 	// ReasonAlreadyActive: a run is already active/pending for this target and
 	// this trigger did not coalesce.
 	ReasonAlreadyActive ReasonCode = "already_active"
