@@ -888,7 +888,7 @@ func (s *AutopilotService) dispatchRunOnly(ctx context.Context, ap db.Autopilot,
 	// Workspace role policy (ROLEPOL-0): resolve before the task insert so the
 	// autopilot task is stamped with the policy executor and exec overrides. A
 	// role disabled by policy skips dispatch (fail-closed).
-	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.TaskSvc.applyRolePolicy(ctx, ap.WorkspaceID, agent)
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, policyRoleCode, err := s.TaskSvc.applyRolePolicy(ctx, ap.WorkspaceID, agent)
 	if err != nil {
 		return &errDispatchSkipped{reason: formatAdmissionReason(ap, "role disabled by workspace role policy"), code: dispatch.ReasonRolePolicyBlocked}
 	}
@@ -925,6 +925,7 @@ func (s *AutopilotService) dispatchRunOnly(ctx context.Context, ap db.Autopilot,
 		PolicyModel:         policyModel,
 		PolicyThinkingLevel: policyThinkingLevel,
 		PolicyServiceTier:   policyServiceTier,
+		PolicyRoleCode:      policyRoleCodeText(policyRoleCode),
 		// Snapshot the autopilot title so task rows self-describe later
 		// without joining back to autopilot. Truncated for the same
 		// transmission-cost reason as comment-driven summaries.

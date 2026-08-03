@@ -174,6 +174,17 @@ func (s *TaskService) ResolveRolePolicy(ctx context.Context, workspaceID pgtype.
 	return res
 }
 
+// policyRoleCodeText wraps a resolved role_code into the audit column value
+// stamped on task rows. It stays NULL (invalid) for agent_default routing —
+// only a matched rule (bind_agent / exec_override) writes evidence of WHICH
+// policy rule overrode the routing.
+func policyRoleCodeText(roleCode string) pgtype.Text {
+	if roleCode == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: roleCode, Valid: true}
+}
+
 // applyRolePolicy resolves the workspace role policy for a task about to be
 // enqueued for agent and returns the values to stamp on the new task row:
 // the resolved executor agent id, resolved runtime id, and the exec overrides
