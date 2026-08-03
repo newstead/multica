@@ -1054,6 +1054,15 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
 
+	// Workspace role policy (ROLEPOL-0): resolve BEFORE attribution/insert so
+	// the task row is stamped with the policy executor and exec overrides.
+	// A disabled role refuses the enqueue (fail-closed).
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
+	if err != nil {
+		slog.Warn("task enqueue refused: role policy", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agent.ID), "error", err)
+		return db.AgentTaskQueue{}, err
+	}
+
 	// The issue assignee reacting to an agent-authored comment is a
 	// comment_source attribution (a special case of delegation); a member
 	// comment or direct member assignment is direct_human. attr.UserID is the
@@ -1071,8 +1080,8 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		AgentID:              issue.AssigneeID,
-		RuntimeID:            agent.RuntimeID,
+		AgentID:              taskAgentID,
+		RuntimeID:            taskRuntimeID,
 		IssueID:              issue.ID,
 		Priority:             priorityToInt(issue.Priority),
 		TriggerCommentID:     triggerCommentID,
@@ -1090,6 +1099,9 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		DelegatedFromTaskID:  attrDelegatedFrom,
 		TriggerEvidenceKind:  attrEvidenceKind,
 		TriggerEvidenceRefID: attrEvidenceRef,
+		PolicyModel:          policyModel,
+		PolicyThinkingLevel:  policyThinkingLevel,
+		PolicyServiceTier:    policyServiceTier,
 		// Stamp the reviewed head so dedup can distinguish this run's target
 		// from a later request against a new HEAD (TEN-356).
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
@@ -1172,6 +1184,14 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
 	}
 
+	// Workspace role policy (ROLEPOL-0): resolve BEFORE attribution/insert so
+	// the task row is stamped with the policy executor and exec overrides.
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
+	if err != nil {
+		slog.Warn("mention task enqueue refused: role policy", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+		return db.AgentTaskQueue{}, err
+	}
+
 	// An explicit mention / thread-parent / squad-leader hop from an
 	// agent-authored comment is a delegation (the parent task's human is
 	// copied); a member mention is direct_human. attr.UserID matches the
@@ -1188,8 +1208,8 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	task, err := s.Queries.CreateAgentTask(ctx, db.CreateAgentTaskParams{
-		AgentID:              agentID,
-		RuntimeID:            agent.RuntimeID,
+		AgentID:              taskAgentID,
+		RuntimeID:            taskRuntimeID,
 		IssueID:              issue.ID,
 		Priority:             priorityToInt(issue.Priority),
 		TriggerCommentID:     triggerCommentID,
@@ -1209,6 +1229,9 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 		DelegatedFromTaskID:  attrDelegatedFrom,
 		TriggerEvidenceKind:  attrEvidenceKind,
 		TriggerEvidenceRefID: attrEvidenceRef,
+		PolicyModel:          policyModel,
+		PolicyThinkingLevel:  policyThinkingLevel,
+		PolicyServiceTier:    policyServiceTier,
 		// Stamp the reviewed head so dedup can distinguish this run's target
 		// from a later request against a new HEAD (TEN-356).
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
@@ -1266,11 +1289,19 @@ func (s *TaskService) EnqueueDeferredAssigneeFallback(ctx context.Context, issue
 		slog.Warn("deferred fallback enqueue refused: attribution fail-closed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID))
 		return db.AgentTaskQueue{}, err
 	}
+	// Workspace role policy (ROLEPOL-0): resolve BEFORE attribution/insert so
+	// the deferred fallback task is stamped with the policy executor.
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
+	if err != nil {
+		slog.Warn("deferred fallback enqueue refused: role policy", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
+		return db.AgentTaskQueue{}, err
+	}
+
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
 	isLeader := squadID.Valid
 	task, err := s.Queries.CreateDeferredAgentTask(ctx, db.CreateDeferredAgentTaskParams{
-		AgentID:              agentID,
-		RuntimeID:            agent.RuntimeID,
+		AgentID:              taskAgentID,
+		RuntimeID:            taskRuntimeID,
 		IssueID:              issue.ID,
 		Priority:             priorityToInt(issue.Priority),
 		TriggerCommentID:     triggerCommentID,
@@ -1285,6 +1316,9 @@ func (s *TaskService) EnqueueDeferredAssigneeFallback(ctx context.Context, issue
 		DelegatedFromTaskID:  attrDelegatedFrom,
 		TriggerEvidenceKind:  attrEvidenceKind,
 		TriggerEvidenceRefID: attrEvidenceRef,
+		PolicyModel:          policyModel,
+		PolicyThinkingLevel:  policyThinkingLevel,
+		PolicyServiceTier:    policyServiceTier,
 	})
 	if err != nil {
 		slog.Error("deferred fallback enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)

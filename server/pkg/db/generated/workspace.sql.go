@@ -14,7 +14,7 @@ import (
 const clearWorkspaceLanguagePolicy = `-- name: ClearWorkspaceLanguagePolicy :one
 UPDATE workspace SET language_policy = NULL, updated_at = now()
 WHERE id = $1
-RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy, role_policy_enabled
 `
 
 // Explicit NULL-clear for language_policy. COALESCE-based UpdateWorkspace
@@ -38,6 +38,7 @@ func (q *Queries) ClearWorkspaceLanguagePolicy(ctx context.Context, id pgtype.UU
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
 		&i.LanguagePolicy,
+		&i.RolePolicyEnabled,
 	)
 	return i, err
 }
@@ -45,7 +46,7 @@ func (q *Queries) ClearWorkspaceLanguagePolicy(ctx context.Context, id pgtype.UU
 const createWorkspace = `-- name: CreateWorkspace :one
 INSERT INTO workspace (name, slug, description, context, issue_prefix, language_policy)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy, role_policy_enabled
 `
 
 type CreateWorkspaceParams struct {
@@ -82,6 +83,7 @@ func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
 		&i.LanguagePolicy,
+		&i.RolePolicyEnabled,
 	)
 	return i, err
 }
@@ -224,7 +226,7 @@ func (q *Queries) GetDaemonWorkspace(ctx context.Context, id pgtype.UUID) (GetDa
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy FROM workspace
+SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy, role_policy_enabled FROM workspace
 WHERE id = $1
 `
 
@@ -246,6 +248,7 @@ func (q *Queries) GetWorkspace(ctx context.Context, id pgtype.UUID) (Workspace, 
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
 		&i.LanguagePolicy,
+		&i.RolePolicyEnabled,
 	)
 	return i, err
 }
@@ -265,7 +268,7 @@ func (q *Queries) GetWorkspaceAttributionFailClosed(ctx context.Context, id pgty
 }
 
 const getWorkspaceBySlug = `-- name: GetWorkspaceBySlug :one
-SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy FROM workspace
+SELECT id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy, role_policy_enabled FROM workspace
 WHERE slug = $1
 `
 
@@ -287,6 +290,7 @@ func (q *Queries) GetWorkspaceBySlug(ctx context.Context, slug string) (Workspac
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
 		&i.LanguagePolicy,
+		&i.RolePolicyEnabled,
 	)
 	return i, err
 }
@@ -345,7 +349,7 @@ const listWorkspaces = `-- name: ListWorkspaces :many
 SELECT w.id, w.name, w.slug, w.description, w.settings,
        w.created_at, w.updated_at, w.context, w.repos,
        w.issue_prefix, w.issue_counter, w.avatar_url, w.attribution_fail_closed,
-       w.language_policy
+       w.language_policy, w.role_policy_enabled
 FROM member m
 JOIN workspace w ON w.id = m.workspace_id
 WHERE m.user_id = $1
@@ -376,6 +380,7 @@ func (q *Queries) ListWorkspaces(ctx context.Context, userID pgtype.UUID) ([]Wor
 			&i.AvatarUrl,
 			&i.AttributionFailClosed,
 			&i.LanguagePolicy,
+			&i.RolePolicyEnabled,
 		); err != nil {
 			return nil, err
 		}
@@ -443,7 +448,7 @@ UPDATE workspace SET
     language_policy = COALESCE($9, language_policy),
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy
+RETURNING id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix, issue_counter, avatar_url, attribution_fail_closed, language_policy, role_policy_enabled
 `
 
 type UpdateWorkspaceParams struct {
@@ -486,6 +491,7 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.AvatarUrl,
 		&i.AttributionFailClosed,
 		&i.LanguagePolicy,
+		&i.RolePolicyEnabled,
 	)
 	return i, err
 }

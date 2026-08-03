@@ -47,6 +47,7 @@ import {
 } from "./settings-layout";
 import { useAutoSave } from "./use-auto-save";
 import { LanguagePolicyRow } from "./language-policy-field";
+import { RolePolicySection } from "./role-policy-editor";
 
 interface WorkspaceDetailsDraft {
   name: string;
@@ -491,6 +492,8 @@ export function WorkspaceTab() {
             )}
         </SettingsCard>
       </SettingsSection>
+
+      <RolePolicySection workspaceId={wsId} canEdit={canManageWorkspace} />
 
       {/* Danger Zone — gated on the member query settling so the owner-only
           Delete button and the sole-owner Leave guidance don't flash in

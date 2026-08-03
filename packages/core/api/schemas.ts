@@ -51,6 +51,7 @@ import type {
   TimelineEntry,
   User,
   WebhookDelivery,
+  WorkspaceRolePolicy,
 } from "../types";
 import type {
   MemoryConfig,
@@ -2233,4 +2234,31 @@ export const MALFORMED_RUNTIME_MODEL_LIST_REQUEST: RuntimeModelListRequest = {
   error: "invalid model discovery response",
   created_at: "",
   updated_at: "",
+};
+
+// ---------------------------------------------------------------------------
+// Workspace role → AI execution config policy (ROLEPOL-0 / ROL-214).
+//
+// GET/PUT /api/workspaces/{id}/role-policy. The rule fields are optional
+// (Variant A: agent_id XOR Variant B: runtime_id + exec fields); missing
+// fields mean "unset". Lenient on purpose: a rule whose fallback enum gains
+// a future value must render instead of blanking the whole matrix.
+// ---------------------------------------------------------------------------
+export const WorkspaceRolePolicyRuleSchema = z.object({
+  agent_id: z.string().nullable().optional(),
+  runtime_id: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  thinking_level: z.string().nullable().optional(),
+  service_tier: z.string().nullable().optional(),
+  fallback: z.string().default("agent_default"),
+}).loose();
+
+export const WorkspaceRolePolicySchema = z.object({
+  enabled: z.boolean().default(false),
+  rules: z.record(z.string(), WorkspaceRolePolicyRuleSchema).default({}),
+}).loose();
+
+export const EMPTY_WORKSPACE_ROLE_POLICY: WorkspaceRolePolicy = {
+  enabled: false,
+  rules: {},
 };

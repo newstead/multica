@@ -2236,6 +2236,9 @@ func commentEnqueueFailureReason(err error) DispatchReasonCode {
 	if errors.Is(err, service.ErrAttributionFailClosed) {
 		return ReasonAttributionBlocked
 	}
+	if errors.Is(err, service.ErrRolePolicyDisabled) {
+		return ReasonRolePolicyBlocked
+	}
 	return ReasonInternalError
 }
 

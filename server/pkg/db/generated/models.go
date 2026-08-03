@@ -157,6 +157,9 @@ type AgentTaskQueue struct {
 	RetiredSessionID          pgtype.Text `json:"retired_session_id"`
 	QuickActionsDisabled      bool        `json:"quick_actions_disabled"`
 	RegenerateQuickActionsFor pgtype.UUID `json:"regenerate_quick_actions_for"`
+	PolicyModel               pgtype.Text `json:"policy_model"`
+	PolicyThinkingLevel       pgtype.Text `json:"policy_thinking_level"`
+	PolicyServiceTier         pgtype.Text `json:"policy_service_tier"`
 }
 
 type AgentToLabel struct {
@@ -1274,6 +1277,7 @@ type Workspace struct {
 	// When TRUE, an agent run that resolves to no precise accountable human (would be owner_fallback) is refused at enqueue instead of degrading to the agent owner (MUL-4302 §3.5). Default FALSE = owner_fallback. Never affects authorization (originator_user_id).
 	AttributionFailClosed bool        `json:"attribution_fail_closed"`
 	LanguagePolicy        pgtype.Text `json:"language_policy"`
+	RolePolicyEnabled     bool        `json:"role_policy_enabled"`
 }
 
 type WorkspaceInvitation struct {
@@ -1287,4 +1291,18 @@ type WorkspaceInvitation struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+}
+
+type WorkspaceRolePolicy struct {
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	RoleCode      string             `json:"role_code"`
+	AgentID       pgtype.UUID        `json:"agent_id"`
+	RuntimeID     pgtype.UUID        `json:"runtime_id"`
+	Model         pgtype.Text        `json:"model"`
+	ThinkingLevel pgtype.Text        `json:"thinking_level"`
+	ServiceTier   pgtype.Text        `json:"service_tier"`
+	Fallback      string             `json:"fallback"`
+	UpdatedBy     pgtype.UUID        `json:"updated_by"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }

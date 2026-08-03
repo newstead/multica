@@ -801,5 +801,47 @@
         "description": "Create and work on issues"
       }
     }
+  },
+  "role_policy": {
+    "title": "Role policy",
+    "description": "Bind agent roles to a concrete AI agent or an execution config (runtime, model, thinking level, service tier). Applied to new tasks only.",
+    "enabled_label": "Enable role policy",
+    "enabled_hint": "When enabled, new workspace tasks are routed according to the role matrix below. Disabled keeps the current agent-centric behavior.",
+    "save": "Save",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "save_failed": "Failed to save role policy",
+    "empty_warning": "Role policy is enabled but no roles have rules — all tasks keep the current agent-centric behavior.",
+    "manage_hint": "Only admins and owners can edit the role policy.",
+    "role_header": "Role",
+    "mode_header": "Mode",
+    "mode_agent": "Agent",
+    "mode_exec": "Execution config",
+    "mode_none": "No rule",
+    "agent_label": "Agent",
+    "agent_placeholder": "Select an agent",
+    "runtime_label": "Runtime",
+    "runtime_placeholder": "Select a runtime",
+    "model_label": "Model",
+    "model_default": "Default",
+    "thinking_label": "Thinking level",
+    "thinking_default": "Default",
+    "service_tier_label": "Service tier",
+    "service_tier_default": "Default",
+    "fallback_label": "Fallback",
+    "fallback_agent_default": "Run as assigned agent",
+    "fallback_disabled": "Refuse task",
+    "roles": {
+      "TL": "Lead",
+      "BE": "Dev (backend)",
+      "FE": "Frontend",
+      "FS": "Fullstack",
+      "QA": "QA",
+      "OPS": "Ops",
+      "ML": "ML",
+      "DA": "Data",
+      "SRE": "SRE",
+      "SEC": "Security"
+    }
   }
 }

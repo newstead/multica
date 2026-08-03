@@ -39,6 +39,8 @@ import {
   SquadSchema,
   TimelineEntriesSchema,
   UserSchema,
+  WorkspaceRolePolicySchema,
+  EMPTY_WORKSPACE_ROLE_POLICY,
 } from "./schemas";
 import { parseWithFallback } from "./schema";
 
@@ -1189,5 +1191,52 @@ describe("OpsMetricsSummarySchema", () => {
     );
 
     expect(parsed).toEqual(EMPTY_OPS_METRICS_SUMMARY);
+  });
+});
+
+describe("WorkspaceRolePolicySchema", () => {
+  it("parses a full matrix with agent and exec rules", () => {
+    const parsed = WorkspaceRolePolicySchema.parse({
+      enabled: true,
+      rules: {
+        TL: { agent_id: "agent-1", fallback: "agent_default" },
+        BE: {
+          runtime_id: "rt-1",
+          model: "gpt-5.6-sol",
+          thinking_level: "high",
+          service_tier: "priority",
+          fallback: "disabled",
+        },
+      },
+    });
+    expect(parsed.enabled).toBe(true);
+    expect(parsed.rules.TL?.agent_id).toBe("agent-1");
+    expect(parsed.rules.BE?.model).toBe("gpt-5.6-sol");
+  });
+
+  it("defaults missing fields to disabled-off and an empty matrix", () => {
+    const parsed = WorkspaceRolePolicySchema.parse({});
+    expect(parsed).toEqual(EMPTY_WORKSPACE_ROLE_POLICY);
+  });
+
+  it("parseWithFallback returns the fallback for a wrong-typed enabled flag", () => {
+    const parsed = parseWithFallback(
+      { enabled: "yes", rules: {} },
+      WorkspaceRolePolicySchema,
+      EMPTY_WORKSPACE_ROLE_POLICY,
+      { endpoint: "GET /api/workspaces/{id}/role-policy" },
+    );
+    expect(parsed).toEqual(EMPTY_WORKSPACE_ROLE_POLICY);
+  });
+
+  it("parseWithFallback returns the fallback for null / non-object bodies", () => {
+    expect(
+      parseWithFallback(
+        null,
+        WorkspaceRolePolicySchema,
+        EMPTY_WORKSPACE_ROLE_POLICY,
+        { endpoint: "GET /api/workspaces/{id}/role-policy" },
+      ),
+    ).toEqual(EMPTY_WORKSPACE_ROLE_POLICY);
   });
 });

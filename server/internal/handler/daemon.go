@@ -1646,6 +1646,24 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if rc := bytes.TrimSpace(agent.RuntimeConfig); len(rc) > 0 && !bytes.Equal(rc, []byte("{}")) && !bytes.Equal(rc, []byte("null")) {
 			runtimeConfig = json.RawMessage(agent.RuntimeConfig)
 		}
+		// Role policy exec overrides (ROLEPOL-0): when the task was enqueued
+		// under an exec_override rule, the task's policy_* columns win over the
+		// agent's own config. The daemon's existing two-tier model resolution
+		// (agent.model → env) keeps working: policy_model simply replaces
+		// agent.model here, and the daemon-side ValidateServiceTier /
+		// ValidateThinkingLevel guards stay as the safety net.
+		model := agent.Model.String
+		if task.PolicyModel.Valid && task.PolicyModel.String != "" {
+			model = task.PolicyModel.String
+		}
+		thinkingLevel := agent.ThinkingLevel.String
+		if task.PolicyThinkingLevel.Valid && task.PolicyThinkingLevel.String != "" {
+			thinkingLevel = task.PolicyThinkingLevel.String
+		}
+		serviceTier := agent.ServiceTier.String
+		if task.PolicyServiceTier.Valid && task.PolicyServiceTier.String != "" {
+			serviceTier = task.PolicyServiceTier.String
+		}
 		resp.Agent = &TaskAgentData{
 			ID:                    uuidToString(agent.ID),
 			Name:                  agent.Name,
@@ -1653,9 +1671,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			CustomEnv:             customEnv,
 			CustomArgs:            customArgs,
 			McpConfig:             mcpConfig,
-			Model:                 agent.Model.String,
-			ThinkingLevel:         agent.ThinkingLevel.String,
-			ServiceTier:           agent.ServiceTier.String,
+			Model:                 model,
+			ThinkingLevel:         thinkingLevel,
+			ServiceTier:           serviceTier,
 			RuntimeConfig:         runtimeConfig,
 			DisabledRuntimeSkills: disabledRuntimeSkillsFor(agent.DisabledRuntimeSkills, runtimeID, runtime.Provider),
 		}

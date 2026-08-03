@@ -50,6 +50,7 @@ import type {
   Reaction,
   IssueReaction,
   Workspace,
+  WorkspaceRolePolicy,
   WorkspaceRepo,
   MemberWithUser,
   User,
@@ -295,6 +296,8 @@ import {
   InboxItemListSchema,
   EMPTY_INBOX_ITEMS,
   NotificationPreferenceResponseSchema,
+  WorkspaceRolePolicySchema,
+  EMPTY_WORKSPACE_ROLE_POLICY,
   EMPTY_NOTIFICATION_PREFERENCE_RESPONSE,
   LabelSchema,
   ListLabelsResponseSchema,
@@ -2151,6 +2154,37 @@ export class ApiClient {
       method: "PATCH",
       body: JSON.stringify(data),
     });
+  }
+
+  /**
+   * Workspace role → AI execution config policy (ROLEPOL-0). GET is
+   * member-visible; PUT replaces the whole matrix + enabled toggle and is
+   * owner/admin-only (same middleware as UpdateWorkspace).
+   */
+  async getWorkspaceRolePolicy(id: string): Promise<WorkspaceRolePolicy> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${id}/role-policy`);
+    return parseWithFallback(
+      raw,
+      WorkspaceRolePolicySchema,
+      EMPTY_WORKSPACE_ROLE_POLICY,
+      { endpoint: "GET /api/workspaces/{id}/role-policy" },
+    );
+  }
+
+  async updateWorkspaceRolePolicy(
+    id: string,
+    data: WorkspaceRolePolicy,
+  ): Promise<WorkspaceRolePolicy> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${id}/role-policy`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+    return parseWithFallback(
+      raw,
+      WorkspaceRolePolicySchema,
+      EMPTY_WORKSPACE_ROLE_POLICY,
+      { endpoint: "PUT /api/workspaces/{id}/role-policy" },
+    );
   }
 
   // Members

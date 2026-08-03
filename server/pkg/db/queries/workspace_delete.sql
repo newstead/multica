@@ -404,6 +404,9 @@ deleted_pins AS (
 deleted_daemon_tokens AS (
     DELETE FROM daemon_token WHERE daemon_token.workspace_id = $1
 ),
+deleted_role_policy AS (
+    DELETE FROM workspace_role_policy WHERE workspace_role_policy.workspace_id = $1
+),
 detached_feedback AS (
     UPDATE feedback
     SET workspace_id = NULL

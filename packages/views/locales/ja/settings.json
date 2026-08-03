@@ -800,5 +800,47 @@
         "description": "イシューの作成と作業"
       }
     }
+  },
+  "role_policy": {
+    "title": "ロールポリシー",
+    "description": "エージェントのロールを具体的な AI エージェントまたは実行設定（ランタイム、モデル、思考レベル、サービス層）にバインドします。新しいタスクにのみ適用されます。",
+    "enabled_label": "ロールポリシーを有効化",
+    "enabled_hint": "有効にすると、新しいワークスペースタスクは以下のロールマトリクスに従ってルーティングされます。無効の場合は従来のエージェント中心の動作を維持します。",
+    "save": "保存",
+    "saving": "保存中...",
+    "saved": "保存しました",
+    "save_failed": "ロールポリシーの保存に失敗しました",
+    "empty_warning": "ロールポリシーは有効ですが、ルールのあるロールがありません。すべてのタスクは従来のエージェント中心の動作を維持します。",
+    "manage_hint": "ロールポリシーを編集できるのは管理者とオーナーのみです。",
+    "role_header": "ロール",
+    "mode_header": "モード",
+    "mode_agent": "エージェント",
+    "mode_exec": "実行設定",
+    "mode_none": "ルールなし",
+    "agent_label": "エージェント",
+    "agent_placeholder": "エージェントを選択",
+    "runtime_label": "ランタイム",
+    "runtime_placeholder": "ランタイムを選択",
+    "model_label": "モデル",
+    "model_default": "デフォルト",
+    "thinking_label": "思考レベル",
+    "thinking_default": "デフォルト",
+    "service_tier_label": "サービス層",
+    "service_tier_default": "デフォルト",
+    "fallback_label": "フォールバック",
+    "fallback_agent_default": "割り当てられたエージェントで実行",
+    "fallback_disabled": "タスクを拒否",
+    "roles": {
+      "TL": "リード",
+      "BE": "開発（バックエンド）",
+      "FE": "フロントエンド",
+      "FS": "フルスタック",
+      "QA": "QA",
+      "OPS": "運用",
+      "ML": "ML",
+      "DA": "データ",
+      "SRE": "SRE",
+      "SEC": "セキュリティ"
+    }
   }
 }
