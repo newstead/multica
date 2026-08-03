@@ -804,7 +804,7 @@
   },
   "role_policy": {
     "title": "Role policy",
-    "description": "Bind agent roles to a concrete AI agent or an execution config (runtime, model, thinking level, service tier). Applied to new tasks only.",
+    "description": "Bind agent roles to a concrete AI agent or an execution config (runtime, model, thinking level, service tier). Applied to new issue and mention tasks only; direct chats are not affected.",
     "enabled_label": "Enable role policy",
     "enabled_hint": "When enabled, new workspace tasks are routed according to the role matrix below. Disabled keeps the current agent-centric behavior.",
     "save": "Save",

@@ -96,10 +96,6 @@ func (h *Handler) UpdateWorkspaceRolePolicy(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if _, ok := h.requireWorkspaceMember(w, r, workspaceID, "workspace not found"); !ok {
-		return
-	}
-
 	var req updateRolePolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
