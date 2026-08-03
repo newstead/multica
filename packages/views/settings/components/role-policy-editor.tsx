@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Bot, Cpu } from "lucide-react";
+import { AlertCircle, AlertTriangle, Bot, Cpu, Loader2 } from "lucide-react";
 import { Button } from "@multica/ui/components/ui/button";
 import { Switch } from "@multica/ui/components/ui/switch";
 import {
@@ -282,7 +282,7 @@ export function RolePolicySection({
       title={t(($) => $.role_policy.title)}
       description={t(($) => $.role_policy.description)}
       action={
-        canEdit ? (
+        canEdit && saveStatus !== "error" ? (
           <SettingsSaveState
             status={saveStatus}
             savingLabel={t(($) => $.role_policy.saving)}
@@ -351,6 +351,16 @@ export function RolePolicySection({
         </Table>
       </SettingsCard>
 
+      {saveStatus === "error" ? (
+        <div
+          role="alert"
+          className="flex items-start gap-2 px-4 py-3 text-caption text-destructive"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{t(($) => $.role_policy.save_failed)}</span>
+        </div>
+      ) : null}
+
       {canEdit && dirty ? (
         <div className="flex justify-end">
           <Button size="sm" onClick={() => void handleSave()} disabled={saveStatus === "saving"}>
@@ -388,13 +398,17 @@ function RolePolicyRow({
     () => agents.filter((a) => !a.archived_at && a.runtime_id),
     [agents],
   );
-  const agentItems = useMemo(
-    () =>
-      Object.fromEntries(
-        bindableAgents.map((a) => [a.id, a.name] as [string, string]),
-      ),
-    [bindableAgents],
-  );
+  const agentItems = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const a of bindableAgents) out[a.id] = a.name;
+    // A saved rule can reference an agent that is not in the bindable list
+    // (archived/removed, or hidden from this member's view). Show a readable
+    // fallback instead of the raw UUID in the trigger.
+    if (rule.agentId && !out[rule.agentId]) {
+      out[rule.agentId] = `${t(($) => $.role_policy.agent_unavailable)} (${rule.agentId.slice(0, 8)})`;
+    }
+    return out;
+  }, [bindableAgents, rule.agentId, t]);
   const runtimeItems = useMemo(
     () =>
       Object.fromEntries(
@@ -402,6 +416,14 @@ function RolePolicyRow({
       ),
     [runtimes],
   );
+  const selectedRuntime = useMemo(
+    () => runtimes.find((r) => r.id === rule.runtimeId) ?? null,
+    [runtimes, rule.runtimeId],
+  );
+  // Unknown runtime (list still loading) is treated as online so the catalog
+  // attempt happens; a known-offline runtime skips discovery and falls back to
+  // the runtime default (same pattern as the agent model picker).
+  const runtimeOnline = selectedRuntime ? selectedRuntime.status === "online" : true;
   const modeItems = useMemo(
     () => ({
       agent: t(($) => $.role_policy.mode_agent),
@@ -499,7 +521,7 @@ function RolePolicyRow({
       </TableCell>
       <TableCell>
         {rule.mode === "exec" && rule.runtimeId ? (
-          <ModelCell code={code} rule={rule} canEdit={canEdit} onChange={onChange} />
+          <ModelCell code={code} rule={rule} canEdit={canEdit} runtimeOnline={runtimeOnline} onChange={onChange} />
         ) : null}
       </TableCell>
       <TableCell>
@@ -523,26 +545,119 @@ function ModelCell({
   code,
   rule,
   canEdit,
+  runtimeOnline,
   onChange,
 }: {
   code: string;
   rule: RolePolicyRuleDraft;
   canEdit: boolean;
+  runtimeOnline: boolean;
   onChange: (patch: Partial<RolePolicyRuleDraft>) => void;
 }) {
   const { t } = useT("settings");
-  const modelsQuery = useQuery(runtimeModelsOptions(rule.runtimeId));
+  const modelsQuery = useQuery(
+    runtimeModelsOptions(runtimeOnline ? rule.runtimeId : null),
+  );
   // Memoise the catalog so every downstream useMemo gets a stable
   // reference; `?? []` would mint a fresh array on every render.
   const models = useMemo(
     () => modelsQuery.data?.models ?? [],
     [modelsQuery.data],
   );
+  const supported = modelsQuery.data?.supported ?? true;
   const items = useMemo(() => {
     const out: Record<string, string> = { [UNSET]: t(($) => $.role_policy.model_default) };
     for (const m of models) out[m.id] = m.label || m.id;
     return out;
   }, [models, t]);
+
+  // Providers whose runtime ignores per-agent model selection: drop any
+  // saved model instead of persisting a ghost value (same contract as the
+  // agent model picker).
+  useEffect(() => {
+    if (!supported && rule.model) {
+      onChange({ model: null, thinkingLevel: null, serviceTier: null });
+    }
+  }, [supported, rule.model, onChange]);
+
+  if (!runtimeOnline) {
+    // Offline runtime: no live discovery; the rule falls back to the
+    // runtime's own default model.
+    return (
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <Select
+          items={{ [UNSET]: t(($) => $.role_policy.model_default) }}
+          value={UNSET}
+          disabled={!canEdit}
+          onValueChange={() => onChange({ model: null, thinkingLevel: null, serviceTier: null })}
+        >
+          <SelectTrigger size="sm" className="w-full" aria-label={`${code} ${t(($) => $.role_policy.model_label)}`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value={UNSET}>{t(($) => $.role_policy.model_default)}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-caption leading-4 text-muted-foreground">
+          {t(($) => $.role_policy.catalog_runtime_offline)}
+        </p>
+      </div>
+    );
+  }
+
+  if (modelsQuery.isLoading) {
+    return (
+      <div className="flex items-center gap-1.5 text-caption text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+        <span>{t(($) => $.role_policy.catalog_loading)}</span>
+      </div>
+    );
+  }
+
+  if (modelsQuery.isError) {
+    // Discovery failed (daemon unreachable / timed out): keep the rule
+    // usable with the runtime default and say so instead of a silent
+    // empty dropdown.
+    return (
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <Select
+          items={items}
+          value={rule.model ?? UNSET}
+          disabled={!canEdit}
+          onValueChange={(value) =>
+            onChange({
+              model: value === UNSET ? null : value,
+              thinkingLevel: null,
+              serviceTier: null,
+            })
+          }
+        >
+          <SelectTrigger size="sm" className="w-full" aria-label={`${code} ${t(($) => $.role_policy.model_label)}`}>
+            <SelectValue placeholder={t(($) => $.role_policy.model_default)} />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {Object.entries(items).map(([value, itemLabel]) => (
+              <SelectItem key={value} value={value}>
+                {itemLabel}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-caption leading-4 text-muted-foreground">
+          {t(($) => $.role_policy.catalog_unavailable)}
+        </p>
+      </div>
+    );
+  }
+
+  if (!supported) {
+    return (
+      <p className="text-caption leading-4 text-muted-foreground">
+        {t(($) => $.role_policy.catalog_managed_by_runtime)}
+      </p>
+    );
+  }
+
   return (
     <Select
       items={items}
