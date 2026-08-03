@@ -968,6 +968,80 @@ export interface DashboardRunTimeDaily {
   failed_count: number;
 }
 
+export interface OpsMetricsServerHealth {
+  status: string;
+}
+
+export interface OpsMetricsIssueCounts {
+  blocked: number;
+  in_progress: number;
+}
+
+export interface OpsMetricsRuntimeHealth {
+  total: number;
+  online: number;
+  offline: number;
+  stale: number;
+  last_seen_at: string | null;
+}
+
+export interface OpsMetricsAgentCapacity {
+  total_agents: number;
+  active_agents: number;
+  idle_agents: number;
+  total_slots: number;
+  active_slots: number;
+  idle_slots: number;
+}
+
+export interface OpsMetricsTaskCounts {
+  queued: number;
+  dispatched: number;
+  running: number;
+  waiting_local_directory: number;
+}
+
+export interface OpsMetricsActiveTask {
+  id: string;
+  status: string;
+  agent_id: string;
+  agent_name: string;
+  issue_id: string | null;
+  issue_identifier: string | null;
+  issue_title: string | null;
+  runtime_id: string | null;
+  runtime_status: string | null;
+  created_at: string;
+  dispatched_at: string | null;
+  started_at: string | null;
+  wait_reason: string | null;
+}
+
+export interface OpsMetricsBlocker {
+  issue_id: string;
+  identifier: string;
+  title: string;
+  priority: string;
+  status: string;
+  blocked_reason: string | null;
+  waiting_on: string | null;
+  updated_at: string;
+}
+
+// Stable, low-cost workspace operations summary for polling clients such as
+// the macOS tray app. The backend intentionally excludes task context/result,
+// error bodies, runtime metadata, integration details, and agent env values.
+export interface OpsMetricsSummary {
+  generated_at: string;
+  server: OpsMetricsServerHealth;
+  issue_counts: OpsMetricsIssueCounts;
+  runtime_health: OpsMetricsRuntimeHealth;
+  agent_capacity: OpsMetricsAgentCapacity;
+  active_task_counts: OpsMetricsTaskCounts;
+  active_tasks: OpsMetricsActiveTask[];
+  recent_blockers: OpsMetricsBlocker[];
+}
+
 export type RuntimeUpdateStatus =
   | "pending"
   | "running"

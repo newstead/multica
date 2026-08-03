@@ -73,6 +73,7 @@ import type {
   DashboardAgentSessions,
   DashboardAgentCode,
   DashboardRunTimeDaily,
+  OpsMetricsSummary,
   RuntimeUpdate,
   RuntimeModelListRequest,
   RuntimeLocalSkillListRequest,
@@ -211,6 +212,7 @@ import {
   EMPTY_ISSUE_TABLE_GROUPS_RESPONSE,
   EMPTY_ISSUE_TABLE_ROWS_RESPONSE,
   EMPTY_LIST_ISSUES_RESPONSE,
+  EMPTY_OPS_METRICS_SUMMARY,
   EMPTY_SEARCH_ISSUES_RESPONSE,
   EMPTY_SEARCH_PROJECTS_RESPONSE,
   EMPTY_SQUAD,
@@ -234,6 +236,7 @@ import {
   UNREADABLE_CRON_PREVIEW_RESPONSE,
   ListIssuesResponseSchema,
   CreateIssueResponseSchema,
+  OpsMetricsSummarySchema,
   ListWebhookDeliveriesResponseSchema,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
@@ -966,6 +969,13 @@ export class ApiClient {
 
   async getAssigneeFrequency(): Promise<AssigneeFrequencyEntry[]> {
     return this.fetch("/api/assignee-frequency");
+  }
+
+  async getOpsMetrics(): Promise<OpsMetricsSummary> {
+    const raw = await this.fetch<unknown>("/api/ops/metrics");
+    return parseWithFallback(raw, OpsMetricsSummarySchema, EMPTY_OPS_METRICS_SUMMARY, {
+      endpoint: "GET /api/ops/metrics",
+    });
   }
 
   async updateComment(commentId: string, content: string, attachmentIds?: string[], suppressAgentIds?: string[]): Promise<Comment> {
