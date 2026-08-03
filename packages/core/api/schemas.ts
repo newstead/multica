@@ -35,6 +35,7 @@ import type {
   ListLabelsResponse,
   ListWebhookDeliveriesResponse,
   NotificationPreferenceResponse,
+  OpsMetricsSummary,
   ResourceLabelsResponse,
   SearchIssuesResponse,
   SearchProjectsResponse,
@@ -891,6 +892,97 @@ const DashboardRunTimeDailySchema = z.object({
 }).loose();
 
 export const DashboardRunTimeDailyListSchema = z.array(DashboardRunTimeDailySchema);
+
+const nullableString = z.string().nullable().default(null);
+
+const OpsMetricsServerHealthSchema = z.object({
+  status: z.string().default("unknown"),
+}).loose();
+
+const OpsMetricsIssueCountsSchema = z.object({
+  blocked: z.number().default(0),
+  in_progress: z.number().default(0),
+}).loose();
+
+const OpsMetricsRuntimeHealthSchema = z.object({
+  total: z.number().default(0),
+  online: z.number().default(0),
+  offline: z.number().default(0),
+  stale: z.number().default(0),
+  last_seen_at: nullableString,
+}).loose();
+
+const OpsMetricsAgentCapacitySchema = z.object({
+  total_agents: z.number().default(0),
+  active_agents: z.number().default(0),
+  idle_agents: z.number().default(0),
+  total_slots: z.number().default(0),
+  active_slots: z.number().default(0),
+  idle_slots: z.number().default(0),
+}).loose();
+
+const OpsMetricsTaskCountsSchema = z.object({
+  queued: z.number().default(0),
+  dispatched: z.number().default(0),
+  running: z.number().default(0),
+  waiting_local_directory: z.number().default(0),
+}).loose();
+
+const OpsMetricsActiveTaskSchema = z.object({
+  id: z.string().default(""),
+  status: z.string().default(""),
+  agent_id: z.string().default(""),
+  agent_name: z.string().default(""),
+  issue_id: nullableString,
+  issue_identifier: nullableString,
+  issue_title: nullableString,
+  runtime_id: nullableString,
+  runtime_status: nullableString,
+  created_at: z.string().default(""),
+  dispatched_at: nullableString,
+  started_at: nullableString,
+  wait_reason: nullableString,
+}).loose();
+
+const OpsMetricsBlockerSchema = z.object({
+  issue_id: z.string().default(""),
+  identifier: z.string().default(""),
+  title: z.string().default(""),
+  priority: z.string().default(""),
+  status: z.string().default(""),
+  blocked_reason: nullableString,
+  waiting_on: nullableString,
+  updated_at: z.string().default(""),
+}).loose();
+
+export const OpsMetricsSummarySchema = z.object({
+  generated_at: z.string().default(""),
+  server: OpsMetricsServerHealthSchema.default({ status: "unknown" }),
+  issue_counts: OpsMetricsIssueCountsSchema.default({ blocked: 0, in_progress: 0 }),
+  runtime_health: OpsMetricsRuntimeHealthSchema.default({ total: 0, online: 0, offline: 0, stale: 0, last_seen_at: null }),
+  agent_capacity: OpsMetricsAgentCapacitySchema.default({ total_agents: 0, active_agents: 0, idle_agents: 0, total_slots: 0, active_slots: 0, idle_slots: 0 }),
+  active_task_counts: OpsMetricsTaskCountsSchema.default({ queued: 0, dispatched: 0, running: 0, waiting_local_directory: 0 }),
+  active_tasks: z.array(OpsMetricsActiveTaskSchema).default([]),
+  recent_blockers: z.array(OpsMetricsBlockerSchema).default([]),
+}).loose();
+
+export const EMPTY_OPS_METRICS_SUMMARY: OpsMetricsSummary = {
+  generated_at: "",
+  server: { status: "unknown" },
+  issue_counts: { blocked: 0, in_progress: 0 },
+  runtime_health: { total: 0, online: 0, offline: 0, stale: 0, last_seen_at: null },
+  agent_capacity: {
+    total_agents: 0,
+    active_agents: 0,
+    idle_agents: 0,
+    total_slots: 0,
+    active_slots: 0,
+    idle_slots: 0,
+  },
+  active_task_counts: { queued: 0, dispatched: 0, running: 0, waiting_local_directory: 0 },
+  active_tasks: [],
+  recent_blockers: [],
+};
 
 // ---------------------------------------------------------------------------
 // Runtime usage schemas — the runtime-detail page's four usage endpoints

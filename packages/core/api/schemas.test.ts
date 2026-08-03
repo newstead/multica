@@ -17,6 +17,7 @@ import {
   EMPTY_CREATE_FEEDBACK_RESPONSE,
   EMPTY_INBOX_ITEMS,
   EMPTY_INBOX_UNREAD_SUMMARY,
+  EMPTY_OPS_METRICS_SUMMARY,
   EMPTY_SEARCH_PROJECTS_RESPONSE,
   EMPTY_USER,
   InboxItemListSchema,
@@ -24,6 +25,7 @@ import {
   IssueTriggerPreviewSchema,
   ListIssuesResponseSchema,
   ListPropertiesResponseSchema,
+  OpsMetricsSummarySchema,
   SearchProjectsResponseSchema,
   RuntimeHourlyActivityListSchema,
   RuntimeUsageByAgentListSchema,
@@ -974,3 +976,32 @@ describe("CommentTriggerPreviewSchema.blocked", () => {
     expect(parsed.blocked.map((b) => b.target_id)).toEqual(["s1", "a1"]);
   });
 });
+
+describe("OpsMetricsSummarySchema", () => {
+  it("parses the ops metrics endpoint and defaults missing arrays", () => {
+    const parsed = OpsMetricsSummarySchema.parse({
+      generated_at: "2026-08-03T12:00:00Z",
+      server: { status: "ok" },
+      issue_counts: { blocked: 2, in_progress: 3 },
+      runtime_health: { total: 1, online: 1, offline: 0, stale: 0, last_seen_at: null },
+      agent_capacity: { total_agents: 4, active_agents: 1, idle_agents: 3, total_slots: 8, active_slots: 1, idle_slots: 7 },
+      active_task_counts: { queued: 1, dispatched: 0, running: 1, waiting_local_directory: 0 },
+    });
+
+    expect(parsed.recent_blockers).toEqual([]);
+    expect(parsed.active_tasks).toEqual([]);
+    expect(parsed.issue_counts.blocked).toBe(2);
+  });
+
+  it("falls back to an empty summary when the payload is malformed", () => {
+    const parsed = parseWithFallback(
+      { issue_counts: "bad" },
+      OpsMetricsSummarySchema,
+      EMPTY_OPS_METRICS_SUMMARY,
+      { endpoint: "GET /api/ops/metrics" },
+    );
+
+    expect(parsed).toEqual(EMPTY_OPS_METRICS_SUMMARY);
+  });
+});
+
