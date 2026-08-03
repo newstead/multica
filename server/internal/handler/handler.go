@@ -171,6 +171,7 @@ type Handler struct {
 	DaemonWorkspaceRefresh WorkspaceSetRefreshNotifier
 	Bus                    *events.Bus
 	TaskService            *service.TaskService
+	OpsMetricsService      *service.OpsMetricsService
 	IssueService           *service.IssueService
 	AutopilotService       *service.AutopilotService
 	MemoryService          *service.MemoryService
@@ -383,6 +384,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		DaemonWorkspaceRefresh:       daemonWorkspaceRefresh,
 		Bus:                          bus,
 		TaskService:                  taskSvc,
+		OpsMetricsService:            service.NewOpsMetricsService(queries),
 		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
 		AutopilotService:             service.NewAutopilotService(queries, txStarter, bus, taskSvc),
 		MemoryService:                service.NewMemoryService(queries, txStarter),
