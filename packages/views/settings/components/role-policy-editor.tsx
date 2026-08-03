@@ -282,7 +282,7 @@ export function RolePolicySection({
       title={t(($) => $.role_policy.title)}
       description={t(($) => $.role_policy.description)}
       action={
-        canEdit ? (
+        canEdit && saveStatus !== "error" ? (
           <SettingsSaveState
             status={saveStatus}
             savingLabel={t(($) => $.role_policy.saving)}
@@ -398,13 +398,17 @@ function RolePolicyRow({
     () => agents.filter((a) => !a.archived_at && a.runtime_id),
     [agents],
   );
-  const agentItems = useMemo(
-    () =>
-      Object.fromEntries(
-        bindableAgents.map((a) => [a.id, a.name] as [string, string]),
-      ),
-    [bindableAgents],
-  );
+  const agentItems = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const a of bindableAgents) out[a.id] = a.name;
+    // A saved rule can reference an agent that is not in the bindable list
+    // (archived/removed, or hidden from this member's view). Show a readable
+    // fallback instead of the raw UUID in the trigger.
+    if (rule.agentId && !out[rule.agentId]) {
+      out[rule.agentId] = `${t(($) => $.role_policy.agent_unavailable)} (${rule.agentId.slice(0, 8)})`;
+    }
+    return out;
+  }, [bindableAgents, rule.agentId, t]);
   const runtimeItems = useMemo(
     () =>
       Object.fromEntries(

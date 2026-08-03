@@ -338,7 +338,7 @@ describe("RolePolicySection", () => {
     });
   });
 
-  it("surfaces a save error and keeps the draft editable for retry", async () => {
+  it("surfaces a save error exactly once and keeps the draft editable for retry", async () => {
     mockPut.mockRejectedValueOnce(new Error("server exploded"));
     renderEditor();
     await userEvent.click(screen.getByRole("switch", { name: "Enable role policy" }));
@@ -346,7 +346,25 @@ describe("RolePolicySection", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Failed to save role policy");
     });
+    // Single error channel: the inline role="alert" only — no duplicate via
+    // the header SettingsSaveState (role="status").
+    expect(screen.getAllByText("Failed to save role policy")).toHaveLength(1);
+    expect(screen.queryByRole("status")).toBeNull();
     expect(mockPut).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Save" })).toBeTruthy();
+  });
+
+  it("renders a readable fallback for a bound agent outside the bindable list", () => {
+    policyRef.current = {
+      enabled: true,
+      rules: { TL: { agent_id: "agent-gone", fallback: "agent_default" } },
+    };
+    // Agent not in the workspace list (archived/removed, or hidden from this
+    // member's view) — the trigger must not show the raw UUID.
+    agentsRef.current = [];
+    renderEditor();
+    const trigger = screen.getByRole("combobox", { name: "TL Agent" });
+    expect(trigger).toHaveTextContent(/Agent unavailable/);
+    expect(trigger).not.toHaveTextContent("agent-gone");
   });
 });

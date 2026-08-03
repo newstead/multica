@@ -819,6 +819,7 @@
     "mode_none": "규칙 없음",
     "agent_label": "에이전트",
     "agent_placeholder": "에이전트 선택",
+"agent_unavailable": "에이전트를 사용할 수 없음",
     "runtime_label": "런타임",
     "runtime_placeholder": "런타임 선택",
     "model_label": "모델",

@@ -820,6 +820,7 @@
     "mode_none": "No rule",
     "agent_label": "Agent",
     "agent_placeholder": "Select an agent",
+"agent_unavailable": "Agent unavailable",
     "runtime_label": "Runtime",
     "runtime_placeholder": "Select a runtime",
     "model_label": "Model",

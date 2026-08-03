@@ -819,6 +819,7 @@
     "mode_none": "无规则",
     "agent_label": "代理",
     "agent_placeholder": "选择代理",
+"agent_unavailable": "代理不可用",
     "runtime_label": "运行时",
     "runtime_placeholder": "选择运行时",
     "model_label": "模型",

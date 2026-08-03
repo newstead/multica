@@ -819,6 +819,7 @@
     "mode_none": "ルールなし",
     "agent_label": "エージェント",
     "agent_placeholder": "エージェントを選択",
+"agent_unavailable": "エージェントを利用できません",
     "runtime_label": "ランタイム",
     "runtime_placeholder": "ランタイムを選択",
     "model_label": "モデル",
