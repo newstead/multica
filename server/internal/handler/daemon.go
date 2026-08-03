@@ -1664,6 +1664,14 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if task.PolicyServiceTier.Valid && task.PolicyServiceTier.String != "" {
 			serviceTier = task.PolicyServiceTier.String
 		}
+		// policy_role_code is the audit evidence of WHICH role rule routed this
+		// task (ROLEPOL-3 / ROL-211). It rides along in the claim payload so
+		// the daemon can log/report the effective policy without re-querying;
+		// it never influences authorization.
+		policyRoleCode := ""
+		if task.PolicyRoleCode.Valid && task.PolicyRoleCode.String != "" {
+			policyRoleCode = task.PolicyRoleCode.String
+		}
 		resp.Agent = &TaskAgentData{
 			ID:                    uuidToString(agent.ID),
 			Name:                  agent.Name,
@@ -1674,6 +1682,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			Model:                 model,
 			ThinkingLevel:         thinkingLevel,
 			ServiceTier:           serviceTier,
+			PolicyRoleCode:        policyRoleCode,
 			RuntimeConfig:         runtimeConfig,
 			DisabledRuntimeSkills: disabledRuntimeSkillsFor(agent.DisabledRuntimeSkills, runtimeID, runtime.Provider),
 		}

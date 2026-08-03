@@ -175,17 +175,20 @@ type CoalescedCommentData struct {
 
 // AgentData holds agent details returned by the claim endpoint.
 type AgentData struct {
-	ID                    string                     `json:"id"`
-	Name                  string                     `json:"name"`
-	Instructions          string                     `json:"instructions"`
-	Skills                []SkillData                `json:"skills,omitempty"`
-	SkillRefs             []SkillRefData             `json:"skill_refs,omitempty"`
-	CustomEnv             map[string]string          `json:"custom_env,omitempty"`
-	CustomArgs            []string                   `json:"custom_args,omitempty"`
-	McpConfig             json.RawMessage            `json:"mcp_config,omitempty"`
-	Model                 string                     `json:"model,omitempty"`
-	ThinkingLevel         string                     `json:"thinking_level,omitempty"`
-	ServiceTier           string                     `json:"service_tier,omitempty"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Instructions  string            `json:"instructions"`
+	Skills        []SkillData       `json:"skills,omitempty"`
+	SkillRefs     []SkillRefData    `json:"skill_refs,omitempty"`
+	CustomEnv     map[string]string `json:"custom_env,omitempty"`
+	CustomArgs    []string          `json:"custom_args,omitempty"`
+	McpConfig     json.RawMessage   `json:"mcp_config,omitempty"`
+	Model         string            `json:"model,omitempty"`
+	ThinkingLevel string            `json:"thinking_level,omitempty"`
+	ServiceTier   string            `json:"service_tier,omitempty"`
+	// PolicyRoleCode mirrors handler.TaskAgentData.policy_role_code: the
+	// workspace role-policy rule that routed this task (audit evidence only).
+	PolicyRoleCode        string                     `json:"policy_role_code,omitempty"`
 	DisabledRuntimeSkills []DisabledRuntimeSkillData `json:"disabled_runtime_skills,omitempty"`
 	// RuntimeConfig is the per-provider runtime_config JSON as stored on
 	// the agent record, forwarded verbatim by the claim endpoint. The

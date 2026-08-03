@@ -160,6 +160,7 @@ type AgentTaskQueue struct {
 	PolicyModel               pgtype.Text `json:"policy_model"`
 	PolicyThinkingLevel       pgtype.Text `json:"policy_thinking_level"`
 	PolicyServiceTier         pgtype.Text `json:"policy_service_tier"`
+	PolicyRoleCode            pgtype.Text `json:"policy_role_code"`
 }
 
 type AgentToLabel struct {

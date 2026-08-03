@@ -27,16 +27,16 @@ func TestClaimTaskByRuntime_RolePolicyOverrides(t *testing.T) {
 		t.Fatalf("set agent exec config: %v", err)
 	}
 
-	insertClaimTask := func(st *testing.T, policyModel, policyThinking, policyTier string) string {
+	insertClaimTask := func(st *testing.T, policyModel, policyThinking, policyTier, policyRoleCode string) string {
 		st.Helper()
 		issueID := createLanguagePolicyClaimIssue(st, "")
 		var taskID string
 		if err := testPool.QueryRow(ctx, `
 			INSERT INTO agent_task_queue (agent_id, runtime_id, issue_id, status, priority,
-				policy_model, policy_thinking_level, policy_service_tier)
-			VALUES ($1, $2, $3, 'queued', 1000, $4, $5, $6)
+				policy_model, policy_thinking_level, policy_service_tier, policy_role_code)
+			VALUES ($1, $2, $3, 'queued', 1000, $4, $5, $6, $7)
 			RETURNING id
-		`, agentID, runtimeID, issueID, nullableString(policyModel), nullableString(policyThinking), nullableString(policyTier)).Scan(&taskID); err != nil {
+		`, agentID, runtimeID, issueID, nullableString(policyModel), nullableString(policyThinking), nullableString(policyTier), nullableString(policyRoleCode)).Scan(&taskID); err != nil {
 			st.Fatalf("create claim task: %v", err)
 		}
 		st.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE id = $1`, taskID) })
@@ -61,9 +61,10 @@ func TestClaimTaskByRuntime_RolePolicyOverrides(t *testing.T) {
 		var resp struct {
 			Task *struct {
 				Agent *struct {
-					Model        string `json:"model"`
-					ThinkingLevel string `json:"thinking_level"`
-					ServiceTier  string `json:"service_tier"`
+					Model          string `json:"model"`
+					ThinkingLevel  string `json:"thinking_level"`
+					ServiceTier    string `json:"service_tier"`
+					PolicyRoleCode string `json:"policy_role_code"`
 				} `json:"agent"`
 			} `json:"task"`
 		}
@@ -74,31 +75,39 @@ func TestClaimTaskByRuntime_RolePolicyOverrides(t *testing.T) {
 			st.Fatal("claim response missing agent data")
 		}
 		return agentClaimShape{
-			model:         resp.Task.Agent.Model,
-			thinkingLevel: resp.Task.Agent.ThinkingLevel,
-			serviceTier:   resp.Task.Agent.ServiceTier,
+			model:          resp.Task.Agent.Model,
+			thinkingLevel:  resp.Task.Agent.ThinkingLevel,
+			serviceTier:    resp.Task.Agent.ServiceTier,
+			policyRoleCode: resp.Task.Agent.PolicyRoleCode,
 		}
 	}
 
 	t.Run("no policy columns uses agent config", func(t *testing.T) {
-		insertClaimTask(t, "", "", "")
+		insertClaimTask(t, "", "", "", "")
 		got := claim(t)
 		if got.model != "agent-base-model" || got.thinkingLevel != "medium" || got.serviceTier != "default" {
 			t.Fatalf("agent config not preserved: %+v", got)
 		}
+		if got.policyRoleCode != "" {
+			t.Fatalf("policy_role_code = %q, want empty", got.policyRoleCode)
+		}
 	})
 
 	t.Run("policy columns override agent config", func(t *testing.T) {
-		insertClaimTask(t, "policy-model", "high", "fast")
+		insertClaimTask(t, "policy-model", "high", "fast", "QA")
 		got := claim(t)
 		if got.model != "policy-model" || got.thinkingLevel != "high" || got.serviceTier != "fast" {
 			t.Fatalf("policy overrides not applied: %+v", got)
+		}
+		if got.policyRoleCode != "QA" {
+			t.Fatalf("policy_role_code = %q, want QA", got.policyRoleCode)
 		}
 	})
 }
 
 type agentClaimShape struct {
-	model         string
-	thinkingLevel string
-	serviceTier   string
+	model          string
+	thinkingLevel  string
+	serviceTier    string
+	policyRoleCode string
 }

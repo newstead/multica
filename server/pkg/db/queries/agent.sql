@@ -276,7 +276,7 @@ INSERT INTO agent_task_queue (
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
     squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
-    policy_model, policy_thinking_level, policy_service_tier
+    policy_model, policy_thinking_level, policy_service_tier, policy_role_code
 )
 VALUES (
     $1, $2, $3, 'queued', $4, sqlc.narg(trigger_comment_id),
@@ -303,7 +303,8 @@ VALUES (
     sqlc.narg(trigger_evidence_ref_id),
     sqlc.narg(policy_model),
     sqlc.narg(policy_thinking_level),
-    sqlc.narg(policy_service_tier)
+    sqlc.narg(policy_service_tier),
+    sqlc.narg(policy_role_code)
 )
 RETURNING *;
 
@@ -344,7 +345,7 @@ INSERT INTO agent_task_queue (
     trigger_summary, is_leader_task, squad_id, escalation_for_task_id, fire_at,
     originator_user_id, accountable_user_id, originator_source,
     delegated_from_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
-    policy_model, policy_thinking_level, policy_service_tier
+    policy_model, policy_thinking_level, policy_service_tier, policy_role_code
 )
 VALUES (
     @agent_id, @runtime_id, @issue_id, 'deferred', @priority,
@@ -362,7 +363,8 @@ VALUES (
     sqlc.narg(trigger_evidence_ref_id),
     sqlc.narg(policy_model),
     sqlc.narg(policy_thinking_level),
-    sqlc.narg(policy_service_tier)
+    sqlc.narg(policy_service_tier),
+    sqlc.narg(policy_role_code)
 )
 RETURNING *;
 
@@ -437,7 +439,8 @@ INSERT INTO agent_task_queue (
     squad_id, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id,
     trigger_evidence_kind, trigger_evidence_ref_id, retry_of_task_id,
-    chat_input_task_id, fire_at
+    chat_input_task_id, fire_at,
+    policy_model, policy_thinking_level, policy_service_tier, policy_role_code
 )
 SELECT
     p.agent_id, p.runtime_id, p.issue_id, p.chat_session_id, p.autopilot_run_id,
@@ -456,7 +459,8 @@ SELECT
     sqlc.narg(runtime_connected_apps),
     p.originator_source, p.delegated_from_task_id, p.rule_version_id,
     p.trigger_evidence_kind, p.trigger_evidence_ref_id, p.id,
-    p.chat_input_task_id, sqlc.narg(fire_at)
+    p.chat_input_task_id, sqlc.narg(fire_at),
+    p.policy_model, p.policy_thinking_level, p.policy_service_tier, p.policy_role_code
 FROM agent_task_queue p
 WHERE p.id = $1
 RETURNING *;

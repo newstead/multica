@@ -1057,7 +1057,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	// Workspace role policy (ROLEPOL-0): resolve BEFORE attribution/insert so
 	// the task row is stamped with the policy executor and exec overrides.
 	// A disabled role refuses the enqueue (fail-closed).
-	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, policyRoleCode, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
 	if err != nil {
 		slog.Warn("task enqueue refused: role policy", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agent.ID), "error", err)
 		return db.AgentTaskQueue{}, err
@@ -1102,6 +1102,7 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		PolicyModel:          policyModel,
 		PolicyThinkingLevel:  policyThinkingLevel,
 		PolicyServiceTier:    policyServiceTier,
+		PolicyRoleCode:       policyRoleCodeText(policyRoleCode),
 		// Stamp the reviewed head so dedup can distinguish this run's target
 		// from a later request against a new HEAD (TEN-356).
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
@@ -1186,7 +1187,7 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 
 	// Workspace role policy (ROLEPOL-0): resolve BEFORE attribution/insert so
 	// the task row is stamped with the policy executor and exec overrides.
-	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, policyRoleCode, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
 	if err != nil {
 		slog.Warn("mention task enqueue refused: role policy", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
 		return db.AgentTaskQueue{}, err
@@ -1232,6 +1233,7 @@ func (s *TaskService) enqueueMentionTaskWithCommentPlan(ctx context.Context, iss
 		PolicyModel:          policyModel,
 		PolicyThinkingLevel:  policyThinkingLevel,
 		PolicyServiceTier:    policyServiceTier,
+		PolicyRoleCode:       policyRoleCodeText(policyRoleCode),
 		// Stamp the reviewed head so dedup can distinguish this run's target
 		// from a later request against a new HEAD (TEN-356).
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
@@ -1291,7 +1293,7 @@ func (s *TaskService) EnqueueDeferredAssigneeFallback(ctx context.Context, issue
 	}
 	// Workspace role policy (ROLEPOL-0): resolve BEFORE attribution/insert so
 	// the deferred fallback task is stamped with the policy executor.
-	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, _, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
+	taskAgentID, taskRuntimeID, policyModel, policyThinkingLevel, policyServiceTier, policyRoleCode, err := s.applyRolePolicy(ctx, issue.WorkspaceID, agent)
 	if err != nil {
 		slog.Warn("deferred fallback enqueue refused: role policy", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)
 		return db.AgentTaskQueue{}, err
@@ -1319,6 +1321,7 @@ func (s *TaskService) EnqueueDeferredAssigneeFallback(ctx context.Context, issue
 		PolicyModel:          policyModel,
 		PolicyThinkingLevel:  policyThinkingLevel,
 		PolicyServiceTier:    policyServiceTier,
+		PolicyRoleCode:       policyRoleCodeText(policyRoleCode),
 	})
 	if err != nil {
 		slog.Error("deferred fallback enqueue failed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agentID), "error", err)

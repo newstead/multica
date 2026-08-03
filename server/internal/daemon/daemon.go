@@ -5308,6 +5308,21 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		thinkingLevel = task.Agent.ThinkingLevel
 		serviceTier = task.Agent.ServiceTier
 	}
+	// Workspace role policy (ROLEPOL-3 / ROL-211): when the claim carries
+	// policy_role_code, the effective exec config was routed by a workspace
+	// role rule (bind_agent or exec_override) — log it as audit evidence.
+	// agent_id/runtime_id on the task already reflect the policy resolution,
+	// so the run executes exactly as the policy intended.
+	if task.Agent != nil && task.Agent.PolicyRoleCode != "" {
+		taskLog.Info("role policy routed task",
+			"task_id", task.ID,
+			"agent_id", task.Agent.ID,
+			"policy_role_code", task.Agent.PolicyRoleCode,
+			"model", model,
+			"thinking_level", thinkingLevel,
+			"service_tier", serviceTier,
+		)
+	}
 	// service_tier is catalog-owned and currently Codex-only. As with
 	// thinking_level, stale or incompatible persisted values degrade to the
 	// runtime default instead of failing the task. Catalog lookup errors pass
