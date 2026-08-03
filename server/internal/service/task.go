@@ -1600,6 +1600,9 @@ func (s *TaskService) EnqueueChatTask(ctx context.Context, chatSession db.ChatSe
 	if errors.Is(err, pgx.ErrNoRows) {
 		mediaPendingUntil = pgtype.Timestamptz{}
 	}
+	// ROLEPOL-0 v1: chat/direct-message tasks intentionally not covered by
+	// role policy (contract §5 / §11) — the task always runs as the session's
+	// agent with its own config.
 	task, err := qtx.CreateChatTask(ctx, db.CreateChatTaskParams{
 		AgentID:           chatSession.AgentID,
 		RuntimeID:         agent.RuntimeID,
@@ -1830,6 +1833,8 @@ func (s *TaskService) SendDirectChatMessage(ctx context.Context, session db.Chat
 			return ErrChatTaskAgentNoRuntime
 		}
 
+		// ROLEPOL-0 v1: chat/direct-message tasks intentionally not covered
+		// by role policy (contract §5 / §11).
 		task, err := qtx.CreateChatTask(ctx, db.CreateChatTaskParams{
 			AgentID:              session.AgentID,
 			RuntimeID:            carrier.RuntimeID,

@@ -7,24 +7,28 @@
 -- rewritten. role_policy_enabled defaults to FALSE so existing agent-centric
 -- behavior is unchanged everywhere until an owner/admin opts in.
 --
--- Note: the users table is quoted "user" (the contract draft referenced
--- app_user, which does not exist in this schema).
+-- No database foreign keys on purpose (CLAUDE.md "Database and Migration
+-- Rules"): relationships and dependent cleanup are resolved explicitly in
+-- application code. Workspace teardown sweeps the matrix in
+-- DeleteWorkspaceAdministration (workspace_delete.sql); runtime teardown
+-- clears agent/runtime bindings in runtime.go. The workspace_id lookup index
+-- lives in its own single-statement CONCURRENTLY migration (267).
 
 ALTER TABLE workspace
     ADD COLUMN role_policy_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE workspace_role_policy (
-    workspace_id  uuid NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+    workspace_id  uuid NOT NULL,
     role_code     text NOT NULL,
     -- Variant A: hard binding to a concrete AI agent (XOR with exec config).
-    agent_id      uuid NULL REFERENCES agent(id) ON DELETE SET NULL,
+    agent_id      uuid NULL,
     -- Variant B: exec config layered over the assigned agent (all fields optional).
-    runtime_id    uuid NULL REFERENCES agent_runtime(id) ON DELETE SET NULL,
+    runtime_id    uuid NULL,
     model         text NULL,
     thinking_level text NULL,
     service_tier  text NULL,
     fallback      text NOT NULL DEFAULT 'agent_default', -- 'agent_default' | 'disabled'
-    updated_by    uuid NULL REFERENCES "user"(id) ON DELETE SET NULL,
+    updated_by    uuid NULL,
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (workspace_id, role_code),
@@ -36,8 +40,6 @@ CREATE TABLE workspace_role_policy (
         role_code IN ('TL','BE','FE','FS','QA','OPS','ML','DA','SRE','SEC')
     )
 );
-
-CREATE INDEX workspace_role_policy_workspace_idx ON workspace_role_policy(workspace_id);
 
 -- Exec-overrides stamped on the task row at enqueue; agent-binding and
 -- runtime-binding reuse the existing agent_id / runtime_id task columns.
