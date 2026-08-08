@@ -12,11 +12,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: linux
             target: linux
-          - os: windows-latest
+            runs_on: '["self-hosted","linux","x64"]'
+          - os: windows
             target: win
-    runs-on: ${{ matrix.os }}
+            runs_on: '["self-hosted","windows","x64"]'
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,7 +42,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

@@ -18,7 +18,7 @@ jobs:
   # nothing from a full web build. This job emits a single `frontend`
   # output consumed by the frontend job below.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read
       pull-requests: read
@@ -89,9 +89,9 @@ jobs:
   # runner to itself and everything else shares the other one.
   frontend-build:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     env:
-      # Pin turbo's filesystem cache somewhere actions/cache can address.
+      # Keep turbo cache on the self-hosted runner filesystem.
       TURBO_CACHE_DIR: .turbo/cache
     steps:
       - name: Checkout
@@ -107,7 +107,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Install dependencies
         if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -129,14 +128,6 @@ jobs:
       # they get their own prefixes rather than racing to save one key.
       # GitHub scopes caches by branch: a PR reads main's entries (so unchanged
       # tasks hit on the first push) and writes its own (so re-pushes hit too).
-      - name: Restore turbo cache
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v6
-        with:
-          path: .turbo/cache
-          key: turbo-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
-          restore-keys: |
-            turbo-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-
 
       - name: Test self-host env derivation
         if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -163,7 +154,7 @@ jobs:
 
   frontend-test:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     env:
       TURBO_CACHE_DIR: .turbo/cache
     steps:
@@ -180,7 +171,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Install dependencies
         if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -195,14 +185,6 @@ jobs:
       # measured): `test` declares no outputs, so turbo caches exit codes and
       # logs rather than artifacts -- yet a hit still skips the whole suite,
       # which is the single most expensive task in the graph.
-      - name: Restore turbo cache
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v6
-        with:
-          path: .turbo/cache
-          key: turbo-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
-          restore-keys: |
-            turbo-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-
 
       - name: Test
         if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -224,7 +206,7 @@ jobs:
     # is cancelled by the concurrency group above, and there is no reason to
     # spend a runner reporting a verdict nobody will read.
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Check frontend job results
         env:
@@ -239,7 +221,7 @@ jobs:
           fi
 
   backend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -302,7 +284,7 @@ jobs:
     # The environment-preparation deadline owns a process tree, not just a Go
     # process. This Windows runtime test verifies Job Object cancellation kills
     # a delayed descendant before an immediate retry can reuse the same root.
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v6

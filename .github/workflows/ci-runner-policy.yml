@@ -1,0 +1,23 @@
+name: CI Runner Policy
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+
+jobs:
+  forbid-github-hosted-runners:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Reject paid runner labels
+        run: |
+          forbidden='ubuntu-latest|ubuntu-24\.04|ubuntu-24\.04-arm|macos-latest|macos-15|windows-latest|blacksmith-[A-Za-z0-9_-]+'
+          if grep -RInE "runs-on:.*(${forbidden})" .github/workflows; then
+            echo "::error::Use self-hosted runner labels only; GitHub-hosted runners can consume paid Actions minutes."
+            exit 1
+          fi
