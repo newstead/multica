@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
       is_stable: ${{ steps.release_meta.outputs.is_stable }}
@@ -65,7 +65,7 @@ jobs:
     # tag push fails this job (401 against the upstream tap), which makes
     # downstream CI go red without affecting the actual artifact pipeline.
     if: github.repository_owner == 'multica-ai'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -98,10 +98,10 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runs-on: ubuntu-latest
+            runs_on: '["self-hosted","linux","x64","docker"]'
           - platform: linux/arm64
-            runs-on: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runs-on }}
+            runs_on: '["self-hosted","linux","arm64","docker"]'
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     steps:
       - name: Prepare
         run: |
@@ -139,8 +139,8 @@ jobs:
           pull: true
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-backend-${{ env.PLATFORM_PAIR }}
-          cache-to: type=gha,mode=max,scope=release-backend-${{ env.PLATFORM_PAIR }}
+          cache-from: type=local,src=/var/cache/github-actions/buildx/release-backend-${{ env.PLATFORM_PAIR }}
+          cache-to: type=local,dest=/var/cache/github-actions/buildx/release-backend-${{ env.PLATFORM_PAIR }},mode=max
           build-args: |
             VERSION=${{ needs.verify.outputs.tag_name }}
             COMMIT=${{ github.sha }}
@@ -162,7 +162,7 @@ jobs:
 
   docker-backend-merge:
     needs: [verify, docker-backend-build]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     concurrency:
       group: release-docker-backend-${{ github.ref }}
       cancel-in-progress: true
@@ -215,10 +215,10 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runs-on: ubuntu-latest
+            runs_on: '["self-hosted","linux","x64","docker"]'
           - platform: linux/arm64
-            runs-on: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runs-on }}
+            runs_on: '["self-hosted","linux","arm64","docker"]'
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     steps:
       - name: Prepare
         run: |
@@ -256,8 +256,8 @@ jobs:
           pull: true
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=release-web-${{ env.PLATFORM_PAIR }}
-          cache-to: type=gha,mode=max,scope=release-web-${{ env.PLATFORM_PAIR }}
+          cache-from: type=local,src=/var/cache/github-actions/buildx/release-web-${{ env.PLATFORM_PAIR }}
+          cache-to: type=local,dest=/var/cache/github-actions/buildx/release-web-${{ env.PLATFORM_PAIR }},mode=max
           build-args: |
             REMOTE_API_URL=http://backend:8080
             NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
@@ -279,7 +279,7 @@ jobs:
 
   docker-web-merge:
     needs: [verify, docker-web-build]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     concurrency:
       group: release-docker-web-${{ github.ref }}
       cancel-in-progress: true
@@ -328,7 +328,7 @@ jobs:
   helm-chart:
     needs: [verify, docker-backend-merge, docker-web-merge]
     if: github.repository_owner == 'multica-ai'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     concurrency:
       group: release-helm-chart-${{ github.ref }}
       cancel-in-progress: true
@@ -377,11 +377,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: linux
             target: linux
-          - os: windows-latest
+            runs_on: '["self-hosted","linux","x64"]'
+          - os: windows
             target: win
-    runs-on: ${{ matrix.os }}
+            runs_on: '["self-hosted","windows","x64"]'
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -405,7 +407,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
