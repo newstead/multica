@@ -336,8 +336,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - os: linux
+            runs_on: '["self-hosted","linux","x64"]'
+          - os: macos
+            runs_on: '["self-hosted","macos","arm64","xcode"]'
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
